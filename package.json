@@ -1,0 +1,20 @@
+{
+  "name": "lumi-flair",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/frontend.ts --outfile dist/frontend.js --target browser && bun build src/backend.ts --outfile dist/backend.js --target bun",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "lumiverse-spindle-types": "^0.6.37"
+  },
+  "description": "Lumi Flair, a Lumiverse extension: let the story control the room.",
+  "license": "MIT",
+  "author": "Ash (https://github.com/yuliontop)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuliontop/lumi-flair.git"
+  }
+}
