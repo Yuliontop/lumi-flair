@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "name": "Lumi Flair",
+  "identifier": "lumi_flair",
+  "author": "Ash",
+  "github": "https://github.com/yuliontop/lumi-flair",
+  "homepage": "https://github.com/yuliontop/lumi-flair#readme",
+  "description": "Let the story control the room: theme-aware glow, send effects, weather, cinematic lighting, procedural soundscapes, AI text effects and scene direction, Flair Packs that can theme Lumiverse, character auras, Moment Cards and more.",
+  "permissions": [
+    "app_manipulation",
+    "interceptor"
+  ],
+  "entry_backend": "dist/backend.js",
+  "entry_frontend": "dist/frontend.js",
+  "minimum_lumiverse_version": "0.1.0"
+}
