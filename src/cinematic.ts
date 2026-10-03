@@ -146,6 +146,32 @@ export class Cinematic {
 }
 
 /** Brief camera shake on the chat body (respects no-flash / reduced motion at call site). */
+/**
+ * The chat is pulled toward the black hole while it feeds, squeezed as it
+ * implodes, then punched outward by the shockwave. Keyframes are generated
+ * from the effect's timeline so the two always stay in sync.
+ */
+export function blackHoleWarpRule(
+  originX: number,
+  originY: number,
+  T: { form: number; feedEnd: number; collapseEnd: number; detonate: number; total: number },
+): string {
+  const pct = (x: number) => `${Math.max(0, Math.min(100, (x / T.total) * 100)).toFixed(2)}%`
+  const d = T.detonate
+  return `@keyframes lf-bh-warp {
+  0%, ${pct(T.form)} { transform: none; }
+  ${pct(T.feedEnd)} { transform: scale(.975) rotate(-.5deg); }
+  ${pct(T.collapseEnd)} { transform: scale(.958) rotate(-.9deg); }
+  ${pct(d - 0.03)} { transform: scale(.95) rotate(-1deg); }
+  ${pct(d + 0.08)} { transform: scale(1.035) rotate(.3deg); }
+  ${pct(d + 0.22)} { transform: scale(.994) translate(-4px, 2px); }
+  ${pct(d + 0.36)} { transform: scale(1.006) translate(3px, -2px); }
+  ${pct(d + 0.55)} { transform: scale(1) translate(-1px, 1px); }
+  100% { transform: none; }
+}
+:root [data-component="ChatView"] [data-lumiverse-surface="chat-body"] { transform-origin: ${originX.toFixed(1)}% ${originY.toFixed(1)}%; animation: lf-bh-warp ${Math.round(T.total * 1000)}ms linear; }`
+}
+
 export function cameraShakeRule(): string {
   return `:root [data-component="ChatView"] [data-lumiverse-surface="chat-body"] { animation: lf-camshake 420ms ease-out; }`
 }

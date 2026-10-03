@@ -26,7 +26,7 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 
 | Feature | What it does |
 |---|---|
-| **Send effects** | Sparkle, ripple, comet or confetti from the send button. Your message pops in, and the AI's reply blooms when it finishes |
+| **Send effects** | Sparkle, ripple, comet, confetti or **Creamy** (a whale-spout of white cream that erupts and rains back down) from the send button. For an overkill experience: **Black Hole ✦** (a singularity swallows the screen, collapses to a white dot and detonates) and **Petal Storm ✦** (a full-screen gale of blossoms). Your message pops in, and the AI's reply blooms when it finishes |
 | **Hover glow** | A soft glow, neon edge or a light that runs around the message border, plus a breathing aura while the AI writes. On touch screens, **Tap glow** does the same |
 | **Mood-reactive glow** | The glow follows the character's expression: red for anger, gold for joy, blue for sadness, and so on. The colours are yours to edit |
 | **Character auras** | Each character's messages take a signature colour sampled from their avatar, which is great in group chats |
@@ -162,6 +162,11 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.1.0:** Three new send effects.
+  - **Creamy:** thick white cream erupts from the send button like a whale's blowhole, fans out with a fine mist, then rains back and splats on the composer.
+  - **Black Hole ✦** (overkill), about 5 s in four acts. A beam opens a singularity in the chat. Dust spirals in from across the screen around a spinning accretion disk, the hole growing as it feeds, until every mote is swallowed. The hole then implodes into a trembling white dot. Finally it detonates with a flash, a chromatic shockwave and debris. The chat is pulled in, squeezed, then punched outward. No flashing softens the flash, and the chat warp follows the Camera shake setting.
+  - **Petal Storm ✦** (overkill): blossoms burst from the button, then a gale sweeps hundreds of fluttering sakura petals across the whole screen.
+  - All three also work in keyword triggers (`=> creamy`, `=> blackhole`, `=> petalstorm`).
 - **1.0.0:** First public release. It brings together everything below: atmosphere (scenes, lighting, soundscapes), glow and colour (mood, auras, time of day), Flair Packs with Lumiverse theme matching and Character Aware, your own packs, AI storytelling (text effects, Scene Director, screen effects, choice chips), the story heartbeat, Moment Cards, achievements, auto-saved settings with backup, battery saver, reduced-motion and no-flash support, and translations.
 
 ### Pre-release history

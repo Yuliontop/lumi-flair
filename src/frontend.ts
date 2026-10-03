@@ -12,7 +12,7 @@ import {
   type Scene,
 } from './settings'
 import { buildCss, colorVarsCss, composerActiveCss, entranceRule, tapGlowRule, type CardAnimation } from './styles'
-import { FxCanvas, parseComputedColor, playBanner, playSendEffect, viewportCenter, type Point, type RGB } from './effects'
+import { FxCanvas, HOLE_TIMING, parseComputedColor, playBanner, playSendEffect, viewportCenter, type Point, type RGB } from './effects'
 import { AmbientCanvas, sceneFromEntries } from './ambient'
 import { SoundBoard, type Chime } from './sound'
 import { hexToHsl, moodColorFor, moodPitch, parseMoodMap, timeOfDayTint } from './palette'
@@ -20,7 +20,7 @@ import { matchTrigger, milestoneAtOrBelow, parseTriggers } from './celebrate'
 import { exportThemePack } from './themepack'
 import { DirectorState, parseDirection } from './director'
 import { Soundscape } from './soundscape'
-import { Cinematic, CINEMATIC_CSS, cameraShakeRule } from './cinematic'
+import { Cinematic, CINEMATIC_CSS, blackHoleWarpRule, cameraShakeRule } from './cinematic'
 import { AuraManager } from './aura'
 import { ChoiceManager, CHOICES_CSS } from './choices'
 import { addPoint, HEARTBEAT_CSS, valenceForLabel, valenceForText, type BeatPoint, type HeartbeatData } from './heartbeat'
@@ -653,16 +653,33 @@ export function setup(ctx: SpindleFrontendContext) {
   disposers.push(() => clearInterval(todTimer))
 
   // ── Bursts ──
+  /** Screen-scale effects aim at the middle of the message list, and may warp the chat itself. */
+  function screenEffect(effect: BurstEffect) {
+    const s = store.get()
+    const list = document.querySelector<HTMLElement>('[data-component="MessageList"]')
+    const r = list?.getBoundingClientRect()
+    const center = r && r.width > 0 ? { x: r.left + r.width / 2, y: r.top + r.height * 0.45 } : undefined
+    if (effect === 'blackhole' && s.cameraShake && !s.noFlash && motionAllowed()) {
+      const body = document.querySelector<HTMLElement>('[data-component="ChatView"] [data-lumiverse-surface="chat-body"]')
+      const b = body?.getBoundingClientRect()
+      if (b && center && b.width > 0 && b.height > 0) {
+        const ms = HOLE_TIMING.total * 1000
+        tempRule('warp', blackHoleWarpRule(((center.x - b.left) / b.width) * 100, ((center.y - b.top) / b.height) * 100, HOLE_TIMING), ms + 60)
+      }
+    }
+    return { center, noFlash: s.noFlash }
+  }
+
   function fireSendEffect(force = false) {
     const s = store.get()
     if (!force && (!s.enabled || s.sendEffect === 'none' || !motionAllowed())) return
     const effect = s.sendEffect === 'none' ? 'sparkle' : s.sendEffect
-    playSendEffect(fx, effect, sendOrigin(), accentColor(), s.sendIntensity * (state.saver ? 0.6 : 1))
+    playSendEffect(fx, effect, sendOrigin(), accentColor(), s.sendIntensity * (state.saver ? 0.6 : 1), screenEffect(effect))
   }
 
   function burst(effect: BurstEffect, origin: Point, intensity = 1, color?: RGB) {
     if (!motionAllowed()) return
-    playSendEffect(fx, effect, origin, color ?? charColor(), intensity * (state.saver ? 0.6 : 1))
+    playSendEffect(fx, effect, origin, color ?? charColor(), intensity * (state.saver ? 0.6 : 1), screenEffect(effect))
   }
 
   // ── Celebrations ──

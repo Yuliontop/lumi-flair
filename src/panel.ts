@@ -756,6 +756,9 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     { value: 'ripple', label: 'Ripple', sublabel: 'Rings pulse outward' },
     { value: 'comet', label: 'Comet', sublabel: 'A streak flies up into the chat' },
     { value: 'confetti', label: 'Confetti', sublabel: 'Theme-coloured paper pop' },
+    { value: 'creamy', label: 'Creamy', sublabel: 'A whale-spout of thick white cream erupts and rains back down' },
+    { value: 'blackhole', label: 'Black Hole ✦', sublabel: 'Overkill: a singularity swallows everything, collapses to a white dot, then detonates' },
+    { value: 'petalstorm', label: 'Petal Storm ✦', sublabel: 'Overkill: blossoms burst from the button and a gale sweeps them across the screen' },
     { value: 'none', label: 'None' },
   ])
   slider(send.body, 'Intensity', 'sendIntensity', 0.25, 2, 0.05, { suffix: '×' })

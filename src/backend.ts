@@ -110,7 +110,7 @@ try {
 spindle.commands.register([
   { id: 'open', label: 'Flair: Open settings', description: 'Open the Lumi Flair tab', keywords: ['flair', 'effects', 'glow'], scope: 'global' },
   { id: 'toggle', label: 'Flair: Toggle effects', description: 'Turn all Lumi Flair effects on or off', keywords: ['flair', 'effects', 'animation'], scope: 'global' },
-  { id: 'next-effect', label: 'Flair: Next send effect', description: 'Cycle sparkle → ripple → comet → confetti → none', keywords: ['send', 'effect', 'particles'], scope: 'global' },
+  { id: 'next-effect', label: 'Flair: Next send effect', description: 'Cycle sparkle → ripple → comet → confetti → creamy → black hole → petal storm → none', keywords: ['send', 'effect', 'particles'], scope: 'global' },
   { id: 'preview', label: 'Flair: Preview send effect', description: 'Play the current send effect', keywords: ['preview', 'test'], scope: 'global' },
   { id: 'spotlight', label: 'Flair: Toggle spotlight mode', description: 'Dim other messages while you hover one', keywords: ['focus', 'dim', 'reading'], scope: 'chat' },
   { id: 'next-scene', label: 'Flair: Next ambient scene', description: 'Cycle snow, rain, embers, fireflies, petals, stars', keywords: ['weather', 'ambient', 'snow', 'rain'], scope: 'global' },
@@ -136,7 +136,7 @@ type PrefsMessage = { type: 'prefs' } & Partial<Prefs>
 // ── Config files: per-user, outside the extension folder ──
 // data/users/<userId>/extensions/lumi_flair/<name>.json — survives reinstalls.
 const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat'])
-const VERSION = '1.0.0'
+const VERSION = '1.1.0'
 
 async function vaultLoad(req: number, names: unknown, userId: string) {
   const files: Record<string, unknown> = {}

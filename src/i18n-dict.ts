@@ -378,6 +378,16 @@ const T: Record<string, Row> = {
   'That message no longer exists, so its point was removed.': ['该消息已不存在，已移除对应的点。', '該訊息已不存在，已移除對應的點。', 'そのメッセージは存在しないため、点を削除しました。', 'Ce message n’existe plus : son point a été retiré.', 'Quel messaggio non esiste più: il punto è stato rimosso.'],
   'Couldn’t reach that message just now — try again in a moment.': ['暂时无法到达该消息——请稍后再试。', '暫時無法到達該訊息——請稍後再試。', '今はそのメッセージへ移動できません — 少し待って再試行してください。', 'Impossible d’atteindre ce message pour l’instant — réessayez dans un moment.', 'Impossibile raggiungere il messaggio ora — riprova tra poco.'],
   'Open the chat to jump to its messages.': ['打开聊天以跳转到其消息。', '開啟聊天以跳轉到其訊息。', 'チャットを開くとメッセージへ移動できます。', 'Ouvrez la discussion pour y accéder.', 'Apri la chat per saltare ai messaggi.'],
+
+  // Creamy send effect
+  'Creamy': ['奶油喷泉', '奶油噴泉', 'クリーミー', 'Crémeux', 'Cremoso'],
+  'A whale-spout of thick white cream erupts and rains back down': ['一股浓稠的白色奶油像鲸鱼喷水般喷出，再洒落下来', '一股濃稠的白色奶油像鯨魚噴水般噴出，再灑落下來', '濃厚な白いクリームがクジラの潮吹きのように噴き上がり、降り注ぐ', 'Un jet de crème blanche épaisse jaillit comme une baleine et retombe en pluie', 'Uno zampillo di densa crema bianca erutta come una balena e ricade'],
+
+  // Overkill send effects
+  'Black Hole ✦': ['黑洞 ✦', '黑洞 ✦', 'ブラックホール ✦', 'Trou noir ✦', 'Buco nero ✦'],
+  'Overkill: a singularity swallows everything, collapses to a white dot, then detonates': ['极致特效：奇点吞噬一切，坍缩成一个白点，然后爆炸', '極致特效：奇點吞噬一切，坍縮成一個白點，然後爆炸', '派手モード：特異点がすべてを飲み込み、白い点に縮んでから爆発する', 'Démesuré : une singularité avale tout, s’effondre en un point blanc, puis explose', 'Esagerato: una singolarità inghiotte tutto, collassa in un punto bianco, poi esplode'],
+  'Petal Storm ✦': ['花瓣风暴 ✦', '花瓣風暴 ✦', '花吹雪 ✦', 'Tempête de pétales ✦', 'Tempesta di petali ✦'],
+  'Overkill: blossoms burst from the button and a gale sweeps them across the screen': ['极致特效：花瓣从按钮迸出，狂风将它们卷过整个屏幕', '極致特效：花瓣從按鈕迸出，狂風將它們捲過整個螢幕', '派手モード：ボタンから花びらが舞い上がり、突風が画面いっぱいに吹き抜ける', 'Démesuré : des pétales jaillissent du bouton et une rafale les emporte sur tout l’écran', 'Esagerato: i petali esplodono dal pulsante e una raffica li spazza su tutto lo schermo'],
 }
 
 const LOCALES = ['zh', 'zh-TW', 'ja', 'fr', 'it'] as const

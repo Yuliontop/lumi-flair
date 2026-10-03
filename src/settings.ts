@@ -1,6 +1,6 @@
 import type { Vault, VaultName } from './persist'
 
-export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'none'
+export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'blackhole' | 'petalstorm' | 'none'
 export type BurstEffect = Exclude<SendEffect, 'none'>
 export type UserEntrance = 'pop' | 'rise' | 'none'
 export type CharacterEntrance = 'bloom' | 'none'
@@ -30,8 +30,8 @@ export type SwipeTransition = 'slide' | 'fade' | 'none'
 export type TextFxFrequency = 'every' | 'often' | 'sparing'
 export type Light = 'none' | 'dawn' | 'day' | 'dusk' | 'night' | 'candle' | 'storm' | 'neon'
 
-export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'none']
-export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'comet', 'confetti']
+export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'blackhole', 'petalstorm', 'none']
+export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'blackhole', 'petalstorm']
 export const SCENES: readonly Scene[] = ['off', 'snow', 'rain', 'embers', 'fireflies', 'petals', 'stars']
 export const LIGHTS: readonly Light[] = ['none', 'dawn', 'day', 'dusk', 'night', 'candle', 'storm', 'neon']
 
