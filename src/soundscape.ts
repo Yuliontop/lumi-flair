@@ -8,8 +8,24 @@
  * A watchdog checks every few seconds and on focus/visibility: it resumes a
  * paused context, rebuilds a closed one, and rebuilds one whose clock has
  * stalled (audio device lost). Any click or key press also resumes it.
+ *
+ * Optional background behaviour: while Lumiverse isn't the focused window
+ * the bed can keep playing, dim to a share of its volume, or mute.
  */
-import type { Light, Scene } from './settings'
+import type { Light, Scene, SoundUnfocused } from './settings'
+import type { AudioSource } from './soundlib'
+
+/** The user's own files for this moment (ids already checked to exist in this browser). */
+export interface CustomBed {
+  /** plays instead of everything else */
+  always?: string
+  /** replaces the generated scene part (rain, snow, …) */
+  scene?: string
+  /** replaces the generated lighting part (storm, candle, …) */
+  light?: string
+  /** changes when a file's level changes, so the bed is rebuilt */
+  rev?: string
+}
 
 type Layer = { gain: GainNode; stop: () => void }
 export type SoundscapeState = 'off' | 'playing' | 'waiting'
@@ -26,8 +42,20 @@ export class Soundscape {
   private stalls = 0
   private watchdog: ReturnType<typeof setInterval> | undefined
   private lastState: SoundscapeState = 'off'
+  private unfocused: SoundUnfocused = 'keep'
+  private dimLevel = 0.3
+  /** Is Lumiverse (or a frame inside it) the focused window? */
+  private focused = typeof document.hasFocus === 'function' ? document.hasFocus() : true
   /** Called when the playing / waiting state changes (for the panel). */
   onState: ((s: SoundscapeState) => void) | null = null
+  /** Called when Lumiverse gains or loses focus (dimmed / muted in the background). */
+  onBackground: (() => void) | null = null
+  /** Loads one of the user's sound files for playback. */
+  loader: ((id: string, ac: AudioContext) => Promise<AudioSource | null>) | null = null
+  private custom: CustomBed = {}
+  private customIds: string[] = []
+  /** Streamed files the browser refused to start before a click (autoplay rules). */
+  private blockedMedia = new Set<HTMLAudioElement>()
 
   private onVisibility = () => {
     this.applyVolume()
@@ -35,12 +63,32 @@ export class Soundscape {
   }
   private onGesture = () => {
     if (this.wantsSound() && this.ac && this.ac.state !== 'running') void this.ac.resume().then(() => this.report()).catch(() => {})
+    for (const el of this.blockedMedia) void el.play().then(() => this.blockedMedia.delete(el)).catch(() => {})
   }
-  private onFocus = () => this.heal()
+  private onFocus = () => {
+    this.syncFocus()
+    this.heal()
+  }
+  // Focus moving into a frame inside Lumiverse also blurs the window, so check
+  // where focus actually landed once the browser has settled it.
+  private onBlur = () => setTimeout(() => this.syncFocus(), 0)
+
+  private syncFocus() {
+    const f = typeof document.hasFocus === 'function' ? document.hasFocus() : true
+    if (f === this.focused) return
+    this.focused = f
+    this.applyVolume()
+    try {
+      this.onBackground?.()
+    } catch {
+      /* ignore */
+    }
+  }
 
   constructor() {
     document.addEventListener('visibilitychange', this.onVisibility)
     window.addEventListener('focus', this.onFocus)
+    window.addEventListener('blur', this.onBlur)
     // Kept for the whole session (not one-shot): a context can be paused again later.
     window.addEventListener('pointerdown', this.onGesture, true)
     window.addEventListener('keydown', this.onGesture, true)
@@ -82,6 +130,8 @@ export class Soundscape {
    * Exposed for tests and for the frontend to call after the page wakes up.
    */
   heal() {
+    // Also catches focus leaving the browser from inside a frame (no blur reaches us then).
+    this.syncFocus()
     const ac = this.ac
     if (!ac || !this.enabled) return this.report()
     if (ac.state === 'closed') {
@@ -127,7 +177,7 @@ export class Soundscape {
     this.lastClock = -1
     this.stalls = 0
     if (old && old.state !== 'closed') void old.close().catch(() => {})
-    this.set(this.enabled, this.wanted.scene, this.wanted.light, this.volume)
+    this.set(this.enabled, this.wanted.scene, this.wanted.light, this.volume, this.custom)
   }
 
   private ctx(): AudioContext | null {
@@ -217,11 +267,101 @@ export class Soundscape {
     }
   }
 
-  private build(scene: Scene, light: Light): Layer | null {
+  /**
+   * The bed for this moment: the user's "always" file, or the scene and
+   * lighting parts each from the user's file or generated.
+   */
+  private compose(scene: Scene, light: Light, c: CustomBed): Layer | null {
+    if (c.always) return this.fileLayer([c.always], this.master!)
+    if (!c.scene && !c.light) return this.build(scene, light, this.master!)
     const ac = this.ac!
     const out = ac.createGain()
     out.gain.value = 0
     out.connect(this.master!)
+    const parts: Layer[] = []
+    const gen = this.build(c.scene ? 'off' : scene, c.light ? 'none' : light, out)
+    if (gen) parts.push(gen)
+    parts.push(this.fileLayer([c.scene, c.light].filter((x): x is string => !!x), out))
+    for (const l of parts) l.gain.gain.value = 1
+    return {
+      gain: out,
+      stop: () => {
+        for (const l of parts) l.stop()
+        setTimeout(() => out.disconnect(), 150)
+      },
+    }
+  }
+
+  /** Loop the user's own files (decoded for seamless loops, or streamed when long). */
+  private fileLayer(ids: string[], dest: AudioNode): Layer {
+    const ac = this.ac!
+    const out = ac.createGain()
+    out.gain.value = 0
+    out.connect(dest)
+    let alive = true
+    const stops: Array<() => void> = []
+    for (const id of ids) {
+      const load = this.loader?.(id, ac)
+      if (!load) continue
+      void load
+        .then((src) => {
+          if (!alive || !src || this.ac !== ac) return
+          // Each file fades in on its own: it may arrive after the crossfade finished.
+          const g = ac.createGain()
+          const t = ac.currentTime
+          g.gain.setValueAtTime(0.0001, t)
+          g.gain.setTargetAtTime(Math.max(0.0001, src.level), t, 0.5)
+          g.connect(out)
+          if (src.kind === 'buffer') {
+            const n = ac.createBufferSource()
+            n.buffer = src.buffer
+            n.loop = true
+            n.connect(g)
+            n.start()
+            stops.push(() => {
+              try {
+                n.stop()
+              } catch {
+                /* already stopped */
+              }
+              n.disconnect()
+              g.disconnect()
+            })
+          } else {
+            const el = new Audio()
+            el.src = src.url
+            el.loop = true
+            el.preload = 'auto'
+            const node = ac.createMediaElementSource(el)
+            node.connect(g)
+            void el.play().catch(() => this.blockedMedia.add(el))
+            stops.push(() => {
+              this.blockedMedia.delete(el)
+              el.pause()
+              el.removeAttribute('src')
+              el.load()
+              node.disconnect()
+              g.disconnect()
+            })
+          }
+        })
+        .catch(() => {})
+    }
+    return {
+      gain: out,
+      stop: () => {
+        alive = false
+        for (const f of stops) f()
+        setTimeout(() => out.disconnect(), 150)
+      },
+    }
+  }
+
+  private build(scene: Scene, light: Light, dest: AudioNode): Layer | null {
+    const ac = this.ac!
+    const out = ac.createGain()
+    out.gain.value = 0
+    out.connect(dest)
     const nodes: Array<AudioScheduledSourceNode> = []
     const cleanups: Array<() => void> = []
     const start = (n: AudioScheduledSourceNode) => {
@@ -386,24 +526,51 @@ export class Soundscape {
     }
   }
 
-  private applyVolume() {
+  /** How much of the volume to keep right now (background behaviour). */
+  private focusFactor(): number {
+    if (this.focused || this.unfocused === 'keep') return 1
+    return this.unfocused === 'mute' ? 0 : this.dimLevel
+  }
+
+  private applyVolume(fast = false) {
     if (!this.ac || !this.master) return
-    const target = this.enabled && !document.hidden ? this.volume * 0.6 : 0
+    const target = this.enabled && !document.hidden ? this.volume * 0.6 * this.focusFactor() : 0
     const t = this.ac.currentTime
     this.master.gain.cancelScheduledValues(t)
-    this.master.gain.setTargetAtTime(target, t, 0.6)
+    this.master.gain.setTargetAtTime(target, t, fast ? 0.05 : 0.35)
+  }
+
+  /** Live volume while a slider is being dragged (the setting is saved on release). */
+  setVolume(volume: number) {
+    this.volume = Math.max(0, Math.min(1, volume))
+    this.applyVolume(true)
+  }
+
+  /** What to do while Lumiverse isn't the focused window. */
+  setBackground(mode: SoundUnfocused, dimLevel: number) {
+    if (mode === this.unfocused && dimLevel === this.dimLevel) return
+    this.unfocused = mode
+    this.dimLevel = dimLevel
+    this.syncFocus()
+    this.applyVolume()
+  }
+
+  /** 'dim' / 'mute' while Lumiverse is in the background and that option is on, else null. */
+  get backgrounded(): 'dim' | 'mute' | null {
+    return this.focused || this.unfocused === 'keep' ? null : this.unfocused
   }
 
   /** Set what should be playing. Safe to call often — only changes trigger work. */
-  set(enabled: boolean, scene: Scene, light: Light, volume: number) {
+  set(enabled: boolean, scene: Scene, light: Light, volume: number, custom: CustomBed = {}) {
     this.enabled = enabled
     this.volume = volume
     this.wanted = { scene, light }
+    this.custom = custom
     if (!enabled && !this.ac) return
     const ac = this.ctx()
     if (!ac) return
     this.applyVolume()
-    const key = enabled ? `${scene}|${light}` : 'off'
+    const key = enabled ? `${scene}|${light}|${custom.always ?? ''}|${custom.scene ?? ''}|${custom.light ?? ''}|${custom.rev ?? ''}` : 'off'
     if (this.current?.key === key) return
     const t = ac.currentTime
     // Crossfade: old layer out, new layer in.
@@ -423,7 +590,8 @@ export class Soundscape {
       }, 4000)
       return
     }
-    const layer = this.build(scene, light)
+    const layer = this.compose(scene, light, custom)
+    this.customIds = custom.always ? [custom.always] : [custom.scene, custom.light].filter((x): x is string => !!x)
     if (!layer) {
       this.stopWatchdog()
       this.report()
@@ -457,8 +625,19 @@ export class Soundscape {
     }, delayMs)
   }
 
+  /** "scene|light|…" while playing (the first two parts name the scene and lighting), else "off". */
   get playing(): string {
     return this.current?.key ?? 'off'
+  }
+
+  /** The user's files in the current bed ([] when it's all generated). */
+  get customPlaying(): string[] {
+    return this.current ? this.customIds : []
+  }
+
+  /** True while the user's "always" file replaces the scene sounds. */
+  get alwaysPlaying(): boolean {
+    return !!this.current && !!this.custom.always
   }
 
   get target() {
@@ -469,9 +648,13 @@ export class Soundscape {
     this.stopWatchdog()
     document.removeEventListener('visibilitychange', this.onVisibility)
     window.removeEventListener('focus', this.onFocus)
+    window.removeEventListener('blur', this.onBlur)
     window.removeEventListener('pointerdown', this.onGesture, true)
     window.removeEventListener('keydown', this.onGesture, true)
     this.onState = null
+    this.onBackground = null
+    this.loader = null
+    this.blockedMedia.clear()
     this.current?.layer.stop()
     this.current = null
     void this.ac?.close().catch(() => {})

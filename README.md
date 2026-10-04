@@ -19,6 +19,9 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Ambient scenes** | Snow, rain, embers, fireflies, petals or a starfield, drawn above your wallpaper but behind the messages. Set one per chat, or let lorebook entries and the AI switch it |
 | **Cinematic lighting** | Dawn, day, dusk, night, candle, storm and neon light, with a vignette, film grain and light rays. Storm light adds lightning |
 | **Soundscapes** | Rain, wind, crackling fire, crickets, birdsong and a space hum, generated live with no audio files. They crossfade with the scene and recover by themselves if the browser pauses audio |
+| **Volume widget** | An optional floating pill you can drag anywhere: turn the ambience on or off and set its volume without opening the panel. It shows what's playing and remembers where you left it |
+| **Your own sounds** | Upload your own audio (MP3, OGG, WAV, M4A, FLAC…) and use it as a seamless looping ambience for any scene or lighting, as one track that always plays, or as your send, reply, milestone, achievement and screen-effect sounds. Files stay in your browser, with a level control and preview for each |
+| **Background sound** | Optionally dim (to a level you choose) or mute the soundscape while you're in another window or app, then fade it back when you return |
 | **Camera shake** | A short shake when a reply shouts with `big` or `shake` text |
 | **No flashing** | One switch replaces every flash with a soft fade and stops flicker, for light-sensitive viewers |
 
@@ -26,7 +29,7 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 
 | Feature | What it does |
 |---|---|
-| **Send effects** | Sparkle, ripple, comet, confetti or **Creamy** (a whale-spout of white cream that erupts and rains back down) from the send button. For an overkill experience: **Black Hole ✦** (a singularity swallows the screen, collapses to a white dot and detonates) and **Petal Storm ✦** (a full-screen gale of blossoms). Your message pops in, and the AI's reply blooms when it finishes |
+| **Send effects** | Sparkle, ripple, comet, confetti or **Creamy** (a whale-spout of white cream that erupts and rains back down), **Splash** (a hose-like gush of clear water that tears into big clumps and thins into spray, rippling where it lands) from the send button. For an overkill experience: **Black Hole ✦** (a singularity swallows the screen, collapses to a white dot and detonates) and **Petal Storm ✦** (a full-screen gale of blossoms). Your message pops in, and the AI's reply blooms when it finishes |
 | **Hover glow** | A soft glow, neon edge or a light that runs around the message border, plus a breathing aura while the AI writes. On touch screens, **Tap glow** does the same |
 | **Mood-reactive glow** | The glow follows the character's expression: red for anger, gold for joy, blue for sadness, and so on. The colours are yours to edit |
 | **Character auras** | Each character's messages take a signature colour sampled from their avatar, which is great in group chats |
@@ -89,12 +92,13 @@ When Lumiverse starts, Flair reads all three copies and uses the **newest** one,
 
 ## Permissions
 
-Lumi Flair requests two permissions. Both are optional, and Lumiverse asks for each one the first time you turn on the feature that needs it:
+Lumi Flair requests three permissions. All are optional, and Lumiverse asks for each one the first time you turn on the feature that needs it:
 
 | Permission | Used for |
 |---|---|
 | `interceptor` | **Add the instructions to every prompt** (on by default). Flair adds a short styling note just before the latest message on each generation, so the AI keeps using text effects in nearly every reply. The note covers text effects, scene direction, screen effects and choices, following your settings. It appears as **Lumi Flair storytelling** in Prompt Breakdown. It's skipped for impersonate and quiet generations, and when `{{flair_tags}}` is already in the prompt |
 | `app_manipulation` | **Lumiverse theme matching** (packs and Character Aware) through `spindle.theme.generateVariables` and `apply`, and **Tint the whole UI with the mood** (`applyPalette`, or folded into the matched theme). Both are layered and fully removable |
+| `ui_panels` | The **floating volume widget** (Sound → Floating volume widget), a small draggable float widget. Nothing is shown unless you turn it on |
 
 ## Teaching the AI
 
@@ -162,6 +166,11 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.2.0:** Your own sounds, sound comfort and a new send effect.
+  - **Floating volume widget:** an optional draggable pill with an on/off button, a volume slider (drag, click, arrow keys or mouse wheel) and what's playing. It remembers its position and stays on screen when the window is resized. Needs the optional `ui_panels` permission.
+  - **When in the background:** keep playing, dim (5–80%, default 30%) or mute the soundscape while Lumiverse isn't the focused window. Focus moving into a frame inside Lumiverse doesn't count as leaving.
+  - **Your own sounds:** upload audio files and assign them to any scene or lighting (they loop through the soundscape, so volume, the widget and background dimming apply), to an "always play" track that replaces the scene sounds, or to message and system sounds (message sent, reply received, milestone, achievement unlocked, screen effect / keyword). Each file has a level and a preview. Files are kept in this browser (IndexedDB); short files loop seamlessly and long ones stream. Assignments sync with your settings, and a file missing on another device falls back to the built-in sound.
+  - **Splash** send effect: a hose-like gush of clear, see-through water bursts from the send button. The solid column tears into big wobbling clumps that keep breaking into smaller drops, so it thins into a fine spray the farther it flies, then ripples and splashes where it lands. Works in keyword triggers too (`=> splash`).
 - **1.1.0:** Three new send effects.
   - **Creamy:** thick white cream erupts from the send button like a whale's blowhole, fans out with a fine mist, then rains back and splats on the composer.
   - **Black Hole ✦** (overkill), about 5 s in four acts. A beam opens a singularity in the chat. Dust spirals in from across the screen around a spinning accretion disk, the hole growing as it feeds, until every mote is swallowed. The hole then implodes into a trembling white dot. Finally it detonates with a flash, a chromatic shockwave and debris. The chat is pulled in, squeezed, then punched outward. No flashing softens the flash, and the chat warp follows the Camera shake setting.

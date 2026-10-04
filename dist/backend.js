@@ -61,7 +61,7 @@ try {
 spindle.commands.register([
   { id: "open", label: "Flair: Open settings", description: "Open the Lumi Flair tab", keywords: ["flair", "effects", "glow"], scope: "global" },
   { id: "toggle", label: "Flair: Toggle effects", description: "Turn all Lumi Flair effects on or off", keywords: ["flair", "effects", "animation"], scope: "global" },
-  { id: "next-effect", label: "Flair: Next send effect", description: "Cycle sparkle \u2192 ripple \u2192 comet \u2192 confetti \u2192 creamy \u2192 black hole \u2192 petal storm \u2192 none", keywords: ["send", "effect", "particles"], scope: "global" },
+  { id: "next-effect", label: "Flair: Next send effect", description: "Cycle sparkle \u2192 ripple \u2192 comet \u2192 confetti \u2192 creamy \u2192 splash \u2192 black hole \u2192 petal storm \u2192 none", keywords: ["send", "effect", "particles"], scope: "global" },
   { id: "preview", label: "Flair: Preview send effect", description: "Play the current send effect", keywords: ["preview", "test"], scope: "global" },
   { id: "spotlight", label: "Flair: Toggle spotlight mode", description: "Dim other messages while you hover one", keywords: ["focus", "dim", "reading"], scope: "chat" },
   { id: "next-scene", label: "Flair: Next ambient scene", description: "Cycle snow, rain, embers, fireflies, petals, stars", keywords: ["weather", "ambient", "snow", "rain"], scope: "global" },
@@ -76,7 +76,7 @@ spindle.commands.onInvoked((commandId) => {
   spindle.sendToFrontend({ type: "command", id: commandId });
 });
 var VAULT_FILES = new Set(["settings", "achievements", "heartbeat"]);
-var VERSION = "1.1.0";
+var VERSION = "1.2.0";
 async function vaultLoad(req, names, userId) {
   const files = {};
   const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && VAULT_FILES.has(n)) : [];

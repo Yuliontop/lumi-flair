@@ -1,3 +1,4 @@
+import type { SoundMeta } from './soundlib'
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 import type { VaultStatus } from './persist'
 import { LIGHTS, SCENES, TEXT_FX, type ChatScene, type FlairSettings, type SettingsStore, type TextFx } from './settings'
@@ -117,6 +118,34 @@ export const PANEL_CSS = `
 .lf-fx-chip.lf-off small { color: var(--lumiverse-text-dim); }
 .lf-fx-chip.lf-off > span { animation-play-state: paused !important; text-decoration: line-through; text-decoration-color: var(--lumiverse-text-dim); }
 .lf-fx-pick.lf-master-off { opacity: .55; }
+/* Your sounds */
+.lf-snd-list { display: flex; flex-direction: column; gap: 8px; }
+.lf-snd { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 4px; border-radius: var(--lumiverse-radius, 8px);
+  background: var(--lumiverse-fill); border: 1px solid var(--lumiverse-border); }
+.lf-snd-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lf-snd-play, .lf-snd-del { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--lumiverse-border); padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; background: transparent; color: var(--lumiverse-text-muted);
+  transition: background var(--lumiverse-transition-fast, 150ms ease), color var(--lumiverse-transition-fast, 150ms ease); }
+.lf-snd-play svg { width: 12px; height: 12px; }
+.lf-snd-del svg { width: 14px; height: 14px; }
+.lf-snd-play:hover { background: var(--lumiverse-primary); border-color: var(--lumiverse-primary); color: var(--lumiverse-primary-contrast, #fff); }
+.lf-snd-play[data-on="1"] { background: var(--lumiverse-primary); border-color: var(--lumiverse-primary); color: var(--lumiverse-primary-contrast, #fff); }
+.lf-snd-del { border-color: transparent; color: var(--lumiverse-text-dim); }
+.lf-snd-del:hover { color: var(--lumiverse-danger, #e5484d); background: var(--lumiverse-fill-subtle); }
+.lf-snd-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.lf-snd-info b { font-size: ${FS(13)}; font-weight: 600; color: var(--lumiverse-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lf-snd-info span { font-size: ${FS(11)}; color: var(--lumiverse-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lf-snd-empty { padding: 10px; text-align: center; border-radius: var(--lumiverse-radius, 8px); border: 1px dashed var(--lumiverse-border);
+  color: var(--lumiverse-text-dim); font-size: ${FS(12)}; }
+.lf-snd-sub { margin-top: 4px; font-size: ${FS(12)}; font-weight: 600; color: var(--lumiverse-text-muted); letter-spacing: .02em; }
+.lf-snd-assigned { display: flex; flex-direction: column; gap: 4px; }
+.lf-snd-pair { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border-radius: var(--lumiverse-radius, 8px);
+  background: var(--lumiverse-fill); font-size: ${FS(12)}; color: var(--lumiverse-text-muted); min-width: 0; }
+.lf-snd-pair > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lf-snd-pair b { color: var(--lumiverse-text); font-weight: 600; }
+.lf-snd-pair[data-missing="1"] b { color: var(--lumiverse-text-dim); font-weight: 500; font-style: italic; }
+.lf-snd-pair .lf-snd-del { width: 26px; height: 26px; }
+.lf-snd-msg[data-kind="error"] { color: var(--lumiverse-danger, #e5484d); }
 .lf-fx-demo { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px); background: var(--lumiverse-fill); }
 `
 
@@ -136,6 +165,10 @@ const I = {
   text: svg('<path d="M4 7V5h16v2M9 19h6M12 5v14"/>'),
   party: svg('<path d="M3 21l5-14 9 9z"/><path d="M14 3l1 2M19 6l2-1M17 10l3 1M11 5l.5-2"/>'),
   sound: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
+  music: svg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+  upload: svg('<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 9l5-5 5 5M12 4v12"/>'),
+  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>', true),
+  trash: svg('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
   share: svg('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v13"/>'),
   copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
   chev: svg('<path d="m9 6 6 6-6 6"/>'),
@@ -156,6 +189,7 @@ export interface PanelStatus {
   activeScene: string
   tintPermission: boolean
   injectPermission: boolean
+  panelsPermission: boolean
   directed: string | null
   light: string
   saver: boolean
@@ -164,6 +198,10 @@ export interface PanelStatus {
   unlocked: Record<string, number>
   soundscape: 'off' | 'playing' | 'waiting'
   soundscapeKey: string
+  /** names of the user's files in the current soundscape */
+  soundscapeCustom: string[]
+  /** the user's "always play" file is replacing the scene sounds */
+  soundscapeAlways: boolean
   uiThemeLabel: string | null
   charAura: string | null
 }
@@ -175,6 +213,8 @@ export interface PanelActions {
   exportTheme(): Promise<'pack' | 'css'>
   requestTintPermission(): Promise<boolean>
   requestInjectPermission(): Promise<boolean>
+  requestPanelsPermission(): Promise<boolean>
+  sounds: SoundActions
   previewLightning(): void
   applyPack(id: string): void
   exportPack(): void
@@ -192,7 +232,51 @@ export interface PanelActions {
   onStatus(fn: (s: PanelStatus) => void): () => void
 }
 
-const SCENE_LABEL: Record<string, string> = {
+/** The user's sound library, as the panel sees it. */
+export interface SoundActions {
+  list(): SoundMeta[]
+  has(id: string): boolean
+  /** false when the browser can't keep files (they last until the page closes) */
+  saved(): boolean
+  upload(): Promise<{ added: string[]; errors: string[] }>
+  remove(id: string): Promise<void>
+  setLevel(id: string, level: number): void
+  /** Play a file once (toggles); `onEnd` fires when it stops for any reason. */
+  preview(id: string, onEnd: () => void): void
+  stopPreview(): void
+  onChange(fn: () => void): () => void
+}
+
+/** What each sound slot is called in the panel. */
+export const SLOT_LABEL: Record<string, { label: string; group: string }> = {
+  always: { label: 'Always play (replaces scene sounds)', group: 'Ambience' },
+  'scene:snow': { label: 'Snow', group: 'Ambience' },
+  'scene:rain': { label: 'Rain', group: 'Ambience' },
+  'scene:embers': { label: 'Embers', group: 'Ambience' },
+  'scene:fireflies': { label: 'Fireflies', group: 'Ambience' },
+  'scene:petals': { label: 'Petals', group: 'Ambience' },
+  'scene:stars': { label: 'Starfield', group: 'Ambience' },
+  'light:dawn': { label: 'Dawn', group: 'Lighting' },
+  'light:day': { label: 'Daylight', group: 'Lighting' },
+  'light:dusk': { label: 'Dusk / golden hour', group: 'Lighting' },
+  'light:night': { label: 'Night', group: 'Lighting' },
+  'light:candle': { label: 'Candlelight', group: 'Lighting' },
+  'light:storm': { label: 'Storm', group: 'Lighting' },
+  'light:neon': { label: 'Neon city', group: 'Lighting' },
+  'ui:send': { label: 'Message sent', group: 'Interface' },
+  'ui:receive': { label: 'Reply received', group: 'Interface' },
+  'ui:fanfare': { label: 'Milestone celebration', group: 'Interface' },
+  'ui:achievement': { label: 'Achievement unlocked', group: 'Interface' },
+  'ui:sparkle': { label: 'Screen effect / keyword', group: 'Interface' },
+}
+
+const fmtDuration = (sec: number) => {
+  const s = Math.max(0, Math.round(sec))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+const fmtSize = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`)
+
+export const SCENE_LABEL: Record<string, string> = {
   off: 'Off',
   snow: 'Snow',
   rain: 'Rain',
@@ -200,6 +284,10 @@ const SCENE_LABEL: Record<string, string> = {
   fireflies: 'Fireflies',
   petals: 'Petals',
   stars: 'Starfield',
+}
+
+export const LIGHT_LABEL: Record<string, string> = {
+  none: 'None', dawn: 'Dawn', day: 'Daylight', dusk: 'Dusk / golden hour', night: 'Night', candle: 'Candlelight', storm: 'Storm', neon: 'Neon city',
 }
 
 const OPEN_KEY = 'lumi_flair:open-sections'
@@ -458,9 +546,6 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   }
 
   const sceneOptions = SCENES.map((s) => ({ value: s, label: SCENE_LABEL[s] }))
-  const LIGHT_LABEL: Record<string, string> = {
-    none: 'None', dawn: 'Dawn', day: 'Daylight', dusk: 'Dusk / golden hour', night: 'Night', candle: 'Candlelight', storm: 'Storm', neon: 'Neon city',
-  }
 
   // ── General ──
   const general = section('general', 'General', I.sliders, true)
@@ -757,6 +842,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     { value: 'comet', label: 'Comet', sublabel: 'A streak flies up into the chat' },
     { value: 'confetti', label: 'Confetti', sublabel: 'Theme-coloured paper pop' },
     { value: 'creamy', label: 'Creamy', sublabel: 'A whale-spout of thick white cream erupts and rains back down' },
+    { value: 'splash', label: 'Splash', sublabel: 'A hose-like gush of clear water bursts out and breaks into spray' },
     { value: 'blackhole', label: 'Black Hole ✦', sublabel: 'Overkill: a singularity swallows everything, collapses to a white dot, then detonates' },
     { value: 'petalstorm', label: 'Petal Storm ✦', sublabel: 'Overkill: blossoms burst from the button and a gale sweeps them across the screen' },
     { value: 'none', label: 'None' },
@@ -1113,6 +1199,31 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   toggle(snd.body, 'Soundscapes', 'soundscape')
   hint(snd.body, 'Rain, wind, crackling fire, night crickets, spring birds or a deep-space hum — generated live to match the scene and lighting, crossfading as the story moves. No audio files.')
   slider(snd.body, 'Soundscape volume', 'soundscapeVolume', 0, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  toggle(snd.body, 'Floating volume widget', 'soundWidget', async (next) =>
+    !next || actions.status().panelsPermission || (await actions.requestPanelsPermission()),
+  )
+  hint(snd.body, 'A small pill you can drag anywhere: turn the ambience on or off and set its volume without opening this panel. Needs the “UI panels” permission.')
+  const widgetGrant = button(buttons(snd.body), 'Allow the floating widget', async () => {
+    if (await actions.requestPanelsPermission()) store.update({ soundWidget: true })
+  }, 'secondary', I.sound)
+  const syncWidgetGrant = (st: PanelStatus) => {
+    widgetGrant.el.style.display = store.get().soundWidget && !st.panelsPermission ? '' : 'none'
+  }
+  statusSyncers.push(syncWidgetGrant)
+  syncers.push(() => syncWidgetGrant(actions.status()))
+  syncWidgetGrant(actions.status())
+  select(snd.body, 'When in the background', 'soundUnfocused', [
+    { value: 'keep', label: 'Keep playing', sublabel: 'Ambience plays at full volume when you switch windows' },
+    { value: 'dim', label: 'Dim', sublabel: 'Turns the ambience down while another window is in front' },
+    { value: 'mute', label: 'Mute', sublabel: 'Silences the ambience until you come back' },
+  ])
+  hint(snd.body, 'Dims or mutes the soundscape while you’re in another window or app, and brings it back when you return.')
+  const dimWrap = document.createElement('div')
+  snd.body.appendChild(dimWrap)
+  slider(dimWrap, 'Dim to', 'soundUnfocusedLevel', 0.05, 0.8, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  const syncDim = (s: FlairSettings) => (dimWrap.style.display = s.soundUnfocused === 'dim' ? '' : 'none')
+  syncers.push(syncDim)
+  syncDim(s0)
   const scapeStatus = document.createElement('div')
   scapeStatus.className = 'lf-status'
   snd.body.appendChild(scapeStatus)
@@ -1121,7 +1232,10 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     scapeStatus.style.display = on ? '' : 'none'
     if (!on) return
     const [sc, li] = st.soundscapeKey.split('|')
-    const what = [sc && sc !== 'off' ? tr(SCENE_LABEL[sc] ?? sc) : '', li && li !== 'none' ? tr(LIGHT_LABEL[li] ?? li) : ''].filter(Boolean).join(' · ')
+    const named = st.soundscapeAlways ? [] : [sc && sc !== 'off' ? tr(SCENE_LABEL[sc] ?? sc) : '', li && li !== 'none' ? tr(LIGHT_LABEL[li] ?? li) : '']
+    const what = [...named, ...st.soundscapeCustom.map((n) => `♫ ${n}`)]
+      .filter(Boolean)
+      .join(' · ')
     scapeStatus.textContent =
       st.soundscape === 'playing'
         ? `♪ ${tr('Playing')}: ${what}`
@@ -1132,6 +1246,232 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   statusSyncers.push(renderScape)
   syncers.push(() => renderScape(actions.status()))
   renderScape(actions.status())
+
+  // ── Your sounds ──
+  const mine = section('mysounds', 'Your sounds', I.music)
+  hint(mine.body, 'Use your own audio files: a looping ambience for any scene or lighting (or one track that always plays), and your own message and system sounds. Files stay in this browser, so other devices need their own copies, and they aren’t included in settings backups.')
+  const sl = actions.sounds
+  const upMsg = document.createElement('div')
+  upMsg.className = 'lf-status lf-snd-msg'
+  upMsg.style.display = 'none'
+  const upBtn = button(buttons(mine.body), 'Upload sounds', async () => {
+    upBtn.el.disabled = true
+    upBtn.setText('Adding…')
+    try {
+      const { added, errors } = await sl.upload()
+      const parts: string[] = []
+      if (added.length) parts.push(`${tr('Added')}: ${added.join(', ')}`)
+      parts.push(...errors)
+      upMsg.textContent = parts.join(' · ')
+      upMsg.dataset.kind = errors.length && !added.length ? 'error' : 'ok'
+      upMsg.style.display = parts.length ? '' : 'none'
+    } finally {
+      upBtn.el.disabled = false
+      upBtn.setText('Upload sounds')
+    }
+  }, 'primary', I.upload)
+  mine.body.appendChild(upMsg)
+  if (!sl.saved()) hint(mine.body, '<b>This browser won’t keep files</b> (private window or storage blocked), so they’ll be gone when you close Lumiverse.')
+  const libList = document.createElement('div')
+  libList.className = 'lf-snd-list'
+  mine.body.appendChild(libList)
+
+  const assignHead = document.createElement('div')
+  assignHead.className = 'lf-snd-sub'
+  assignHead.textContent = tr('Use a sound')
+  mine.body.appendChild(assignHead)
+  const slotOptions = () =>
+    Object.entries(SLOT_LABEL).map(([value, l]) => ({ value, label: tr(l.label), group: tr(l.group) }))
+  const soundOptions = () => [
+    { value: '', label: tr('Built-in sound'), sublabel: tr('Generated by Lumi Flair') },
+    ...sl.list().map((m) => ({ value: m.id, label: m.name, sublabel: `${fmtDuration(m.duration)} · ${fmtSize(m.size)}` })),
+  ]
+  let slot = 'always'
+  const slotSel = ctx.components.mountSelect(row(mine.body, 'For', 'fill'), {
+    value: slot,
+    options: slotOptions(),
+    ariaLabel: tr('For'),
+    searchThreshold: 99,
+    onChange: (v) => {
+      slot = v || 'always'
+      soundSel.update({ value: store.get().customSounds[slot] ?? '' })
+    },
+  })
+  handles.push(slotSel)
+  const soundSel = ctx.components.mountSelect(row(mine.body, 'Sound', 'fill'), {
+    value: s0.customSounds[slot] ?? '',
+    options: soundOptions(),
+    ariaLabel: tr('Sound'),
+    onChange: (v) => {
+      const next = { ...store.get().customSounds }
+      if (v) next[slot] = v
+      else delete next[slot]
+      store.update({ customSounds: next })
+    },
+  })
+  handles.push(soundSel)
+  const assigned = document.createElement('div')
+  assigned.className = 'lf-snd-assigned'
+  mine.body.appendChild(assigned)
+  hint(mine.body, 'Ambience files loop through the soundscape (so the volume, floating widget and background dimming apply). A scene and a lighting can each have a file and play together. Interface sounds need <b>Interface sounds</b> on and play for up to 12 seconds.')
+
+  let libHandles: Array<{ destroy(): void }> = []
+  let previewing: string | null = null
+  const usedFor = (id: string) =>
+    Object.entries(store.get().customSounds)
+      .filter(([, v]) => v === id)
+      .map(([k]) => tr(SLOT_LABEL[k]?.label ?? k))
+
+  const renderLibrary = () => {
+    for (const h of libHandles) h.destroy()
+    libHandles = []
+    libList.textContent = ''
+    const items = sl.list()
+    mine.badge.textContent = items.length ? String(items.length) : ''
+    if (!items.length) {
+      const empty = document.createElement('div')
+      empty.className = 'lf-snd-empty'
+      empty.textContent = tr('No sounds yet — upload MP3, OGG, WAV, M4A or FLAC files.')
+      libList.appendChild(empty)
+      return
+    }
+    for (const m of items) {
+      const card = document.createElement('div')
+      card.className = 'lf-snd'
+      const head = document.createElement('div')
+      head.className = 'lf-snd-head'
+      const play = document.createElement('button')
+      play.type = 'button'
+      play.className = 'lf-snd-play'
+      const paintPlay = () => {
+        const on = previewing === m.id
+        play.dataset.on = on ? '1' : '0'
+        play.innerHTML = on ? I.stop : I.play
+        play.setAttribute('aria-label', on ? tr('Stop') : tr('Play'))
+        play.title = play.getAttribute('aria-label') ?? ''
+      }
+      paintPlay()
+      play.addEventListener('click', (e) => {
+        e.preventDefault()
+        if (previewing === m.id) {
+          sl.stopPreview()
+          return
+        }
+        previewing = m.id
+        renderPlayButtons()
+        sl.preview(m.id, () => {
+          if (previewing === m.id) previewing = null
+          renderPlayButtons()
+        })
+      })
+      ;(play as HTMLButtonElement & { paint?: () => void }).paint = paintPlay
+      const info = document.createElement('div')
+      info.className = 'lf-snd-info'
+      const name = document.createElement('b')
+      name.textContent = m.name
+      name.title = m.name
+      const meta = document.createElement('span')
+      const uses = usedFor(m.id)
+      meta.textContent = [fmtDuration(m.duration), fmtSize(m.size), uses.length ? `${tr('Used for')}: ${uses.join(', ')}` : tr('Not used yet')].join(' · ')
+      info.append(name, meta)
+      const del = document.createElement('button')
+      del.type = 'button'
+      del.className = 'lf-snd-del'
+      del.innerHTML = I.trash
+      del.title = tr('Delete')
+      del.setAttribute('aria-label', `${tr('Delete')} ${m.name}`)
+      del.addEventListener('click', async (e) => {
+        e.preventDefault()
+        let ok = true
+        try {
+          const res = await ctx.ui.showConfirm({
+            title: tr('Delete this sound?'),
+            message: `${m.name}${uses.length ? ` — ${tr('Used for')}: ${uses.join(', ')}` : ''}`,
+            variant: 'warning',
+            confirmLabel: tr('Delete'),
+          })
+          ok = res.confirmed
+        } catch {
+          /* no confirm dialog available: just delete */
+        }
+        if (!ok) return
+        if (previewing === m.id) sl.stopPreview()
+        const next = Object.fromEntries(Object.entries(store.get().customSounds).filter(([, v]) => v !== m.id))
+        store.update({ customSounds: next })
+        await sl.remove(m.id)
+      })
+      head.append(play, info, del)
+      const level = document.createElement('div')
+      card.append(head, level)
+      libList.appendChild(card)
+      const h = ctx.components.mountRangeSlider(level, {
+        label: tr('Level'),
+        min: 0,
+        max: 150,
+        step: 5,
+        value: Math.round(m.level * 100),
+        format: { suffix: '%', decimals: 0 },
+        onCommit: (v) => sl.setLevel(m.id, v / 100),
+      })
+      libHandles.push(h)
+    }
+  }
+  const renderPlayButtons = () => {
+    for (const b of libList.querySelectorAll<HTMLButtonElement & { paint?: () => void }>('.lf-snd-play')) b.paint?.()
+  }
+
+  const renderAssigned = () => {
+    assigned.textContent = ''
+    const cs = store.get().customSounds
+    for (const [k, id] of Object.entries(cs)) {
+      const pair = document.createElement('div')
+      pair.className = 'lf-snd-pair'
+      const missing = !sl.has(id)
+      pair.dataset.missing = missing ? '1' : '0'
+      const text = document.createElement('span')
+      const l = SLOT_LABEL[k]
+      text.append(`${tr(l?.group ?? '')} · ${tr(l?.label ?? k)} → `)
+      const b = document.createElement('b')
+      b.textContent = missing ? tr('not in this browser') : sl.list().find((m) => m.id === id)?.name ?? id
+      text.appendChild(b)
+      const x = document.createElement('button')
+      x.type = 'button'
+      x.className = 'lf-snd-del'
+      x.innerHTML = I.trash
+      x.title = tr('Use the built-in sound')
+      x.setAttribute('aria-label', x.title)
+      x.addEventListener('click', (e) => {
+        e.preventDefault()
+        const next = { ...store.get().customSounds }
+        delete next[k]
+        store.update({ customSounds: next })
+      })
+      pair.append(text, x)
+      assigned.appendChild(pair)
+    }
+  }
+
+  const renderMine = () => {
+    soundSel.update({ options: soundOptions(), value: store.get().customSounds[slot] ?? '' })
+    renderLibrary()
+    renderAssigned()
+  }
+  let lastAssign = JSON.stringify(s0.customSounds)
+  syncers.push((st) => {
+    const key = JSON.stringify(st.customSounds)
+    if (key === lastAssign) return
+    lastAssign = key
+    renderMine()
+  })
+  const offSounds = sl.onChange(renderMine)
+  handles.push({
+    destroy: () => {
+      offSounds()
+      sl.stopPreview()
+      for (const h of libHandles) h.destroy()
+    },
+  })
+  renderMine()
 
   // ── Share ──
   const share = section('share', 'Share', I.share)

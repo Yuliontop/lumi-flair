@@ -33,6 +33,15 @@ interface Drop {
   age: number
   life: number
   splash?: boolean
+  /** water: an expanding ring where a drop hit the composer */
+  ripple?: boolean
+  /** water: break-up generation (0 = the solid column out of the nozzle) */
+  gen?: number
+  /** water: age at which this clump tears into smaller ones */
+  splitAt?: number
+  /** water: the sibling it just tore away from (a thin neck joins them briefly) */
+  link?: Drop
+  dead?: boolean
 }
 
 interface Particle {
@@ -122,6 +131,10 @@ interface StreamState {
   baseR: number
   floorY: number
   palette: { body: string; edge: string; shade: string; shine: string }
+  /** Water instead of cream: a hose gush of clear water that breaks up into clumps and spray. */
+  water?: boolean
+  /** water: lean of the gush in radians (negative = towards the left) */
+  tilt?: number
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
@@ -418,6 +431,7 @@ export class FxCanvas {
 const STREAM_GRAVITY = 1900
 
 function stepStream(p: Particle, st: StreamState, dt: number) {
+  if (st.water) return stepWater(p, st, dt)
   // Emit: a pulsing column that is thick at first and thins out.
   const shouldHave = Math.min(st.total, Math.floor((p.age / st.emitFor) * st.total))
   while (st.emitted < shouldHave) {
@@ -439,7 +453,7 @@ function stepStream(p: Particle, st: StreamState, dt: number) {
       age: 0,
       life: 99,
     })
-    // Fine cream mist around the spout, fanning wider than the main column.
+    // Fine mist around the spout, fanning wider than the main column.
     if (i % 2 === 0) {
       const ma = rand(-1, 1) * (spread + 0.18)
       const mv = st.speed * rand(0.55, 0.9)
@@ -490,6 +504,7 @@ function stepStream(p: Particle, st: StreamState, dt: number) {
 }
 
 function drawStream(g: CanvasRenderingContext2D, p: Particle, st: StreamState, fade: number) {
+  if (st.water) return drawWater(g, p, st, fade)
   const pal = st.palette
   // Only the last ~25% of the effect fades, so the cream stays solid while it flies.
   const t = p.age / p.life
@@ -501,12 +516,14 @@ function drawStream(g: CanvasRenderingContext2D, p: Particle, st: StreamState, f
   g.lineCap = 'round'
   g.lineJoin = 'round'
 
+  // Drawn shape by shape on purpose: single ellipses hit the renderer's fast path,
+  // which beats merging hundreds of them into one complex path.
   const ribbon = (extra: number, style: string) => {
     g.strokeStyle = style
     g.fillStyle = style
     for (let k = 1; k < jet.length; k++) {
       const a = jet[k - 1], b = jet[k]
-      // Join neighbours that are still close: one continuous rope of cream.
+      // Join neighbours that are still close: one continuous rope of liquid.
       if (b.i - a.i > 3 || Math.hypot(a.x - b.x, a.y - b.y) > (a.r + b.r) * 2.6) continue
       g.lineWidth = Math.max(1, Math.min(a.r, b.r) * 1.9 + extra)
       g.beginPath()
@@ -537,13 +554,14 @@ function drawStream(g: CanvasRenderingContext2D, p: Particle, st: StreamState, f
 
   // Glossy highlights.
   g.fillStyle = pal.shine
+  g.globalAlpha = alpha * 0.85
   for (const d of st.drops) {
     if (d.r < 2.2) continue
-    g.globalAlpha = alpha * 0.85
     g.beginPath()
     g.ellipse(d.x - d.r * 0.32, d.y - d.r * 0.38, d.r * 0.34, d.r * 0.22, -0.6, 0, Math.PI * 2)
     g.fill()
   }
+  g.globalAlpha = alpha
 
   // A foamy cap bubbling on the nozzle while the jet is firing.
   if (p.age < st.emitFor + 0.25) {
@@ -561,6 +579,313 @@ function drawStream(g: CanvasRenderingContext2D, p: Particle, st: StreamState, f
       g.fill()
     }
   }
+  g.globalAlpha = 1
+}
+
+// ── Water gush (Splash) ───────────────────────────────────────────────────
+//
+// A hose-like gush: a solid column leaves the button, tears into big clumps,
+// and every clump keeps tearing into smaller drops as it flies — so the jet
+// is thick near the button and thins into a fine spray the farther it goes.
+// Drawn as clear water: a faint tinted body, a darker rim and bright highlights.
+
+/** Air drag per second for a drop of radius r: big clumps barely slow, spray hangs. */
+const waterDrag = (r: number) => 2.6 / Math.max(0.8, r)
+
+function waterChild(d: Drop, scale: number, side: number, kick: number, gen: number): Drop {
+  const sp = Math.hypot(d.vx, d.vy) || 1
+  // Torn sideways off the flight direction, a little slower or faster.
+  const nx = -d.vy / sp
+  const ny = d.vx / sp
+  const f = rand(0.93, 1.03)
+  const off = d.r * 0.35 * side
+  return {
+    x: d.x + nx * off,
+    y: d.y + ny * off,
+    vx: d.vx * f + nx * kick * side,
+    vy: d.vy * f + ny * kick * side,
+    r: d.r * scale,
+    i: d.i,
+    age: 0,
+    life: 99,
+    gen,
+    splitAt: rand(0.2, 0.36) * (1 + gen * 0.4),
+  }
+}
+
+function stepWater(p: Particle, st: StreamState, dt: number) {
+  const tilt = st.tilt ?? 0
+  // Emit the column. Each drop is placed where it would be had it left the
+  // nozzle at its exact moment, so the column is smooth at any frame rate.
+  const shouldHave = Math.min(st.total, Math.floor((p.age / st.emitFor) * st.total))
+  while (st.emitted < shouldHave) {
+    const i = st.emitted++
+    const t = i / st.total
+    const born = t * st.emitFor
+    const late = Math.max(0, p.age - born)
+    // Pressure: a hard opening surge, a pulsing gush, then the tap closes and it sputters out.
+    const surge = 0.86 + 0.14 * Math.min(1, t / 0.08)
+    const close = t > 0.72 ? 1 - 0.5 * Math.pow((t - 0.72) / 0.28, 1.4) : 1
+    const pulse = 0.95 + 0.05 * Math.sin(t * Math.PI * 9)
+    const v = st.speed * surge * close * pulse * rand(0.995, 1.005)
+    // The hose sways a little in the hand; the column itself stays tight.
+    const a = tilt + Math.sin(born * 6.5) * 0.06 + rand(-0.005, 0.005)
+    const vx = Math.sin(a) * v
+    const vy = -Math.cos(a) * v
+    st.drops.push({
+      x: p.x + vx * late,
+      y: p.y + vy * late + 0.5 * STREAM_GRAVITY * late * late,
+      vx,
+      vy: vy + STREAM_GRAVITY * late,
+      r: st.baseR * rand(0.97, 1.03) * (close * 0.6 + 0.4),
+      i,
+      age: late,
+      life: 99,
+      gen: 0,
+      // The column holds together for a stretch before it tears into clumps.
+      splitAt: rand(0.16, 0.3),
+    })
+  }
+
+  const next: Drop[] = []
+  for (const d of st.drops) {
+    d.age += dt
+    if (d.age >= d.life) {
+      d.dead = true
+      continue
+    }
+    if (d.ripple) {
+      next.push(d)
+      continue
+    }
+    const gen = d.gen ?? 3
+    // Break-up: a clump tears in two (plus a little spray), each piece smaller and spreading wider.
+    // The column always tears; after that only some clumps split again, so big ones survive.
+    if (!d.splash && gen < 2 && d.splitAt !== undefined && d.age >= d.splitAt && d.r > 3 && (gen === 0 || (d.i & 1) === 0)) {
+      d.dead = true
+      // The column gathers into big clumps: every third slice takes its neighbours' water.
+      if (gen === 0 && d.i % 3 !== 0) {
+        if (d.i % 3 === 1) {
+          const sp = waterChild(d, rand(0.18, 0.3), Math.random() < 0.5 ? 1 : -1, rand(110, 240), 3)
+          sp.i = -2
+          next.push(sp)
+        }
+        continue
+      }
+      const big = gen === 0 ? 1.4 : 1
+      const kick = rand(30, 90) * (1 + gen * 0.8)
+      const side = Math.random() < 0.5 ? 1 : -1
+      const a = waterChild(d, rand(0.72, 0.82) * big, side, kick, gen + 1)
+      const b = waterChild(d, rand(0.52, 0.64) * big, -side, kick * rand(0.8, 1.4), gen + 1)
+      a.link = b // a thin neck of water stretches between them for a moment
+      next.push(a, b)
+      if (gen === 0) {
+        const sp = waterChild(d, rand(0.18, 0.3), Math.random() < 0.5 ? 1 : -1, rand(110, 240), 3)
+        sp.i = -2
+        next.push(sp)
+      }
+      continue
+    }
+    // Small drops feel the air far more than big clumps: the spray slows and drifts.
+    const drag = Math.exp(-waterDrag(d.r) * dt)
+    d.vx *= drag
+    d.vy = d.vy * drag + STREAM_GRAVITY * dt
+    d.x += d.vx * dt
+    d.y += d.vy * dt
+    if (!d.splash && d.vy > 0 && d.y >= st.floorY) {
+      d.dead = true
+      if (d.r < 2.6) continue // fine spray just vanishes
+      // A ring spreads where it lands and a few droplets bounce up.
+      next.push({ x: d.x, y: st.floorY, vx: 0, vy: 0, r: Math.max(2, d.r), i: -1, age: 0, life: rand(0.4, 0.65), splash: true, ripple: true })
+      const n = d.r > 5 ? 2 : 1
+      for (let k = 0; k < n; k++) {
+        next.push({ x: d.x, y: st.floorY - 1, vx: rand(-220, 220), vy: rand(-330, -110), r: d.r * rand(0.25, 0.45), i: -1, age: 0, life: rand(0.35, 0.6), splash: true, gen: 3 })
+      }
+      continue
+    }
+    next.push(d)
+  }
+  st.drops = next
+}
+
+/** Add a closed ellipse to `path` as its own sub-path, wound the same way as the column ribbons. */
+function addEllipse(path: Path2D, x: number, y: number, rx: number, ry: number, rot: number) {
+  path.moveTo(x + Math.cos(rot) * rx, y + Math.sin(rot) * rx)
+  path.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2, true)
+}
+
+/**
+ * The solid column as one smooth ribbon (an outline around the chain of drops,
+ * with round ends), so it fills and outlines as a single body of water.
+ */
+function addRibbon(path: Path2D, pts: Drop[]) {
+  const n = pts.length
+  const nx: number[] = [], ny: number[] = []
+  for (let k = 0; k < n; k++) {
+    const a = pts[Math.max(0, k - 1)], b = pts[Math.min(n - 1, k + 1)]
+    const dx = b.x - a.x, dy = b.y - a.y
+    const len = Math.hypot(dx, dy) || 1
+    nx.push(-dy / len)
+    ny.push(dx / len)
+  }
+  // Smooth the width so the column's sides run clean instead of wobbling slice to slice.
+  const r = pts.map((_, k) => (pts[Math.max(0, k - 1)].r + pts[k].r * 2 + pts[Math.min(n - 1, k + 1)].r) / 4)
+  path.moveTo(pts[0].x + nx[0] * r[0], pts[0].y + ny[0] * r[0])
+  for (let k = 1; k < n; k++) path.lineTo(pts[k].x + nx[k] * r[k], pts[k].y + ny[k] * r[k])
+  const e = pts[n - 1], ea = Math.atan2(ny[n - 1], nx[n - 1])
+  path.arc(e.x, e.y, r[n - 1], ea, ea - Math.PI, true) // round front end
+  for (let k = n - 2; k >= 0; k--) path.lineTo(pts[k].x - nx[k] * r[k], pts[k].y - ny[k] * r[k])
+  const s0 = pts[0], sa = Math.atan2(ny[0], nx[0])
+  path.arc(s0.x, s0.y, r[0], sa + Math.PI, sa, true) // round back end
+  path.closePath()
+}
+
+function drawWater(g: CanvasRenderingContext2D, p: Particle, st: StreamState, fade: number) {
+  const pal = st.palette
+  const t = p.age / p.life
+  const alpha = Math.min(1, fade * 1.6) * (t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1)
+  if (alpha <= 0) return
+
+  const drops = st.drops.filter((d) => !d.ripple)
+  // The solid column: runs of neighbouring drops that haven't torn apart yet.
+  const col = drops.filter((d) => d.gen === 0).sort((a, b) => a.i - b.i)
+  const chains: Drop[][] = []
+  let chain: Drop[] = []
+  for (let k = 0; k < col.length; k++) {
+    const a = col[k - 1], b = col[k]
+    if (a && b.i - a.i <= 2 && Math.hypot(a.x - b.x, a.y - b.y) < (a.r + b.r) * 1.6) {
+      chain.push(b)
+    } else {
+      if (chain.length) chains.push(chain)
+      chain = [b]
+    }
+  }
+  if (chain.length) chains.push(chain)
+
+  // All the water as one path: filled once and outlined once, so overlaps never
+  // stack up — the body stays see-through and the rim traces the whole mass.
+  const body = new Path2D()
+  const spray = new Path2D()
+  for (const c of chains) {
+    if (c.length > 1) addRibbon(body, c)
+    else addEllipse(body, c[0].x, c[0].y, c[0].r, c[0].r, 0)
+  }
+  for (const d of drops) {
+    if (d.gen === 0) continue
+    const sp = Math.hypot(d.vx, d.vy)
+    const stretch = 1 + Math.min(0.8, sp / 1600) // drops stretch out along their flight
+    const ang = Math.atan2(d.vy, d.vx)
+    if (d.r < 2.6) {
+      // Small drops are solid little beads (outlined, they'd read as bubbles).
+      const r = d.r * 0.85 + 0.3
+      addEllipse(spray, d.x, d.y, r * stretch, r / Math.sqrt(stretch), ang)
+      continue
+    }
+    // Big clumps wobble as they fly, like real blobs of water.
+    const wob = d.r > 3.5 ? 1 + 0.14 * Math.sin(d.age * 34 + d.i) : 1
+    addEllipse(body, d.x, d.y, d.r * stretch * wob, d.r / Math.sqrt(stretch) / wob, ang)
+    // A thin neck of water still joins a clump to the piece it just tore from.
+    const l = d.link
+    if (l && !l.dead && d.age < 0.07) {
+      const len = Math.hypot(l.x - d.x, l.y - d.y)
+      const w = Math.max(0.6, Math.min(d.r, l.r) * 0.45 * (1 - d.age / 0.07))
+      if (len > 1) addEllipse(body, (d.x + l.x) / 2, (d.y + l.y) / 2, len / 2, w, Math.atan2(l.y - d.y, l.x - d.x))
+    }
+  }
+  if (p.age < st.emitFor + 0.2) {
+    // Water bulging out of the nozzle while the gush is on.
+    const k = Math.max(0, 1 - Math.max(0, p.age - st.emitFor) / 0.2)
+    const r = st.baseR * (1.15 + 0.15 * Math.sin(p.age * 38)) * k
+    if (r > 0.5) addEllipse(body, p.x, p.y, r * 1.3, r * 0.75, 0)
+  }
+
+  g.globalCompositeOperation = 'source-over'
+  g.lineCap = 'round'
+  g.lineJoin = 'round'
+  // 1. A faint tint for the whole mass, so you can see through it.
+  g.fillStyle = pal.body
+  g.globalAlpha = alpha * 0.22
+  g.fill(body)
+  // 2. The rim, where real water looks darkest and most coloured; the spray in the same colour.
+  g.strokeStyle = pal.edge
+  g.fillStyle = pal.edge
+  g.lineWidth = 1.6
+  g.globalAlpha = alpha * 0.9
+  g.stroke(body)
+  g.fill(spray)
+
+  // Light running down the column: one smooth streak along its lit (left) side.
+  g.strokeStyle = pal.shine
+  g.globalAlpha = alpha * 0.75
+  g.lineWidth = Math.max(1, st.baseR * 0.3)
+  g.beginPath()
+  for (const c of chains) {
+    if (c.length < 3) continue
+    for (let k = 0; k < c.length; k++) {
+      const pa = c[Math.max(0, k - 1)], pb = c[Math.min(c.length - 1, k + 1)]
+      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y) || 1
+      let nx = -(pb.y - pa.y) / len, ny = (pb.x - pa.x) / len
+      if (nx > 0 || (nx === 0 && ny > 0)) (nx = -nx), (ny = -ny)
+      const o = c[k].r * 0.45
+      if (k === 0) g.moveTo(c[k].x + nx * o, c[k].y + ny * o)
+      else g.lineTo(c[k].x + nx * o, c[k].y + ny * o)
+    }
+  }
+  g.stroke()
+
+  // Ripple rings where water landed on the composer.
+  g.strokeStyle = pal.edge
+  g.lineWidth = 1.4
+  for (const [lo, hi, a] of [[0, 0.5, 0.75], [0.5, 1, 0.3]] as const) {
+    g.globalAlpha = alpha * a
+    g.beginPath()
+    for (const d of st.drops) {
+      if (!d.ripple) continue
+      const q = d.age / d.life
+      if (q < lo || q >= hi) continue
+      const rx = d.r * (1.2 + q * 5)
+      g.moveTo(d.x + rx, d.y)
+      g.ellipse(d.x, d.y, rx, rx * 0.28, 0, 0, Math.PI * 2)
+    }
+    g.stroke()
+  }
+
+  // Glassy highlights: a bright spot on the lit side and a soft refracted glint opposite.
+  g.fillStyle = pal.shine
+  for (const d of drops) {
+    // The solid column already has its own light line; spots on it just look noisy.
+    if (d.r < 2.6 || d.gen === 0) continue
+    g.globalAlpha = alpha * 0.9
+    g.beginPath()
+    g.ellipse(d.x - d.r * 0.36, d.y - d.r * 0.36, d.r * 0.36, d.r * 0.2, -0.75, 0, Math.PI * 2)
+    g.fill()
+    if (d.r < 4) continue
+    g.globalAlpha = alpha * 0.4
+    g.beginPath()
+    g.ellipse(d.x + d.r * 0.4, d.y + d.r * 0.38, d.r * 0.24, d.r * 0.1, -0.75, 0, Math.PI * 2)
+    g.fill()
+  }
+
+  // Now and then a drop catches the light and twinkles.
+  g.globalCompositeOperation = 'lighter'
+  g.fillStyle = '#ffffff'
+  g.globalAlpha = alpha * 0.9
+  g.beginPath()
+  for (const d of drops) {
+    if (d.r < 1.8 || d.gen === 0 || ((d.i * 7 + 3) & 7) !== 0) continue
+    const tw = Math.max(0, Math.sin(d.age * 22 + d.i))
+    if (tw < 0.4) continue
+    const sz = Math.min(d.r, 5) * 1.5 * tw
+    for (let n = 0; n < 8; n++) {
+      const rr = n % 2 === 0 ? sz : sz * 0.22
+      const a = (n * Math.PI) / 4
+      if (n === 0) g.moveTo(d.x + rr, d.y)
+      else g.lineTo(d.x + Math.cos(a) * rr, d.y + Math.sin(a) * rr)
+    }
+    g.closePath()
+  }
+  g.fill()
+  g.globalCompositeOperation = 'source-over'
   g.globalAlpha = 1
 }
 
@@ -1026,6 +1351,38 @@ function creamy(o: Point, c: RGB, k: number, fx: FxCanvas): Particle[] {
   ]
 }
 
+/** Splash: a hose-like gush of clear water bursts from the button, breaking into clumps and spray. */
+function splash(o: Point, c: RGB, k: number, fx: FxCanvas): Particle[] {
+  const apex = Math.min(fx.height * 0.6, 560) * (0.8 + 0.2 * Math.min(k, 1.6))
+  const speed = Math.sqrt(2 * STREAM_GRAVITY * apex)
+  const emitFor = 0.6 + 0.15 * Math.min(k, 2)
+  const flight = (2 * speed) / STREAM_GRAVITY
+  void c // water stays water-blue in every theme
+  // Lean the gush in towards the middle of the chat.
+  const tilt = (o.x > fx.width / 2 ? -1 : 1) * 0.36
+  const st: StreamState = {
+    drops: [],
+    emitted: 0,
+    total: Math.round(120 * Math.min(2, Math.max(0.5, k))),
+    emitFor,
+    speed,
+    baseR: 10 * (0.85 + 0.15 * Math.min(k, 2)),
+    floorY: o.y + 4,
+    water: true,
+    tilt,
+    palette: {
+      body: 'rgb(100, 180, 250)',
+      edge: 'rgb(74, 160, 232)',
+      shade: 'rgba(20, 60, 110, 0.35)',
+      shine: 'rgba(255, 255, 255, 1)',
+    },
+  }
+  return [
+    base({ kind: 'ring', x: o.x, y: o.y, life: 0.45, size: 2.5, maxR: 52 * k, color: 'rgba(150, 210, 255, 0.95)' }),
+    base({ kind: 'stream', x: o.x, y: o.y, life: emitFor + flight + 0.9, stream: st, color: '#e2f5ff' }),
+  ]
+}
+
 /** Timeline of the black hole (seconds), shared with the chat-warp CSS in styles.ts. */
 export const HOLE_TIMING: HoleTimeline = {
   beam: 0.32,
@@ -1176,6 +1533,9 @@ export function playSendEffect(
       break
     case 'creamy':
       fx.spawn(creamy(o, color, k, fx))
+      break
+    case 'splash':
+      fx.spawn(splash(o, color, k, fx))
       break
     case 'blackhole': {
       const c = opts.center ? fx.local(opts.center) : { x: fx.width / 2, y: fx.height * 0.42 }

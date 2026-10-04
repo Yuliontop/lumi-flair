@@ -1,6 +1,6 @@
 import type { Vault, VaultName } from './persist'
 
-export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'blackhole' | 'petalstorm' | 'none'
+export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'splash' | 'blackhole' | 'petalstorm' | 'none'
 export type BurstEffect = Exclude<SendEffect, 'none'>
 export type UserEntrance = 'pop' | 'rise' | 'none'
 export type CharacterEntrance = 'bloom' | 'none'
@@ -10,6 +10,8 @@ export type ColorSource = 'theme' | 'custom' | 'character'
 /** Restyle Lumiverse itself: off, follow the Flair Pack, or follow the speaking character's aura. */
 export type UiTheme = 'off' | 'pack' | 'character'
 export type UiThemeDepth = 'accent' | 'full'
+/** What the soundscape does while Lumiverse isn't the focused window. */
+export type SoundUnfocused = 'keep' | 'dim' | 'mute'
 
 /** A user pack (imported .flair.json or "Save my look"). Validated again by packs.ts before use. */
 export interface StoredPack {
@@ -30,10 +32,19 @@ export type SwipeTransition = 'slide' | 'fade' | 'none'
 export type TextFxFrequency = 'every' | 'often' | 'sparing'
 export type Light = 'none' | 'dawn' | 'day' | 'dusk' | 'night' | 'candle' | 'storm' | 'neon'
 
-export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'blackhole', 'petalstorm', 'none']
-export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'blackhole', 'petalstorm']
+export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm', 'none']
+export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm']
 export const SCENES: readonly Scene[] = ['off', 'snow', 'rain', 'embers', 'fireflies', 'petals', 'stars']
 export const LIGHTS: readonly Light[] = ['none', 'dawn', 'day', 'dusk', 'night', 'candle', 'storm', 'neon']
+/** Interface sounds that can be replaced with the user's own files. */
+export const UI_SOUNDS = ['send', 'receive', 'fanfare', 'achievement', 'sparkle'] as const
+/** Every place a custom sound file can be assigned. */
+export const SOUND_SLOTS: readonly string[] = [
+  'always',
+  ...SCENES.filter((s) => s !== 'off').map((s) => `scene:${s}`),
+  ...LIGHTS.filter((l) => l !== 'none').map((l) => `light:${l}`),
+  ...UI_SOUNDS.map((u) => `ui:${u}`),
+]
 
 export interface FlairSettings {
   enabled: boolean
@@ -107,6 +118,13 @@ export interface FlairSettings {
   // v0.3 — Soundscapes
   soundscape: boolean
   soundscapeVolume: number // 0 – 1
+  // v1.2 — floating volume widget (needs ui_panels) and background behaviour
+  soundWidget: boolean
+  soundWidgetPos: { x: number; y: number } | null
+  soundUnfocused: SoundUnfocused
+  soundUnfocusedLevel: number // 0.05 – 0.8, share of the volume kept when dimmed
+  /** slot (see SOUND_SLOTS) → id of a file in this browser's sound library */
+  customSounds: Record<string, string>
 
   // v0.3 — Cinematic layer
   cinematic: boolean
@@ -223,6 +241,11 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   lightDefault: 'none',
   soundscape: false,
   soundscapeVolume: 0.35,
+  soundWidget: false,
+  soundWidgetPos: null,
+  soundUnfocused: 'keep',
+  soundUnfocusedLevel: 0.3,
+  customSounds: {},
   cinematic: true,
   vignette: 0.35,
   grain: false,
@@ -251,6 +274,22 @@ function clamp(n: unknown, min: number, max: number, fallback: number): number {
 
 function pick<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
   return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback
+}
+
+function soundSlots(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!v || typeof v !== 'object') return out
+  for (const [k, id] of Object.entries(v as Record<string, unknown>)) {
+    if (SOUND_SLOTS.includes(k) && typeof id === 'string' && /^snd_[a-z0-9]{4,40}$/.test(id)) out[k] = id
+  }
+  return out
+}
+
+function point(v: unknown): { x: number; y: number } | null {
+  if (!v || typeof v !== 'object') return null
+  const { x, y } = v as Record<string, unknown>
+  if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return null
+  return { x: Math.round(Math.max(-4000, Math.min(20000, x))), y: Math.round(Math.max(-4000, Math.min(20000, y))) }
 }
 
 function bool(v: unknown, fallback: boolean): boolean {
@@ -351,6 +390,11 @@ export function normalize(raw: unknown): FlairSettings {
     lightDefault: pick(r.lightDefault, LIGHTS, d.lightDefault),
     soundscape: bool(r.soundscape, d.soundscape),
     soundscapeVolume: clamp(r.soundscapeVolume, 0, 1, d.soundscapeVolume),
+    soundWidget: bool(r.soundWidget, d.soundWidget),
+    soundWidgetPos: point(r.soundWidgetPos),
+    soundUnfocused: pick(r.soundUnfocused, ['keep', 'dim', 'mute'], d.soundUnfocused),
+    soundUnfocusedLevel: clamp(r.soundUnfocusedLevel, 0.05, 0.8, d.soundUnfocusedLevel),
+    customSounds: soundSlots(r.customSounds),
     cinematic: bool(r.cinematic, d.cinematic),
     vignette: clamp(r.vignette, 0, 1, d.vignette),
     grain: bool(r.grain, d.grain),

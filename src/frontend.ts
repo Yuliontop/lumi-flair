@@ -4,6 +4,7 @@ import {
   MAX_CUSTOM_PACKS,
   SCENES,
   SEND_EFFECTS,
+  UI_SOUNDS,
   createJsonStore,
   createSettingsStore,
   type BurstEffect,
@@ -19,7 +20,9 @@ import { hexToHsl, moodColorFor, moodPitch, parseMoodMap, timeOfDayTint } from '
 import { matchTrigger, milestoneAtOrBelow, parseTriggers } from './celebrate'
 import { exportThemePack } from './themepack'
 import { DirectorState, parseDirection } from './director'
-import { Soundscape } from './soundscape'
+import { Soundscape, type CustomBed } from './soundscape'
+import { SOUND_ACCEPT, SoundLibrary } from './soundlib'
+import { SoundWidget, SOUND_WIDGET_CSS } from './soundwidget'
 import { Cinematic, CINEMATIC_CSS, blackHoleWarpRule, cameraShakeRule } from './cinematic'
 import { AuraManager } from './aura'
 import { ChoiceManager, CHOICES_CSS } from './choices'
@@ -39,7 +42,7 @@ import { allPacks, bindCustomPacks, exportPack, importPack, packById, packFromLo
 import { PerfGovernor } from './perf'
 import { showWelcome, WELCOME_CSS } from './welcome'
 import { setLocale, tr } from './i18n'
-import { mountPanel, PANEL_CSS, type PanelStatus } from './panel'
+import { LIGHT_LABEL, mountPanel, PANEL_CSS, SCENE_LABEL, type PanelStatus, type SoundActions } from './panel'
 import { NAVIGATE_CSS, StoryNavigator } from './navigate'
 import { resolveUiTheme, themeFromColor, themeKey } from './uitheme'
 import { Vault, downloadBackup, pickBackup, type VaultName } from './persist'
@@ -122,6 +125,7 @@ export function setup(ctx: SpindleFrontendContext) {
     autoScene: new Map<string, Scene>(),
     tintPermission: false,
     injectPermission: false,
+    panelsPermission: false,
     room: 14,
     saver: false,
     lastPrefsKey: '',
@@ -141,7 +145,9 @@ export function setup(ctx: SpindleFrontendContext) {
 
   // ── Styles ──
   disposers.push(
-    ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, WELCOME_CSS, NAVIGATE_CSS].join('\n')),
+    ctx.dom.addStyle(
+      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join('\n'),
+    ),
   )
   let removeMainCss: (() => void) | null = null
   disposers.push(() => removeMainCss?.())
@@ -174,6 +180,50 @@ export function setup(ctx: SpindleFrontendContext) {
   const sound = new SoundBoard()
   const scape = new Soundscape()
   scape.onState = () => notifyStatus()
+  // The user's own sound files (kept in this browser).
+  const lib = new SoundLibrary()
+  scape.loader = (id, ac) => lib.source(id, ac)
+  lib.onChange(() => {
+    if (disposed) return
+    applySoundscape()
+    warmUiSounds()
+    notifyStatus()
+  })
+  /** A slot's file, if it exists in this browser. */
+  const customFor = (slot: string) => {
+    const id = store.get().customSounds[slot]
+    return lib.has(id) ? id : undefined
+  }
+  /** Decode replaced interface sounds ahead of time so the first one plays instantly. */
+  let warmKey = ''
+  function warmUiSounds() {
+    const s = store.get()
+    if (!s.sound) return
+    const ids = UI_SOUNDS.map((u) => customFor(`ui:${u}`)).filter((x): x is string => !!x)
+    const key = ids.join(',')
+    if (key === warmKey) return
+    warmKey = key
+    const ac = sound.context()
+    if (ac) for (const id of ids) void lib.source(id, ac).catch(() => {})
+  }
+  const chatOnScreen = () => !!document.querySelector('[data-component="ChatView"]')
+  // Floating volume widget (needs ui_panels; shown only when the user turns it on).
+  const soundWidget = new SoundWidget(ctx, {
+    settings: () => store.get(),
+    update: (patch) => store.update(patch),
+    preview: (v) => scape.setVolume(v),
+    view: () => ({
+      state: scape.state,
+      key: scape.playing,
+      backgrounded: scape.backgrounded,
+      offChat: !chatOnScreen(),
+      custom: scape.alwaysPlaying ? lib.meta(scape.customPlaying[0] ?? '')?.name ?? null : null,
+    }),
+    sceneLabel: (sc) => tr(SCENE_LABEL[sc] ?? sc),
+    lightLabel: (li) => tr(LIGHT_LABEL[li] ?? li),
+  })
+  scape.onBackground = () => soundWidget.render()
+  statusListeners.add(() => soundWidget.render())
   const cine = new Cinematic((t) => ctx.dom.createElement(t))
   cine.onThunder = () => scape.thunder(500 + Math.random() * 900)
   const auras = new AuraManager(auraStyle)
@@ -193,7 +243,9 @@ export function setup(ctx: SpindleFrontendContext) {
     fx.destroy()
     ambient.destroy()
     sound.destroy()
+    soundWidget.destroy()
     scape.destroy()
+    lib.destroy()
     cine.destroy()
     choices.clear()
     ctx.dom.uninject(overlayWrap)
@@ -264,6 +316,16 @@ export function setup(ctx: SpindleFrontendContext) {
   function playSound(kind: Chime) {
     const s = store.get()
     if (!s.enabled || !s.sound) return
+    const id = customFor(`ui:${kind}`)
+    const ac = id ? sound.context() : null
+    if (id && ac) {
+      // The user's own file; fall back to the built-in chime if it can't be played.
+      void lib
+        .source(id, ac)
+        .then((src) => (src ? sound.playFile(src, s.soundVolume) : sound.play(kind, s.soundVolume)))
+        .catch(() => sound.play(kind, s.soundVolume))
+      return
+    }
     sound.play(kind, s.soundVolume, moodPitch(currentMood()?.label ?? null))
   }
 
@@ -327,7 +389,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const existing = overlay.querySelectorAll('.lf-unlock').length
     el.style.top = `${18 + existing * 84}px`
     overlay.appendChild(el)
-    playSound('sparkle')
+    playSound('achievement')
     setTimeout(() => el.remove(), 5000)
   }
 
@@ -509,8 +571,18 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function applySoundscape() {
     const s = store.get()
-    const onScreen = !!document.querySelector('[data-component="ChatView"]')
-    scape.set(s.enabled && s.soundscape && onScreen, sceneRaw(), resolveLight(), s.soundscapeVolume)
+    scape.setBackground(s.soundUnfocused, s.soundUnfocusedLevel)
+    const scene = sceneRaw()
+    const light = resolveLight()
+    const bed: CustomBed = {
+      always: customFor('always'),
+      scene: scene !== 'off' ? customFor(`scene:${scene}`) : undefined,
+      light: light !== 'none' ? customFor(`light:${light}`) : undefined,
+    }
+    bed.rev = [bed.always, bed.scene, bed.light].map((id) => (id ? lib.meta(id)?.level ?? 1 : '')).join(',')
+    scape.set(s.enabled && s.soundscape && chatOnScreen(), scene, light, s.soundscapeVolume, bed)
+    warmUiSounds()
+    soundWidget.sync(s.enabled && s.soundWidget && state.panelsPermission)
   }
 
   function applyAll() {
@@ -547,6 +619,7 @@ export function setup(ctx: SpindleFrontendContext) {
       activeScene: ambient.current,
       tintPermission: state.tintPermission,
       injectPermission: state.injectPermission,
+      panelsPermission: state.panelsPermission,
       directed: dir ? [dir.scene, dir.light, dir.mood].filter(Boolean).join(' · ') : null,
       light: resolveLight(),
       saver: state.saver || perf.saving,
@@ -557,6 +630,8 @@ export function setup(ctx: SpindleFrontendContext) {
       uiThemeLabel: state.themeLabel,
       charAura: state.charAura,
       soundscapeKey: scape.playing,
+      soundscapeCustom: scape.customPlaying.map((id) => lib.meta(id)?.name ?? '').filter(Boolean),
+      soundscapeAlways: scape.alwaysPlaying,
     }
   }
   function notifyStatus() {
@@ -1127,23 +1202,85 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   // ── Permissions ──
-  async function requestPermission(perm: 'interceptor' | 'app_manipulation', reason: string): Promise<boolean> {
+  type Perm = 'interceptor' | 'app_manipulation' | 'ui_panels'
+  const hasPerm = (perm: Perm) =>
+    perm === 'interceptor' ? state.injectPermission : perm === 'app_manipulation' ? state.tintPermission : state.panelsPermission
+  function adoptGranted(granted: string[]) {
+    state.tintPermission = granted.includes('app_manipulation')
+    state.injectPermission = granted.includes('interceptor')
+    state.panelsPermission = granted.includes('ui_panels')
+  }
+  async function requestPermission(perm: Perm, reason: string): Promise<boolean> {
     try {
-      const granted = await ctx.permissions.request([perm], { reason })
-      if (perm === 'interceptor') state.injectPermission = granted.includes(perm)
-      else state.tintPermission = granted.includes(perm)
+      adoptGranted(await ctx.permissions.request([perm], { reason }))
     } catch {
       /* declined */
     }
     syncPrefs(true)
     syncTint()
+    applySoundscape()
     notifyStatus()
-    return perm === 'interceptor' ? state.injectPermission : state.tintPermission
+    return hasPerm(perm)
   }
   const requestInject = () =>
     requestPermission('interceptor', tr('Lumi Flair adds a short note to each prompt so the AI uses text effects, directs scenes and offers choices.'))
   const requestTint = () =>
     requestPermission('app_manipulation', tr('Lumi Flair restyles Lumiverse’s colours to match your Flair Pack, the speaking character or their mood. Your saved theme is never changed — switching it off restores it.'))
+  const requestPanels = () =>
+    requestPermission('ui_panels', tr('Lumi Flair shows a small floating volume control for the ambient soundscape. You can drag it anywhere and turn it off in Flair’s Sound settings.'))
+
+  // ── Your sounds (panel) ──
+  let preview: { el: HTMLAudioElement; done: () => void; timer: ReturnType<typeof setTimeout> } | null = null
+  function stopPreview() {
+    const p = preview
+    if (!p) return
+    preview = null
+    clearTimeout(p.timer)
+    p.el.pause()
+    p.el.removeAttribute('src')
+    p.el.load()
+    p.done()
+  }
+  disposers.push(stopPreview)
+  const soundActions: SoundActions = {
+    list: () => lib.list(),
+    has: (id) => lib.has(id),
+    saved: () => lib.saved,
+    upload: async () => {
+      const added: string[] = []
+      const errors: string[] = []
+      let files: Awaited<ReturnType<typeof ctx.uploads.pickFile>> = []
+      try {
+        files = await ctx.uploads.pickFile({ accept: SOUND_ACCEPT, multiple: true })
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : String(err))
+      }
+      for (const f of files) {
+        try {
+          added.push((await lib.add(f)).name)
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err))
+        }
+      }
+      return { added, errors }
+    },
+    remove: (id) => lib.remove(id),
+    setLevel: (id, level) => void lib.update(id, { level }),
+    preview: (id, onEnd) => {
+      stopPreview()
+      void lib.url(id).then((url) => {
+        if (!url) return onEnd()
+        const el = new Audio(url)
+        el.volume = Math.min(1, 0.8 * (lib.meta(id)?.level ?? 1))
+        const p = { el, done: onEnd, timer: setTimeout(() => stopPreview(), 20_000) }
+        preview = p
+        el.onended = () => preview === p && stopPreview()
+        void el.play().catch(() => preview === p && stopPreview())
+      })
+    },
+    stopPreview,
+    onChange: (fn) => lib.onChange(fn),
+  }
 
   // ── Welcome ──
   let welcomeOpen = false
@@ -1181,10 +1318,10 @@ export function setup(ctx: SpindleFrontendContext) {
   ctx.permissions
     .getGranted()
     .then((granted) => {
-      state.tintPermission = granted.includes('app_manipulation')
-      state.injectPermission = granted.includes('interceptor')
+      adoptGranted(granted)
       syncTint()
       syncPrefs(true)
+      applySoundscape()
       notifyStatus()
     })
     .catch(() => {})
@@ -1250,6 +1387,8 @@ export function setup(ctx: SpindleFrontendContext) {
         exportTheme: () => exportThemePack(ctx, store.get()),
         requestTintPermission: requestTint,
         requestInjectPermission: requestInject,
+        requestPanelsPermission: requestPanels,
+        sounds: soundActions,
         applyPack,
         exportPack: () => {
           const s = store.get()
