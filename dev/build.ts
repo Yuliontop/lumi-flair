@@ -33,10 +33,13 @@ await Bun.write(join(out, 'frontend.js'), Bun.file(join(root, 'dist/frontend.js'
 await bundle('dev/entries/effects-entry.ts', join(out, 'effects.js'))
 await bundle('dev/entries/nav-entry.ts', join(out, 'nav.js'))
 await bundle('dev/entries/scape-entry.ts', join(out, 'scape.js'))
+await bundle('dev/entries/sfx-entry.ts', join(out, 'sfx.js'))
 await bundle('dev/entries/bench-entry.ts', join(out, 'bench.js'))
+await bundle('dev/entries/cine-entry.ts', join(out, 'cine.js'))
 
 const i = process.argv.indexOf('--baseline')
 const base = join(out, 'bench-base.js')
+const cineBase = join(out, 'cine-base.js')
 if (i > 0 && process.argv[i + 1]) {
   const dir = resolve(process.argv[i + 1])
   const effects = join(dir, 'src/effects.ts')
@@ -45,5 +48,15 @@ if (i > 0 && process.argv[i + 1]) {
   await Bun.write(tmp, `import { FxCanvas, playSendEffect } from ${JSON.stringify(effects.replace(/\\/g, '/'))}\n;(window as any).B_OLD = { FxCanvas, playSendEffect }\n`)
   await bundle(tmp.replace(root + '/', '').replace(root + '\\', ''), base)
   rmSync(tmp)
-} else if (existsSync(base)) rmSync(base)
+  // The cinematic layer (light rays and the rest) from the same checkout, for the old-vs-new comparison page (cine.html).
+  const cine = join(dir, 'src/cinematic.ts')
+  if (existsSync(cine)) {
+    await Bun.write(tmp, `import { Cinematic, CINEMATIC_CSS } from ${JSON.stringify(cine.replace(/\\/g, '/'))}\n;(window as any).C_OLD = { Cinematic, CINEMATIC_CSS }\n`)
+    await bundle(tmp.replace(root + '/', '').replace(root + '\\', ''), cineBase)
+    rmSync(tmp)
+  }
+} else {
+  if (existsSync(base)) rmSync(base)
+  if (existsSync(cineBase)) rmSync(cineBase)
+}
 console.log('Done.')

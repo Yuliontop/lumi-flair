@@ -54,6 +54,8 @@ function newest(...items: Array<Envelope | undefined>): Envelope | undefined {
 
 export class Vault {
   private canWrite: Record<Layer, boolean> = { account: false, file: false, browser: true }
+  /** Set once loadAll() has read every layer. */
+  private loaded = false
   private current = new Map<VaultName, Envelope>()
   private req = 0
   private pendingLoads = new Map<number, (files: Record<string, unknown> | null) => void>()
@@ -241,12 +243,18 @@ export class Vault {
       if (this.canWrite.file && (!fromFile || fromFile.at < best.at)) this.writeFile(name, best)
     })
     if (this.current.size) this.st.lastSavedAt = Math.max(...[...this.current.values()].map((e) => e.at))
+    this.loaded = true
     this.emit()
     return out
   }
 
   /** Save now to every layer. Callers debounce. */
   save(name: VaultName, data: unknown) {
+    // A save is stamped "now", so it would win over every older copy: never write before they have been read.
+    if (!this.loaded) {
+      console.warn('[Lumi Flair] Ignored a save made before the saved copy was read')
+      return
+    }
     const e: Envelope = { at: Date.now(), data }
     this.current.set(name, e)
     this.st.saving = true

@@ -3,6 +3,7 @@ import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 import type { VaultStatus } from './persist'
 import { LIGHTS, SCENES, TEXT_FX, type ChatScene, type FlairSettings, type SettingsStore, type TextFx } from './settings'
 import { tr } from './i18n'
+import { SFX_CUES } from './sfx-cues'
 import { allPacks, packById } from './packs'
 import { ACHIEVEMENTS } from './achievements'
 import { renderHeartbeat, type BeatPoint } from './heartbeat'
@@ -210,6 +211,8 @@ export interface PanelActions {
   previewSend(): void
   previewHover(): void
   testSound(): void
+  /** Play one AI sound cue (the user's file for it, if they assigned one). */
+  previewSfx(cue: string): void
   exportTheme(): Promise<'pack' | 'css'>
   requestTintPermission(): Promise<boolean>
   requestInjectPermission(): Promise<boolean>
@@ -268,6 +271,7 @@ export const SLOT_LABEL: Record<string, { label: string; group: string }> = {
   'ui:fanfare': { label: 'Milestone celebration', group: 'Interface' },
   'ui:achievement': { label: 'Achievement unlocked', group: 'Interface' },
   'ui:sparkle': { label: 'Screen effect / keyword', group: 'Interface' },
+  ...Object.fromEntries(SFX_CUES.map((c) => [`sfx:${c.name}`, { label: c.label, group: 'Sound effects' }])),
 }
 
 const fmtDuration = (sec: number) => {
@@ -1166,7 +1170,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   const grid = document.createElement('div')
   grid.className = 'lf-badges'
   ach.body.appendChild(grid)
-  let achKey = ''
+  let achKey: string | null = null // null: nothing drawn yet, so the locked badges show even before the first unlock
   statusSyncers.push((st) => {
     const key = Object.keys(st.unlocked).sort().join(',')
     if (key === achKey) return
@@ -1199,6 +1203,11 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   toggle(snd.body, 'Soundscapes', 'soundscape')
   hint(snd.body, 'Rain, wind, crackling fire, night crickets, spring birds or a deep-space hum — generated live to match the scene and lighting, crossfading as the story moves. No audio files.')
   slider(snd.body, 'Soundscape volume', 'soundscapeVolume', 0, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  toggle(snd.body, 'AI sound effects', 'aiSfx')
+  hint(snd.body, 'The AI can add short sound cues to a reply — a door knock, a sword clash, a heartbeat — that play as the line appears. Adds a short note (about 200 tokens) to each request, and uses the same “Add the instructions to every prompt” setting as the other AI tags. Assign your own files to any cue under “Your sounds”.')
+  slider(snd.body, 'Effects volume', 'sfxVolume', 0, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  const cueRow = buttons(snd.body)
+  for (const c of SFX_CUES) button(cueRow, c.label, () => actions.previewSfx(c.name), 'secondary', I.sound)
   toggle(snd.body, 'Floating volume widget', 'soundWidget', async (next) =>
     !next || actions.status().panelsPermission || (await actions.requestPanelsPermission()),
   )
@@ -1507,6 +1516,11 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     userRow.style.display = s.userColor === 'custom' ? '' : 'none'
   }
   syncVisibility(s0)
+
+  // Catch up with what happened before the panel existed. Several sections (achievements, the heartbeat,
+  // the hints) only draw when a status update arrives, so after a restart they would sit empty, with
+  // everything saved but nothing shown, until some unrelated event happened to fire one.
+  for (const fn of statusSyncers) fn(actions.status())
 
   tab.root.appendChild(panel)
 

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lumi Flair sound cues</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; background: #15121d; color: #ece8f5; margin: 0; padding: 28px; max-width: 640px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: #a9a3b8; margin: 0 0 18px; }
+  label { display: flex; gap: 12px; align-items: center; margin: 0 0 14px; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid #2a2438; }
+  .row b { flex: 0 0 130px; font-weight: 600; }
+  button { font: inherit; padding: 8px 20px; border-radius: 8px; border: 1px solid #6b5aa8; background: #2a2144; color: #ece8f5; cursor: pointer; }
+  button:hover { background: #372b5a; }
+  .meta { color: #8d87a0; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Sound cue audition</h1>
+<p>Click a cue to play it. Every press is a slightly different take, like a real hand on a real door.</p>
+<label>Volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+<div id="cues"></div>
+<script src="build/sfx.js"></script>
+<script>
+  // The bundle is a plain script, so its own names are already globals: read everything through `Sfx`.
+  const Sfx = window.Sfx
+  let ac = null
+  const board = new Sfx.SfxBoard(() => (ac ||= new AudioContext()))
+  const vol = document.getElementById('vol')
+
+  // In-place radix-2 FFT (n must be a power of two).
+  function fft(re, im) {
+    const n = re.length
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1
+      for (; j & bit; bit >>= 1) j ^= bit
+      j ^= bit
+      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]] }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0
+        for (let k = 0; k < h; k++) {
+          const a = i + k, b = a + h
+          const vr = re[b] * cr - im[b] * ci, vi = re[b] * ci + im[b] * cr
+          re[b] = re[a] - vr; im[b] = im[a] - vi; re[a] += vr; im[a] += vi
+          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t
+        }
+      }
+    }
+  }
+
+  // Rough tone measurements, to compare one version of a recipe with another (they don't replace listening):
+  //  bands    share of the energy in <150 | 150-300 | 300-1k | 1-3k | 3-8k | >8k Hz (percent)
+  //  centroid the spectrum's "centre of mass" in Hz: lower = darker, thicker
+  //  flat     how noise-like 2-10 kHz is (0-1): near 0 = a few pure tones (a bell), higher = dense and rough (metal on metal)
+  //  t30      seconds for the loudest 10 ms to fall by 30 dB (one-shot cues only)
+  //  body     RMS of the first 150 ms
+  function measure(d, sr) {
+    const N = 1 << 17, re = new Float64Array(N), im = new Float64Array(N)
+    for (let i = 0; i < N && i < d.length; i++) re[i] = d[i]
+    fft(re, im)
+    const bin = sr / N, edges = [0, 150, 300, 1000, 3000, 8000, sr / 2]
+    const e = [0, 0, 0, 0, 0, 0]
+    let tot = 0, cw = 0, lg = 0, ar = 0, cnt = 0
+    for (let k = 1; k < N / 2; k++) {
+      const f = k * bin, p = re[k] * re[k] + im[k] * im[k]
+      tot += p; cw += p * f
+      for (let b = 0; b < 6; b++) if (f >= edges[b] && f < edges[b + 1]) { e[b] += p; break }
+      if (f >= 2000 && f <= 10000) { lg += Math.log(p + 1e-12); ar += p; cnt++ }
+    }
+    const w = Math.round(sr * 0.01), rms = []
+    for (let i = 0; i + w <= d.length; i += w) { let s = 0; for (let j = 0; j < w; j++) s += d[i + j] * d[i + j]; rms.push(Math.sqrt(s / w)) }
+    const peak = Math.max(...rms), pi = rms.indexOf(peak)
+    let t30 = 0
+    for (let i = pi; i < rms.length; i++) if (rms[i] < peak * 0.0316) { t30 = (i - pi) * 0.01; break }
+    let body = 0, n150 = Math.round(sr * 0.15)
+    for (let i = 0; i < n150; i++) body += d[i] * d[i]
+    return { bands: e.map((x) => Math.round((100 * x) / tot)), centroid: Math.round(cw / tot), flat: Math.exp(lg / cnt) / (ar / cnt + 1e-12), t30, body: Math.sqrt(body / n150) }
+  }
+
+  // Render a cue offline and measure it (raw level, before the 0.6 master trim and the volume setting).
+  window.analyse = async (cue) => {
+    const sr = 44100
+    const oc = new OfflineAudioContext(1, sr * 3, sr)
+    const declared = Sfx.renderCue(oc, oc.destination, cue, 0)
+    const d = (await oc.startRendering()).getChannelData(0)
+    let peak = 0, last = 0, bad = false
+    for (let i = 0; i < d.length; i++) {
+      const a = Math.abs(d[i])
+      if (!Number.isFinite(d[i])) bad = true
+      if (a > peak) peak = a
+      if (a > 0.002) last = i
+    }
+    let tail = 0
+    for (let i = Math.floor((declared + 0.4) * sr); i < d.length; i++) tail = Math.max(tail, Math.abs(d[i]))
+    // A rough "how loud does it sound": the loudest 100 ms after dropping the sub-bass and the very top, which ears and small speakers barely use.
+    const oc2 = new OfflineAudioContext(1, sr * 3, sr)
+    const hp = oc2.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 250; hp.Q.value = 0.5
+    const lp = oc2.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 10000; lp.Q.value = 0.5
+    hp.connect(lp).connect(oc2.destination)
+    Sfx.renderCue(oc2, hp, cue, 0)
+    const f = (await oc2.startRendering()).getChannelData(0)
+    const w = Math.round(sr * 0.1), hop = Math.round(w / 4)
+    let loud = 0
+    for (let i = 0; i + w <= f.length; i += hop) { let s = 0; for (let j = 0; j < w; j++) s += f[i + j] * f[i + j]; loud = Math.max(loud, Math.sqrt(s / w)) }
+    return { declared, peak, audible: last / sr, tail, bad, tone: measure(d, sr), loud: 20 * Math.log10(loud + 1e-9) }
+  }
+
+  const box = document.getElementById('cues')
+  for (const c of Sfx.SFX_CUES) {
+    const row = document.createElement('div')
+    row.className = 'row'
+    row.innerHTML = '<b></b><button type="button">Play</button><span class="meta"></span>'
+    row.querySelector('b').textContent = c.label
+    row.querySelector('button').addEventListener('click', () => board.play(c.name, Number(vol.value)))
+    box.appendChild(row)
+    window.analyse(c.name).then((a) => {
+      row.querySelector('.meta').textContent = `peak ${a.peak.toFixed(2)} · ${a.audible.toFixed(2)} s`
+    })
+  }
+  window.__ready = true
+</script>
+</body>
+</html>

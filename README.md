@@ -19,7 +19,8 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Ambient scenes** | Snow, rain, embers, fireflies, petals or a starfield, drawn above your wallpaper but behind the messages. Set one per chat, or let lorebook entries and the AI switch it |
 | **Cinematic lighting** | Dawn, day, dusk, night, candle, storm and neon light, with a vignette, film grain and light rays. Storm light adds lightning |
 | **Soundscapes** | Rain, wind, crackling fire, crickets, birdsong and a space hum, generated live with no audio files. They crossfade with the scene and recover by themselves if the browser pauses audio |
-| **Volume widget** | An optional floating pill you can drag anywhere: turn the ambience on or off and set its volume without opening the panel. It shows what's playing and remembers where you left it |
+| **AI sound effects** | The AI adds short sound cues to its replies (a door knock, a sword clash, a heartbeat, thunder…) that play as the line appears. 14 cues are generated live with no audio files, and you can assign your own file to any of them. Off by default |
+| **Volume widget** | An optional floating pill you can drag anywhere: turn the ambience on or off and set its volume without opening the panel. It shows what's playing and remembers where you left it. Fold it into a small round button to keep the screen clear (it starts that way on phones) |
 | **Your own sounds** | Upload your own audio (MP3, OGG, WAV, M4A, FLAC…) and use it as a seamless looping ambience for any scene or lighting, as one track that always plays, or as your send, reply, milestone, achievement and screen-effect sounds. Files stay in your browser, with a level control and preview for each |
 | **Background sound** | Optionally dim (to a level you choose) or mute the soundscape while you're in another window or app, then fade it back when you return |
 | **Camera shake** | A short shake when a reply shouts with `big` or `shake` text |
@@ -53,7 +54,7 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Text effects** | The AI styles phrases with `shake`, `glow`, `whisper`, `rainbow`, `pulse`, `big`, `typewriter`, `fade`, `glitch` and `flicker`. Choose how often, and switch off any effect you don't like |
 | **Scene Director** | The AI sets the weather, lighting and mood as the story moves: `<flair scene="rain" light="night" mood="tense"></flair>` |
 | **Screen effects** | At big moments the AI can trigger confetti, sparkles and more |
-| **Choice chips** | When you face a decision, the AI offers 2–3 next moves as buttons under its reply |
+| **Choice chips** | When you face a decision, the AI offers 2–3 next moves as buttons under its reply. They follow swipes: each version of a reply keeps its own set |
 
 ### Fun & sharing
 
@@ -71,6 +72,7 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 |---|---|
 | **Battery saver** | Lightens effects automatically if your device struggles, and follows Lumiverse's Efficiency mode |
 | **Reduced motion** | Respects your OS setting: glows stay, movement goes |
+| **Made for phones** | Scene effects are drawn lighter on touch screens, the atmosphere steps aside while Lumiverse changes screens, and pop-ups respect the notch on iPhone home-screen apps |
 | **Translations** | Labels in 简体中文, 繁體中文, 日本語, Français and Italiano (longer hints are English for now) |
 | **Auto-save & backup** | Settings save themselves to your account and a config file. **Back up settings** and **Restore from file** are in General |
 
@@ -113,12 +115,14 @@ With **Scene Director** on, the AI is asked to set the scene when the setting or
 ```html
 <flair scene="snow" light="night" mood="melancholy"></flair>
 <flair effect="confetti"></flair>
+<flair sfx="door-knock"></flair>
 <flair-choice>Follow the footprints</flair-choice>
 ```
 
 - **`scene`** accepts snow, rain, embers, fireflies, petals, stars or off. Aliases such as `storm`, `fire`, `sakura`, `space` and `clear` also work.
 - **`light`** accepts dawn, day, dusk, night, candle, storm, neon or none.
 - **`mood`** accepts any word in your mood map.
+- **`sfx`** (needs **Sound → AI sound effects**) accepts door-knock, door-creak, door-slam, footsteps, sword-clash, glass-break, heartbeat, thunder, bell, whoosh, impact, magic, splash and fire-crackle. Near-misses such as `knock` or `rumble` are understood. A cue plays once as the reply streams in, at most a few per reply, and plays again if you swipe to a new version. It adds about 200 tokens to each request, so it is off until you switch it on.
 
 The tags are removed from the displayed message. Priority for the scene is: your chat override, then the director, then the lorebook, then your default.
 
@@ -151,7 +155,8 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 | Ambient | A canvas placed inside `ChatView` at z-index 2: above the wallpaper, scene background and text scrim (z 0–2), below the chat body (z 3). It reattaches whenever the chat view remounts |
 | One-shot animations | Short-lived CSS rules keyed by message id, so they survive React re-renders and chat-list virtualization |
 | AI screen effects | A `flair` tag interceptor (`removeFromMessage`). It only fires for replies that finished in the last 30 s, so reopening an old chat doesn't replay effects |
-| Lighting | A second layer next to the ambient canvas, with blend modes per light preset. Lightning and camera shake are short CSS animations |
+| Lighting | A second layer next to the ambient canvas, built from flat layers (a tint, a small pre-rendered light-ray image, a vignette) that only move with `transform` and `opacity`, so phones can keep them on the GPU. Lightning and camera shake are short CSS animations |
+| AI sound effects | The `flair` tag interceptor also reads `sfx="…"`. Each cue is a short WebAudio recipe (noise bursts, resonant filters and sine partials), rendered live and routed through the soundscape's master gain, so volume and background dimming apply. Your own file for a cue replaces the generated one |
 | Soundscapes | WebAudio graphs of filtered noise, LFOs and short grains. They start after your first click or key press, because browsers block audio until then |
 | Auras | Reads the colour from avatar images that are already loaded, then writes `:has(img[src=…])` rules so the colour follows the avatar through virtualization |
 | Moment Card button | Uses `ctx.ui.registerDomDecorator` on the `message_actions` mount. This works in current Lumiverse but isn't in the published types yet. If a display mode has no action pill, use the Share section or the command instead |
@@ -166,6 +171,14 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.3.1 (release v1.3):** Living Sound, plus fixes from phones.
+  - **AI sound effects:** the AI can write `<flair sfx="door-knock"></flair>` and the sound plays as the line streams in. 14 generated cues (door knock, creak and slam, footsteps, sword clash, glass break, heartbeat, thunder, bell, whoosh, impact, magic, splash, fire crackle), each with a preview button, and your own file can replace any of them under **Your sounds**. Off by default; a note of about 200 tokens is added to the prompt when it's on. Cues play once, never for old messages, at most a few per reply, again on a swipe, and follow the effects volume and background dimming.
+  - **Choice chips follow swipes:** a new swipe replaces the chips instead of piling a second set on top, and swiping back brings that version's own chips back.
+  - **Collapsible volume widget:** a chevron folds the pill into a 44 px round button that still shows whether the ambience is playing. Tap to open it, drag to move it. It starts folded on touch screens and remembers your choice.
+  - **Achievements are kept across sessions:** progress could be overwritten by an early save while the saved copy was still loading, and the panel only drew badges after another event. Both are fixed.
+  - **Achievement pop-ups clear the notch** on iPhone home-screen apps.
+  - **Lighter scene effects:** the light rays are a small pre-rendered image instead of a blended, masked layer; neon crossfades instead of animating a filter; film grain only moves when turned on; scene particles are drawn at about 30 fps on touch screens; slow light movements are stepped on touch screens; and battery saver only runs a frame loop when something is animating and recovers more calmly.
+  - **Home button on mobile:** the atmosphere and lighting step aside the moment Lumiverse starts leaving the chat, and closing a chat no longer re-injects the stylesheet or recolours the whole interface, so the page is no longer forced to reload.
 - **1.2.0:** Your own sounds, sound comfort and a new send effect.
   - **Floating volume widget:** an optional draggable pill with an on/off button, a volume slider (drag, click, arrow keys or mouse wheel) and what's playing. It remembers its position and stays on screen when the window is resized. Needs the optional `ui_panels` permission.
   - **When in the background:** keep playing, dim (5–80%, default 30%) or mute the soundscape while Lumiverse isn't the focused window. Focus moving into a frame inside Lumiverse doesn't count as leaving.

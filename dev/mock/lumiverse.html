@@ -1,4 +1,4 @@
-<!doctype html><html data-theme-mode="dark" data-glass><head><meta charset="utf-8"><style>:root {
+<!doctype html><html data-theme-mode="dark" data-glass><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root {
   /* Primary purple accent */
   --lumiverse-primary: rgba(147, 112, 219, 0.9);
   --lumiverse-primary-hover: rgba(167, 132, 239, 0.95);
@@ -1566,12 +1566,15 @@ const ctx={
     createFloatWidget(o){ if(!(window.__granted||[]).includes('ui_panels')) throw new Error('PERMISSION_DENIED: ui_panels');
       const c=mk('div'); c.className='fake-float'; c.style.cssText=`position:fixed;left:${o.initialPosition.x}px;top:${o.initialPosition.y}px;width:${o.width}px;height:${o.height}px;z-index:2147483000`; const root=mk('div'); c.appendChild(root); document.body.appendChild(c);
       const ends=[]; let drag=null;
-      c.addEventListener('pointerdown',e=>{drag={sx:e.clientX,sy:e.clientY,x:c.offsetLeft,y:c.offsetTop}; window.__dragStarted=(window.__dragStarted||0)+1});
-      const mv=e=>{if(drag){c.style.left=(drag.x+e.clientX-drag.sx)+'px';c.style.top=(drag.y+e.clientY-drag.sy)+'px'}};
-      const up=()=>{if(drag){drag=null;ends.forEach(f=>f({x:c.offsetLeft,y:c.offsetTop}))}};
+      let suppress=false;
+      c.addEventListener('pointerdown',e=>{suppress=false;drag={sx:e.clientX,sy:e.clientY,x:c.offsetLeft,y:c.offsetTop,moved:false}; window.__dragStarted=(window.__dragStarted||0)+1});
+      const mv=e=>{if(drag){ if(!drag.moved && Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<4) return; drag.moved=true; suppress=true; c.style.left=(drag.x+e.clientX-drag.sx)+'px';c.style.top=(drag.y+e.clientY-drag.sy)+'px'}};
+      const up=()=>{if(drag){const m=drag.moved; drag=null; if(m) ends.forEach(f=>f({x:c.offsetLeft,y:c.offsetTop}))}};
+      // like the host: the click that follows a drag is swallowed (a keyboard click has detail 0 and passes)
+      c.addEventListener('click',e=>{ if(suppress && e.detail!==0){ suppress=false; e.preventDefault(); e.stopPropagation() } },true);
       window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
       window.__floatCount=(window.__floatCount||0)+1; window.__float={o,c};
-      return {root,widgetId:'w1',moveTo(x,y){c.style.left=x+'px';c.style.top=y+'px'},getPosition(){return {x:c.offsetLeft,y:c.offsetTop}},setSize(){},setVisible(v){c.style.display=v?'':'none'},isVisible(){return c.style.display!=='none'},setFullscreen(){},isFullscreen(){return false},destroy(){c.remove();window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);window.__float=null},onDragEnd(f){ends.push(f);return ()=>{}}}
+      return {root,widgetId:'w1',moveTo(x,y){c.style.left=x+'px';c.style.top=y+'px'},getPosition(){return {x:c.offsetLeft,y:c.offsetTop}},setSize(w,h){c.style.width=w+'px';c.style.height=h+'px';(window.__sizes??=[]).push([w,h])},setVisible(v){c.style.display=v?'':'none'},isVisible(){return c.style.display!=='none'},setFullscreen(){},isFullscreen(){return false},destroy(){c.remove();window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);window.__float=null},onDragEnd(f){ends.push(f);return ()=>{}}}
     },
     registerDrawerTab(){const root=document.getElementById('drawer');return {root,destroy(){},activate(){window.__activated=true}}},
     registerInputBarAction(o){let click=null;const h={actionId:o.id,setLabel(){},setSubtitle(s){h.subtitle=s},setEnabled(){},onClick(f){click=f;return ()=>{}},destroy(){},click:()=>click&&click()};inputActions[o.id]=h;return h},
@@ -1581,7 +1584,7 @@ const ctx={
     async get(k){ chk(k); const r=localStorage.getItem('srv:acct:'+k); return r?JSON.parse(r):undefined },
     async set(k,v){ chk(k); if(window.__acctDown) throw new Error('down'); localStorage.setItem('srv:acct:'+k, JSON.stringify(v)); stored[k]=v },
     async remove(k){ localStorage.removeItem('srv:acct:'+k) }, watch(){return ()=>{}}, core:{get(){},watch(){return ()=>{}},list(){return []},isReady(){return true}} },
-  getActiveChat(){return {chatId:'c1',characterId:'char1'}},
+  getActiveChat(){return window.__active ?? {chatId:'c1',characterId:'char1'}},
   characters:{ async get(id){return {name:'Hazel'}} },
   permissions:{ async getGranted(){return window.__granted||[]}, async request(p){window.__granted=p;return p} },
   dom2:0, messages:{ getLatestMessageId(){return window.__latest||'m4'}, listMessageIds(){return Array.from({length:window.__msgCount},(_, i)=>'x'+i)}, registerTagInterceptor(o,h){(window.__tags??={})[o.tagName]=h;tagHandler=window.__tags.flair;window.__tagOpts=window.__tagOpts||o;return ()=>{}}, async get(id){const el=document.querySelector(`[data-message-id='${id}'][data-component]`);return el?{id,name:'Hazel',content:el.innerText,is_user:false}:null} },

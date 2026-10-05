@@ -50,9 +50,30 @@ function clickSend(): boolean {
   return true
 }
 
+const MAX_OPTIONS = 4
+const TAG_RE = /<flair-choice\b[^>]*>([\s\S]*?)<\/flair-choice>/gi
+const cleanOption = (text: string) => text.replace(/<[^>]*>/g, '').trim().slice(0, 160)
+const sameOptions = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
+
+/** The options written into a message's text: the same ones the tag interceptor delivers for it. */
+export function choicesIn(content: string): string[] {
+  const out: string[] = []
+  for (const m of content.matchAll(TAG_RE)) {
+    const clean = cleanOption(m[1] ?? '')
+    if (clean && !out.includes(clean)) out.push(clean)
+    if (out.length >= MAX_OPTIONS) break
+  }
+  return out
+}
+
 export class ChoiceManager {
-  private pending = new Map<string, string[]>() // messageId → options (collected per render pass)
-  private rendered: { messageId: string; el: Element } | null = null
+  /**
+   * messageId → the options of the variant (swipe) on screen. `fixed` once a swipe event has spelled them out from
+   * the swipe's own text: the host delivers a tag only once per message and exact text, so a swipe back to a variant
+   * we have already seen would otherwise bring nothing, and a new one would pile its options onto the old ones.
+   */
+  private pending = new Map<string, { options: string[]; fixed: boolean }>()
+  private rendered: { messageId: string; el: Element; options: string[] } | null = null
   onPick: ((text: string) => void) | null = null
   enabled = true
   sendOnPick = false
@@ -61,29 +82,45 @@ export class ChoiceManager {
 
   /** Collect an option from a tag intercept. Rendering is debounced so all options arrive first. */
   add(messageId: string, text: string) {
-    const clean = text.replace(/<[^>]*>/g, '').trim().slice(0, 160)
+    const clean = cleanOption(text)
     if (!clean) return
-    const list = this.pending.get(messageId) ?? []
-    if (!list.includes(clean)) list.push(clean)
-    this.pending.set(messageId, list.slice(0, 4))
+    const entry = this.pending.get(messageId) ?? { options: [], fixed: false }
+    if (entry.fixed) return // a swipe event already told us what this variant offers
+    if (!entry.options.includes(clean) && entry.options.length < MAX_OPTIONS) entry.options.push(clean)
+    this.pending.set(messageId, entry)
     queueMicrotask(() => setTimeout(() => this.renderFor(messageId), 30))
+  }
+
+  /**
+   * The active swipe of a message changed (the user navigated to another, one was added, filled in, edited or
+   * deleted). Its own text says what the chips are now: they replace the old ones, they don't add to them.
+   */
+  swiped(messageId: string, content: string) {
+    if (!this.enabled) return
+    this.pending.set(messageId, { options: choicesIn(content), fixed: true })
+    this.renderFor(messageId)
   }
 
   private renderFor(messageId: string) {
     if (!this.enabled) return
+    const shown = this.rendered?.messageId === messageId ? this.rendered : null
     // Only the newest message gets chips.
-    if (this.ctx.messages.getLatestMessageId() !== messageId) return
-    const options = this.pending.get(messageId)
-    if (!options?.length) return
-    if (this.rendered?.messageId === messageId && this.rendered.el.isConnected) {
-      if (this.rendered.el.querySelectorAll('.lf-choice').length === options.length) return
+    if (this.ctx.messages.getLatestMessageId() !== messageId) {
+      if (shown) this.hide()
+      return
     }
+    const options = this.pending.get(messageId)?.options ?? []
+    if (!options.length) {
+      if (shown) this.hide() // this variant offers nothing: the old chips must not stay
+      return
+    }
+    if (shown && shown.el.isConnected && sameOptions(shown.options, options)) return
     // findMessageElement returns the virtual row; put the chips below the card, inside the row,
     // so the host's injection registry replays them when the row remounts.
     const el = this.ctx.dom.findMessageElement(messageId)
     if (!el) return
     const isCard = el.matches(':is([data-component="BubbleMessage"],[data-component="MinimalMessage"])')
-    this.clear()
+    this.hide()
     const html = `<div class="lf-choices" role="group" aria-label="Suggested replies">${options
       .map((o, i) => `<button type="button" class="lf-choice" data-lf-choice="${i}"></button>`)
       .join('')}</div>`
@@ -100,18 +137,33 @@ export class ChoiceManager {
         this.onPick?.(options[i])
       })
     })
-    this.rendered = { messageId, el: wrap }
+    this.rendered = { messageId, el: wrap, options: [...options] }
   }
 
-  /** Remove chips (a new message arrived or the user sent something). */
+  /**
+   * A reply is being continued: take the chips down but keep the options it had. Its new text arrives through the
+   * tag interceptor (a continue fires no swipe event), so the options are open to additions again.
+   */
+  pause() {
+    this.hide()
+    for (const entry of this.pending.values()) entry.fixed = false
+  }
+
+  /** Take the chips down but keep what we know. */
+  hide() {
+    const r = this.rendered
+    if (!r) return
+    this.rendered = null
+    this.ctx.dom.uninject(r.el)
+    // The host remembers injections and puts them back when a row remounts. If one of those replays is already
+    // queued it would bring this old set back on top of the new one, so leave nothing in it to show.
+    r.el.replaceChildren()
+    ;(r.el as HTMLElement).hidden = true
+  }
+
+  /** Remove the chips and forget their options (a new message arrived, the user sent something, the chat changed). */
   clear() {
-    if (this.rendered) {
-      this.ctx.dom.uninject(this.rendered.el)
-      this.rendered = null
-    }
-  }
-
-  forget(messageId: string) {
-    this.pending.delete(messageId)
+    this.hide()
+    this.pending.clear()
   }
 }

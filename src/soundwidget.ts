@@ -2,6 +2,10 @@
  * Floating soundscape widget: a small draggable pill (Lumiverse float widget,
  * needs the `ui_panels` permission) with an on/off button, a volume slider and
  * what's playing. Drag it by the grip or the label; it remembers where it was left.
+ *
+ * It collapses to a single round button so it doesn't clutter the screen (on a phone that is how it starts):
+ * tap the button to open the pill, the chevron at the pill's end to fold it away. The collapsed state is
+ * remembered, and so is where each was left.
  */
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 import type { FlairSettings } from './settings'
@@ -32,8 +36,10 @@ export interface SoundWidgetDeps {
   lightLabel(light: string): string
 }
 
-const W = 256
+/** The pill (open) and the round button (collapsed), in px. */
+const W = 288
 const H = 52
+const DOT = 44
 
 const ICON_ON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path class="lf-sw-w1" d="M15.5 8.5a5 5 0 0 1 0 7"/><path class="lf-sw-w2" d="M19 5a10 10 0 0 1 0 14"/></svg>'
@@ -41,6 +47,8 @@ const ICON_OFF =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>'
 const GRIP =
   '<svg viewBox="0 0 8 20" width="8" height="20" fill="currentColor" aria-hidden="true"><circle cx="2" cy="4" r="1.3"/><circle cx="6" cy="4" r="1.3"/><circle cx="2" cy="10" r="1.3"/><circle cx="6" cy="10" r="1.3"/><circle cx="2" cy="16" r="1.3"/><circle cx="6" cy="16" r="1.3"/></svg>'
+const FOLD =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>'
 
 export const SOUND_WIDGET_CSS = `
 .lf-sw,.lf-sw *{box-sizing:border-box;margin:0;padding:0;text-align:left;line-height:normal;letter-spacing:normal;text-transform:none;text-indent:0;float:none}
@@ -77,12 +85,32 @@ export const SOUND_WIDGET_CSS = `
 .lf-sw .lf-sw-slider:active .lf-sw-thumb{transform:scale(1.15)}
 .lf-sw[data-on="0"] .lf-sw-slider{opacity:.55}
 .lf-sw .lf-sw-pct{display:block;flex:none;width:36px;text-align:right;font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;color:var(--lumiverse-text-dim,#ccc);white-space:nowrap}
+.lf-sw .lf-sw-fold{flex:none;width:28px;height:28px;min-width:0;min-height:0;max-width:none;padding:0;border:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;box-shadow:none;outline:none;font:inherit;background:var(--lumiverse-fill,rgba(255,255,255,.08));color:var(--lumiverse-text-dim,#ccc);transition:background .15s}
+.lf-sw .lf-sw-fold svg{display:block;flex:none;width:16px;height:16px;min-width:0}
+.lf-sw[data-anchor="l"] .lf-sw-fold svg{transform:scaleX(-1)}
+.lf-sw .lf-sw-fold:hover{background:var(--lumiverse-fill-subtle,rgba(255,255,255,.14))}
+.lf-sw .lf-sw-fold:focus-visible,.lf-sw .lf-sw-dot:focus-visible{outline:2px solid var(--lumiverse-primary,#9370db);outline-offset:2px}
+.lf-sw .lf-sw-dot{display:none}
+.lf-sw[data-collapsed="1"]{width:${DOT}px;height:${DOT}px;padding:0;gap:0;border-radius:50%;justify-content:center;cursor:pointer}
+.lf-sw[data-collapsed="1"] > :not(.lf-sw-dot){display:none}
+.lf-sw[data-collapsed="1"] .lf-sw-dot{display:flex;flex:none;width:100%;height:100%;min-width:0;min-height:0;max-width:none;padding:0;border:0;border-radius:50%;
+  align-items:center;justify-content:center;cursor:pointer;box-shadow:none;outline:none;font:inherit;background:transparent;color:var(--lumiverse-text-muted,#bbb)}
+.lf-sw[data-collapsed="1"] .lf-sw-dot svg{display:block;flex:none;width:20px;height:20px;min-width:0}
+.lf-sw[data-collapsed="1"][data-on="1"]{background:var(--lumiverse-primary,#9370db);border-color:transparent}
+.lf-sw[data-collapsed="1"][data-on="1"] .lf-sw-dot{color:var(--lumiverse-primary-contrast,#fff)}
+.lf-sw[data-collapsed="1"][data-on="1"][data-state="playing"] .lf-sw-w1,.lf-sw[data-collapsed="1"][data-on="1"][data-state="playing"] .lf-sw-w2{animation:lf-sw-wave 1.6s ease-in-out infinite}
+.lf-sw[data-collapsed="1"][data-on="1"][data-state="playing"] .lf-sw-w2{animation-delay:.2s}
 `
 
 export class SoundWidget {
   private w: FloatWidget | null = null
   private el: HTMLElement | null = null
   private btn: HTMLButtonElement | null = null
+  /** The round button the widget is reduced to when collapsed. */
+  private dot: HTMLButtonElement | null = null
+  private fold: HTMLButtonElement | null = null
+  private collapsed = false
   private label: HTMLElement | null = null
   private range: HTMLElement | null = null
   /** Slider value, 0–100. */
@@ -117,17 +145,37 @@ export class SoundWidget {
     return true
   }
 
+  /** The size of whichever shape it is in. */
+  private dims() {
+    return this.collapsed ? { w: DOT, h: DOT } : { w: W, h: H }
+  }
+
+  /** Collapsed when the user said so; otherwise a touch screen starts with just the button, a desktop with the pill. */
+  private wantCollapsed(): boolean {
+    const c = this.deps.settings().soundWidgetCollapsed
+    if (typeof c === 'boolean') return c
+    return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+  }
+
   private defaultPos() {
     // Top-right, clear of the header and the composer.
-    return { x: Math.max(12, window.innerWidth - W - 24), y: 72 }
+    const d = this.dims()
+    return { x: Math.max(12, window.innerWidth - d.w - (this.collapsed ? 12 : 24)), y: 72 }
+  }
+
+  /** Which end of the screen the widget sits nearer, so the chevron points the way it folds. */
+  private anchor(p: { x: number; y: number }, d = this.dims()): 'l' | 'r' {
+    return p.x + d.w / 2 > window.innerWidth / 2 ? 'r' : 'l'
   }
 
   private create() {
+    this.collapsed = this.wantCollapsed()
     const saved = this.deps.settings().soundWidgetPos
     const pos = this.clamp(saved ?? this.defaultPos())
+    const d = this.dims()
     const w = this.ctx.ui.createFloatWidget({
-      width: W,
-      height: H,
+      width: d.w,
+      height: d.h,
       initialPosition: pos,
       snapToEdge: false,
       tooltip: tr('Ambience volume'),
@@ -214,14 +262,38 @@ export class SoundWidget {
     const pct = document.createElement('span')
     pct.className = 'lf-sw-pct'
 
-    // The button and slider handle their own pointer gestures; don't let them drag the widget.
-    for (const ctl of [btn, range]) {
+    // Folds the pill away into the round button.
+    const fold = document.createElement('button')
+    fold.type = 'button'
+    fold.className = 'lf-sw-fold'
+    fold.innerHTML = FOLD
+    fold.title = tr('Collapse')
+    fold.setAttribute('aria-label', tr('Collapse'))
+    fold.setAttribute('aria-expanded', 'true')
+    fold.addEventListener('click', (e) => this.setCollapsed(true, e.detail === 0))
+
+    // The collapsed widget: one round button that opens the pill. Unlike the pill's controls it may be dragged
+    // (the host drags from a button and then swallows the click that follows a drag), so it isn't shielded below.
+    const dot = document.createElement('button')
+    dot.type = 'button'
+    dot.className = 'lf-sw-dot'
+    dot.title = tr('Show ambience volume')
+    dot.setAttribute('aria-label', tr('Show ambience volume'))
+    dot.setAttribute('aria-expanded', 'false')
+    dot.addEventListener('click', (e) => this.setCollapsed(false, e.detail === 0))
+
+    // The buttons and slider handle their own pointer gestures; don't let them drag the widget.
+    for (const ctl of [btn, range, fold]) {
       for (const ev of ['pointerdown', 'mousedown', 'touchstart'] as const) ctl.addEventListener(ev, (e) => e.stopPropagation())
     }
 
-    el.append(grip, btn, mid, pct)
+    el.dataset.collapsed = this.collapsed ? '1' : '0'
+    el.dataset.anchor = this.anchor(pos)
+    el.append(grip, btn, mid, pct, fold, dot)
     w.root.appendChild(el)
     this.el = el
+    this.dot = dot
+    this.fold = fold
     this.btn = btn
     this.label = label
     this.range = range
@@ -230,15 +302,16 @@ export class SoundWidget {
     this.unDrag = w.onDragEnd((p) => {
       const c = this.clamp(p)
       if (c.x !== p.x || c.y !== p.y) w.moveTo(c.x, c.y)
+      el.dataset.anchor = this.anchor(c) // dragged to the other side of the screen: the chevron turns to point the way it folds
       this.deps.update({ soundWidgetPos: c })
     })
     window.addEventListener('resize', this.onResize)
   }
 
-  /** Keep the whole pill inside the window (it may have been left on a bigger screen). */
-  private clamp(p: { x: number; y: number }) {
-    const maxX = Math.max(0, window.innerWidth - W - 4)
-    const maxY = Math.max(0, window.innerHeight - H - 4)
+  /** Keep the whole widget inside the window (it may have been left on a bigger screen). */
+  private clamp(p: { x: number; y: number }, d = this.dims()) {
+    const maxX = Math.max(0, window.innerWidth - d.w - 4)
+    const maxY = Math.max(0, window.innerHeight - d.h - 4)
     return { x: Math.round(Math.max(4, Math.min(maxX, p.x))), y: Math.round(Math.max(4, Math.min(maxY, p.y))) }
   }
 
@@ -247,6 +320,31 @@ export class SoundWidget {
     const p = this.w.getPosition()
     const c = this.clamp(p)
     if (c.x !== p.x || c.y !== p.y) this.w.moveTo(c.x, c.y)
+    if (this.el) this.el.dataset.anchor = this.anchor(c)
+  }
+
+  /**
+   * Fold the pill into the round button, or open it again. The end nearer the screen edge stays where it is and the
+   * vertical middle too, so the button turns into the pill (and back) on the spot instead of jumping.
+   */
+  private setCollapsed(next: boolean, keyboard = false) {
+    const { w, el } = this
+    if (!w || !el || next === this.collapsed) return
+    const from = this.dims()
+    const p = w.getPosition()
+    const side = this.anchor(p, from)
+    this.collapsed = next
+    const to = this.dims()
+    const c = this.clamp({ x: side === 'r' ? p.x + from.w - to.w : p.x, y: p.y + from.h / 2 - to.h / 2 }, to)
+    el.dataset.collapsed = next ? '1' : '0'
+    el.dataset.anchor = side
+    w.setSize(to.w, to.h)
+    w.moveTo(c.x, c.y)
+    this.deps.update({ soundWidgetCollapsed: next, soundWidgetPos: c })
+    this.render()
+    // From the keyboard, hand the focus to the control that took over, so it doesn't land on something now hidden.
+    // (A tap or click needs none, and would only leave a focus ring behind.)
+    if (keyboard) (next ? this.dot : this.fold)?.focus({ preventScroll: true })
   }
 
   /** Move the slider; `commit` saves the setting, otherwise the volume is only previewed. */
@@ -287,6 +385,7 @@ export class SoundWidget {
     el.dataset.on = on ? '1' : '0'
     el.dataset.state = v.state
     btn.innerHTML = on && s.soundscapeVolume > 0 ? ICON_ON : ICON_OFF
+    if (this.dot) this.dot.innerHTML = btn.innerHTML
     btn.setAttribute('aria-pressed', String(on))
     btn.title = on ? tr('Turn ambience off') : tr('Turn ambience on')
     btn.setAttribute('aria-label', btn.title)
@@ -322,7 +421,7 @@ export class SoundWidget {
       /* already gone (permission revoked) */
     }
     this.w = null
-    this.el = this.btn = this.label = this.range = this.pct = null
+    this.el = this.btn = this.dot = this.fold = this.label = this.range = this.pct = null
     this.dragging = false
   }
 }

@@ -1,6 +1,24 @@
 // @bun
+// src/sfx-cues.ts
+var SFX_CUES = [
+  { name: "door-knock", label: "Door knock", use: "someone knocks" },
+  { name: "door-creak", label: "Door creak", use: "a door or hinge creaks" },
+  { name: "door-slam", label: "Door slam", use: "a door slams" },
+  { name: "footsteps", label: "Footsteps", use: "someone walks or approaches" },
+  { name: "sword-clash", label: "Sword clash", use: "blades meet" },
+  { name: "glass-break", label: "Glass break", use: "glass shatters" },
+  { name: "heartbeat", label: "Heartbeat", use: "fear, tension, a charged moment" },
+  { name: "thunder", label: "Thunder", use: "thunder rolls" },
+  { name: "bell", label: "Bell", use: "a bell tolls" },
+  { name: "whoosh", label: "Whoosh", use: "something swings or rushes past" },
+  { name: "impact", label: "Impact", use: "a punch or heavy blow lands" },
+  { name: "magic", label: "Magic", use: "a spell is cast" },
+  { name: "splash", label: "Splash", use: "something hits water" },
+  { name: "fire-crackle", label: "Fire crackle", use: "a fire crackles" }
+];
+
 // src/backend.ts
-var DEFAULT_PREFS = { frequency: "every", textEffects: true, aiEffects: true, sceneDirector: true, choices: true, autoInject: true, disabledFx: [] };
+var DEFAULT_PREFS = { frequency: "every", textEffects: true, aiEffects: true, sceneDirector: true, choices: true, sfx: false, autoInject: true, disabledFx: [] };
 var MARKER = "[Lumi Flair";
 var EFFECTS = [
   ["shake", "shouting, fear, anger, trembling, impacts"],
@@ -40,6 +58,10 @@ function buildInstructions(p) {
   if (p.choices) {
     parts.push(`${intro("choices")}When the user's character faces a meaningful decision, end the reply with 2 or 3 short options written from the user's point of view, each in its own tag: <flair-choice>Follow her into the forest</flair-choice>. Keep each under 10 words and make them genuinely different. Skip it when there is no real decision. Never decide for the user.`);
   }
+  if (p.sfx) {
+    const cues = SFX_CUES.map((c) => `${c.name} (${c.use})`).join(", ");
+    parts.push(`${intro("sound effects")}Sound effects: when something in the scene makes a distinct sound the reader should hear, put a sound cue at the START of the paragraph where it happens: <flair sfx="door-knock"></flair>. Cues: ${cues}. Use only these names, always write the closing tag, and use at most 3 cues per reply; most replies need none. The reader never sees the tag; it plays the sound.`);
+  }
   return parts.join(`
 `);
 }
@@ -76,7 +98,7 @@ spindle.commands.onInvoked((commandId) => {
   spindle.sendToFrontend({ type: "command", id: commandId });
 });
 var VAULT_FILES = new Set(["settings", "achievements", "heartbeat"]);
-var VERSION = "1.2.0";
+var VERSION = "1.3.1";
 async function vaultLoad(req, names, userId) {
   const files = {};
   const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && VAULT_FILES.has(n)) : [];
@@ -233,6 +255,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       aiEffects: msg.aiEffects !== false,
       sceneDirector: msg.sceneDirector !== false,
       choices: msg.choices !== false,
+      sfx: msg.sfx === true,
       autoInject: msg.autoInject === true,
       disabledFx: Array.isArray(msg.disabledFx) ? msg.disabledFx.filter((fx) => typeof fx === "string" && KNOWN_FX.has(fx)) : []
     };
@@ -276,7 +299,7 @@ function syncInterceptor() {
   if (want && !interceptorDisposer) {
     interceptorDisposer = spindle.registerInterceptor(async (messages, context) => {
       const prefs = prefsByUser.get(context.userId) ?? (prefsByUser.size === 0 ? DEFAULT_PREFS : null);
-      if (!prefs?.autoInject || !prefs.textEffects && !prefs.aiEffects && !prefs.sceneDirector && !prefs.choices)
+      if (!prefs?.autoInject || !prefs.textEffects && !prefs.aiEffects && !prefs.sceneDirector && !prefs.choices && !prefs.sfx)
         return messages;
       if (context.generationType === "impersonate" || context.generationType === "quiet")
         return messages;

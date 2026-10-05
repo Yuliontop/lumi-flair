@@ -16,6 +16,8 @@ import { buildCss, colorVarsCss, composerActiveCss, entranceRule, tapGlowRule, t
 import { FxCanvas, HOLE_TIMING, parseComputedColor, playBanner, playSendEffect, viewportCenter, type Point, type RGB } from './effects'
 import { AmbientCanvas, sceneFromEntries } from './ambient'
 import { SoundBoard, type Chime } from './sound'
+import { SfxBoard } from './sfx'
+import { cueName } from './sfx-cues'
 import { hexToHsl, moodColorFor, moodPitch, parseMoodMap, timeOfDayTint } from './palette'
 import { matchTrigger, milestoneAtOrBelow, parseTriggers } from './celebrate'
 import { exportThemePack } from './themepack'
@@ -30,7 +32,6 @@ import { addPoint, HEARTBEAT_CSS, valenceForLabel, valenceForText, type BeatPoin
 import {
   ACHIEVEMENT_CSS,
   ACHIEVEMENTS,
-  EMPTY_ACHIEVEMENTS,
   normalizeAchievements,
   onMood,
   onScene,
@@ -79,7 +80,7 @@ interface WorldInfoPayload {
 }
 interface SwipePayload {
   chatId?: string
-  message?: { id?: string; swipe_id?: number }
+  message?: { id?: string; swipe_id?: number; content?: string }
   action?: string
   swipeId?: number
   previousSwipeId?: number
@@ -95,6 +96,9 @@ type DomDecoratorApi = {
 }
 
 const AI_FX_WINDOW_MS = 30_000
+/** AI sound cues: at most this many per message, and never closer together than the gap. */
+const SFX_MAX_PER_MESSAGE = 4
+const SFX_GAP_MS = 700
 const CARD = ':is([data-component="BubbleMessage"],[data-component="MinimalMessage"])[data-message-id]'
 
 export function setup(ctx: SpindleFrontendContext) {
@@ -111,7 +115,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const store = createSettingsStore(vault)
   bindCustomPacks(() => store.getBase().customPacks)
   const beats = createJsonStore<HeartbeatData>(vault, 'heartbeat', {})
-  const badges = createJsonStore<AchievementData>(vault, 'achievements', EMPTY_ACHIEVEMENTS)
+  const badges = createJsonStore<AchievementData>(vault, 'achievements', normalizeAchievements(null))
   const disposers: Array<() => void> = []
   let disposed = false
   const on = (event: string, fn: (payload: unknown) => void) => disposers.push(ctx.events.on(event, fn))
@@ -139,6 +143,12 @@ export function setup(ctx: SpindleFrontendContext) {
     pendingAiFx: new Map<string, { effect: BurstEffect; at: number }>(),
     firedAiFx: new Set<string>(),
     shaken: new Set<string>(),
+    // AI sound cues. `epoch` counts generations: a streaming delivery for a message last seen in an
+    // earlier epoch is a regenerate or swipe, so its record starts over. Old messages never replay.
+    sfxEpoch: 0,
+    sfxFired: new Map<string, { epoch: number; keys: Set<string> }>(),
+    pendingSfx: new Map<string, { items: Array<{ cue: string; key: string }>; at: number }>(),
+    sfxNextAt: 0,
   }
   const director = new DirectorState()
   const statusListeners = new Set<(s: PanelStatus) => void>()
@@ -178,6 +188,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const fx = new FxCanvas(fxEl)
   const ambient = new AmbientCanvas(ambientEl)
   const sound = new SoundBoard()
+  const sfx = new SfxBoard(() => sound.context())
   const scape = new Soundscape()
   scape.onState = () => notifyStatus()
   // The user's own sound files (kept in this browser).
@@ -257,8 +268,12 @@ export function setup(ctx: SpindleFrontendContext) {
   reducedMotion.addEventListener?.('change', onMotionChange)
   disposers.push(() => reducedMotion.removeEventListener?.('change', onMotionChange))
 
+  /** On a touch screen the light's slow movements are already taken in steps (see cinematic.ts), so only the scene's particles need watching there. */
+  const touchScreen = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+  const lightAnimating = () => cine.animating && !touchScreen()
   const perf = new PerfGovernor(
-    () => store.get().perfGovernor && (ambient.current !== 'off' || cine.el.isConnected),
+    // Only watch the frame rate while something is actually animating: a frame-counting loop of its own keeps the screen redrawing.
+    () => store.get().perfGovernor && (ambient.current !== 'off' || lightAnimating()),
     (saver) => {
       state.saver = saver
       applyAmbient()
@@ -357,20 +372,31 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   // ── Achievements ──
+  /**
+   * Update the counters with `track` (which returns the badges it earned) and unlock them. Waits for
+   * the saved progress to load first: the host replays old messages through us at startup, and
+   * counting against the empty fallback would be lost, or worse, saved over the real thing.
+   */
+  function earn(track: (data: AchievementData) => string[]) {
+    badges.whenLoaded(() => {
+      const data = badges.get()
+      const ids = track(data)
+      const s = store.get()
+      let changed = false
+      for (const id of ids) {
+        if (data.unlocked[id]) continue
+        const def = ACHIEVEMENTS.find((a) => a.id === id)
+        if (!def) continue
+        data.unlocked[id] = Date.now()
+        changed = true
+        if (s.enabled && s.achievements) showUnlock(def.icon, tr(def.title), tr(def.desc))
+      }
+      badges.set({ ...data })
+      if (changed) notifyStatus()
+    })
+  }
   function unlock(ids: string[]) {
-    const data = badges.get()
-    const s = store.get()
-    let changed = false
-    for (const id of ids) {
-      if (data.unlocked[id]) continue
-      const def = ACHIEVEMENTS.find((a) => a.id === id)
-      if (!def) continue
-      data.unlocked[id] = Date.now()
-      changed = true
-      if (s.enabled && s.achievements) showUnlock(def.icon, tr(def.title), tr(def.desc))
-    }
-    badges.set({ ...data })
-    if (changed) notifyStatus()
+    earn(() => ids)
   }
   function showUnlock(icon: string, title: string, desc: string) {
     const el = ctx.dom.createElement('div', { class: 'lf-unlock', role: 'status' })
@@ -387,7 +413,7 @@ export function setup(ctx: SpindleFrontendContext) {
     el.append(ico, body)
     // Stack below any toast already showing.
     const existing = overlay.querySelectorAll('.lf-unlock').length
-    el.style.top = `${18 + existing * 84}px`
+    el.style.setProperty('--lf-slot', String(existing))
     overlay.appendChild(el)
     playSound('achievement')
     setTimeout(() => el.remove(), 5000)
@@ -455,7 +481,8 @@ export function setup(ctx: SpindleFrontendContext) {
       aiEffects: s.enabled && s.aiEffects,
       sceneDirector: s.enabled && s.sceneDirector,
       choices: s.enabled && s.choiceChips,
-      autoInject: s.enabled && s.autoInject && (s.textEffects || s.aiEffects || s.sceneDirector || s.choiceChips),
+      sfx: s.enabled && s.aiSfx,
+      autoInject: s.enabled && s.autoInject && (s.textEffects || s.aiEffects || s.sceneDirector || s.choiceChips || s.aiSfx),
       disabledFx: s.textFxOff,
     }
     const key = JSON.stringify(prefs)
@@ -530,8 +557,17 @@ export function setup(ctx: SpindleFrontendContext) {
     return s.ambientScene
   }
 
+  /**
+   * The host is animating the chat away (the home button): its chrome carries this attribute for the ~220 ms before the
+   * route changes. iOS can kill a home-screen app that is short of memory in the middle of that, and the atmosphere
+   * (a full-screen canvas and several screen-sized layers) is the biggest thing of ours on screen, so it goes first.
+   */
+  function chatLeaving() {
+    return !!document.querySelector('[data-chat-chrome-leaving]')
+  }
+
   function resolveScene(): Scene {
-    if (!motionAllowed() || !ensureAmbientHost()) return 'off'
+    if (!motionAllowed() || !ensureAmbientHost() || chatLeaving()) return 'off'
     return sceneRaw()
   }
 
@@ -547,7 +583,7 @@ export function setup(ctx: SpindleFrontendContext) {
     ambient.set(scene, s.ambientDensity * (state.saver || perf.saving ? 0.5 : 1))
     if (scene !== state.lastScene) {
       state.lastScene = scene
-      if (scene !== 'off') unlock(onScene(badges.get(), scene))
+      if (scene !== 'off') earn((d) => onScene(d, scene))
     }
     if (scene !== 'off' && s.perfGovernor) perf.start()
     applySoundscape()
@@ -558,15 +594,33 @@ export function setup(ctx: SpindleFrontendContext) {
     const hostOk = ensureAmbientHost()
     const saving = state.saver || perf.saving
     cine.set({
-      enabled: s.enabled && s.cinematic && hostOk,
+      enabled: s.enabled && s.cinematic && hostOk && !chatLeaving(),
       light: resolveLight(),
       vignette: s.vignette,
       grain: s.grain && !saving && motionAllowed(),
       lightning: s.lightning,
       noFlash: s.noFlash,
       motion: motionAllowed(),
+      saver: saving,
     })
-    cine.el.dataset.saver = saving ? '1' : '0'
+    // Light rays, candle flicker and the like are animating too: watch the frame rate for them as well.
+    if (s.perfGovernor && lightAnimating()) perf.start()
+  }
+
+  // The home button: drop the atmosphere the moment the host starts leaving the chat (see chatLeaving).
+  if (typeof MutationObserver !== 'undefined') {
+    let wasLeaving = false
+    const leaveWatch = new MutationObserver(() => {
+      const leaving = chatLeaving()
+      if (leaving === wasLeaving) return
+      wasLeaving = leaving
+      if (disposed) return
+      if (leaving) stopComposer()
+      applyAmbient()
+      applyCinematic()
+    })
+    leaveWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-chat-chrome-leaving'] })
+    disposers.push(() => leaveWatch.disconnect())
   }
 
   function applySoundscape() {
@@ -671,6 +725,19 @@ export function setup(ctx: SpindleFrontendContext) {
       }
     }
     store.setActiveCharacter(characterId) // emits → applyAll when a profile is involved
+    if (!chatId) {
+      // Left the chat, so the home screen is being mounted. The atmosphere goes now; the whole-UI colour and
+      // theme changes wait until the page change has settled, because restyling everything in the middle of it
+      // is what a memory-starved iOS home-screen app can least afford.
+      applyAmbient()
+      applyCinematic()
+      setTimeout(() => {
+        if (disposed || state.chatId) return
+        applyColor()
+        notifyStatus()
+      }, 900)
+      return
+    }
     applyColor()
     applyAmbient()
     applyCinematic()
@@ -694,22 +761,24 @@ export function setup(ctx: SpindleFrontendContext) {
     const p = (raw ?? {}) as { chatId?: string; messageId?: string; messageIds?: string[] }
     const gone = new Set([...(p.messageIds ?? []), ...(p.messageId ? [p.messageId] : [])])
     if (!gone.size) return
-    const all = beats.get()
-    let changed = false
-    const next: typeof all = {}
-    for (const [chat, list] of Object.entries(all)) {
-      if (p.chatId && chat !== p.chatId) {
-        next[chat] = list
-        continue
+    beats.whenLoaded(() => {
+      const all = beats.get()
+      let changed = false
+      const next: typeof all = {}
+      for (const [chat, list] of Object.entries(all)) {
+        if (p.chatId && chat !== p.chatId) {
+          next[chat] = list
+          continue
+        }
+        const kept = list.filter((x) => !gone.has(x.id))
+        if (kept.length !== list.length) changed = true
+        next[chat] = kept
       }
-      const kept = list.filter((x) => !gone.has(x.id))
-      if (kept.length !== list.length) changed = true
-      next[chat] = kept
-    }
-    if (changed) {
-      beats.set(next)
-      notifyStatus()
-    }
+      if (changed) {
+        beats.set(next)
+        notifyStatus()
+      }
+    })
   })
 
   on('CHAT_SWITCHED', () => {
@@ -825,7 +894,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function setMood(chatId: string, label: string) {
     const color = moodColorFor(label, parseMoodMap(store.get().moodMap))
     state.mood.set(chatId, { label, color, at: Date.now() })
-    unlock(onMood(badges.get(), chatId, label))
+    earn((d) => onMood(d, chatId, label))
     if (chatId === state.chatId) {
       applyColor()
       notifyStatus()
@@ -842,19 +911,23 @@ export function setup(ctx: SpindleFrontendContext) {
     const tv = valenceForText(content)
     const v = lv === null ? tv : lv * 0.65 + tv * 0.35
     const p: BeatPoint = { id: messageId, i: i < 0 ? ids.length : i, v, label: fresh?.label ?? '', color: fresh?.color ?? null, t: Date.now() }
-    beats.set(addPoint(beats.get(), chatId, p))
-    notifyStatus()
+    beats.whenLoaded(() => {
+      beats.set(addPoint(beats.get(), chatId, p))
+      notifyStatus()
+    })
   }
   /** Expressions arrive just after the reply — refine the latest beat with the real mood. */
   function refineLatestBeat(chatId: string, label: string, color: string | null) {
-    const list = beats.get()[chatId]
-    const last = list?.at(-1)
-    if (!last || Date.now() - last.t > 90_000) return
-    const lv = valenceForLabel(label)
-    if (lv === null) return
-    const updated = { ...last, v: lv * 0.65 + last.v * 0.35, label, color }
-    beats.set(addPoint(beats.get(), chatId, updated))
-    notifyStatus()
+    beats.whenLoaded(() => {
+      const list = beats.get()[chatId]
+      const last = list?.at(-1)
+      if (!last || Date.now() - last.t > 90_000) return
+      const lv = valenceForLabel(label)
+      if (lv === null) return
+      const updated = { ...last, v: lv * 0.65 + last.v * 0.35, label, color }
+      beats.set(addPoint(beats.get(), chatId, updated))
+      notifyStatus()
+    })
   }
 
   // ── AI-triggered screen effects & Scene Director: <flair effect=… scene=… light=… mood=…> ──
@@ -867,6 +940,68 @@ export function setup(ctx: SpindleFrontendContext) {
     burst(effect, messageOrigin(messageId), 1.2)
     playSound('sparkle')
     unlock(['showstopper'])
+  }
+
+  // ── AI sound cues: <flair sfx="door-knock"></flair> ──
+  /** Play a cue now: the user's file for it if they assigned one, else the built-in sound. */
+  function playCue(cue: string, volume: number) {
+    const id = customFor(`sfx:${cue}`)
+    const ac = id ? sound.context() : null
+    if (id && ac) {
+      void lib
+        .source(id, ac)
+        .then((src) => (src ? sound.playFile(src, volume) : sfx.play(cue, volume)))
+        .catch(() => sfx.play(cue, volume))
+      return
+    }
+    sfx.play(cue, volume)
+  }
+
+  /** Play a cue that was seen live. Cues that arrive together (a reply that wasn't streamed) are spaced out. */
+  function fireSfx(messageId: string, cue: string, key: string) {
+    let rec = state.sfxFired.get(messageId)
+    if (!rec) {
+      rec = { epoch: state.sfxEpoch, keys: new Set() }
+      state.sfxFired.set(messageId, rec)
+      if (state.sfxFired.size > 200) state.sfxFired.delete(state.sfxFired.keys().next().value as string)
+    }
+    if (rec.keys.has(key) || rec.keys.size >= SFX_MAX_PER_MESSAGE) return
+    rec.keys.add(key)
+    const now = Date.now()
+    const at = Math.max(now, state.sfxNextAt)
+    state.sfxNextAt = at + SFX_GAP_MS
+    setTimeout(() => {
+      if (disposed) return
+      const s = store.get()
+      if (!s.enabled || !s.aiSfx) return
+      // The background level is read when the cue plays, not when it was queued.
+      const volume = s.sfxVolume * scape.focusLevel
+      if (volume > 0) playCue(cue, volume)
+    }, at - now)
+  }
+
+  function handleSfx(messageId: string, cue: string, key: string, streaming: boolean) {
+    const s = store.get()
+    if (!s.enabled || !s.aiSfx || s.sfxVolume <= 0) return
+    let rec = state.sfxFired.get(messageId)
+    // A streaming delivery for a message from an earlier generation: it's being regenerated or swiped.
+    if (streaming && rec && rec.epoch < state.sfxEpoch) {
+      state.sfxFired.delete(messageId)
+      rec = undefined
+    }
+    if (rec?.keys.has(key)) return // already played (the final render after streaming, or a re-render)
+    const at = state.recentGenerated.get(messageId)
+    if (streaming || (at !== undefined && Date.now() - at < AI_FX_WINDOW_MS)) {
+      fireSfx(messageId, cue, key)
+      return
+    }
+    // Not live: an old message being rendered (chat opened, scrolled), or a reply whose
+    // GENERATION_ENDED is still on the way. Remember it briefly in case it is the latter.
+    const pending = state.pendingSfx.get(messageId) ?? { items: [], at: 0 }
+    if (!pending.items.some((i) => i.key === key)) pending.items.push({ cue, key })
+    pending.at = Date.now()
+    state.pendingSfx.set(messageId, pending)
+    if (state.pendingSfx.size > 50) state.pendingSfx.delete(state.pendingSfx.keys().next().value as string)
   }
 
   function applyDirection(chatId: string, messageId: string, attrs: Record<string, string>) {
@@ -888,10 +1023,15 @@ export function setup(ctx: SpindleFrontendContext) {
   try {
     disposers.push(
       ctx.messages.registerTagInterceptor({ tagName: 'flair', removeFromMessage: true }, (p) => {
-        if (p.isStreaming || p.isUser || !p.messageId) return
+        if (p.isUser || !p.messageId) return
+        // Sound cues play as the reply streams in, so they run before the streaming return below.
+        const cue = cueName(p.attrs?.sfx)
+        if (cue && isActiveChat(p.chatId)) handleSfx(p.messageId, cue, p.fullMatch || cue, !!p.isStreaming)
+        if (p.isStreaming) return
         const chatId = p.chatId ?? state.chatId
         if (chatId) applyDirection(chatId, p.messageId, p.attrs ?? {})
-        const raw = (p.attrs?.effect || p.content || '').trim().toLowerCase()
+        // A tag that only carries a sound cue has no effect name: don't read its text as one.
+        const raw = (p.attrs?.effect || (p.attrs?.sfx !== undefined ? '' : p.content) || '').trim().toLowerCase()
         if (!raw || state.firedAiFx.has(p.messageId)) return
         const effect: BurstEffect = (BURST_EFFECTS as readonly string[]).includes(raw) ? (raw as BurstEffect) : 'sparkle'
         const at = state.recentGenerated.get(p.messageId)
@@ -912,10 +1052,10 @@ export function setup(ctx: SpindleFrontendContext) {
     console.warn('[Lumi Flair] Tag interceptor unavailable', err)
   }
   choices.onPick = () => {
-    const data = badges.get()
-    data.choices += 1
-    badges.set({ ...data })
-    if (data.choices >= 10) unlock(['choices_10'])
+    earn((d) => {
+      d.choices += 1
+      return d.choices >= 10 ? ['choices_10'] : []
+    })
     playSound('send')
   }
 
@@ -930,13 +1070,16 @@ export function setup(ctx: SpindleFrontendContext) {
     if (p.message.id && s.userEntrance !== 'none') animateMessage(p.message.id, s.userEntrance)
     checkTriggers(p.message.content, sendOrigin())
     checkMilestone(p.chatId ?? state.chatId ?? undefined)
-    unlock(onSent(badges.get()))
+    earn((d) => onSent(d))
   })
 
   on('GENERATION_STARTED', (raw) => {
     const p = raw as GenerationStartedPayload
+    state.sfxEpoch++
     if (!isActiveChat(p?.chatId) || p?.generationType === 'impersonate') return
-    choices.clear()
+    // A continued reply keeps the options it had; anything else starts fresh.
+    if (p?.generationType === 'continue') choices.pause()
+    else choices.clear()
     startComposer(p?.generationId ?? 'unknown')
   })
 
@@ -959,11 +1102,16 @@ export function setup(ctx: SpindleFrontendContext) {
     state.recentGenerated.set(p.messageId, now)
     for (const [id, t] of state.recentGenerated) if (now - t > AI_FX_WINDOW_MS) state.recentGenerated.delete(id)
     for (const [id, v] of state.pendingAiFx) if (now - v.at > AI_FX_WINDOW_MS) state.pendingAiFx.delete(id)
+    for (const [id, v] of state.pendingSfx) if (now - v.at > AI_FX_WINDOW_MS) state.pendingSfx.delete(id)
 
     if (!isActiveChat(p.chatId)) return
     const s = store.get()
     if (!s.enabled) return
     const messageId = p.messageId
+    // Cues from a reply that wasn't streamed: its tags were rendered before this event arrived.
+    const pendingCues = state.pendingSfx.get(messageId)
+    state.pendingSfx.delete(messageId)
+    if (pendingCues && s.aiSfx && s.sfxVolume > 0) for (const i of pendingCues.items) fireSfx(messageId, i.cue, i.key)
     if (s.characterEntrance !== 'none') animateMessage(messageId, 'bloom')
     playSound('receive')
     const pending = state.pendingAiFx.get(messageId)
@@ -1013,6 +1161,8 @@ export function setup(ctx: SpindleFrontendContext) {
 
   on('MESSAGE_SWIPED', (raw) => {
     const p = raw as SwipePayload
+    // Any swipe operation (navigated, added, filled in, edited, deleted): the suggestion chips follow the swipe on screen.
+    if (p?.message?.id && isActiveChat(p.chatId)) choices.swiped(p.message.id, p.message.content ?? '')
     const s = store.get()
     if (!s.enabled || s.swipeTransition === 'none' || p?.action !== 'navigated' || !isActiveChat(p.chatId)) return
     const id = p.message?.id
@@ -1384,6 +1534,7 @@ export function setup(ctx: SpindleFrontendContext) {
           sound.play('receive', s.soundVolume || 0.4, moodPitch(currentMood()?.label ?? null))
           setTimeout(() => sound.play('send', s.soundVolume || 0.4), 650)
         },
+        previewSfx: (cue) => playCue(cue, store.get().sfxVolume || 0.5),
         exportTheme: () => exportThemePack(ctx, store.get()),
         requestTintPermission: requestTint,
         requestInjectPermission: requestInject,

@@ -405,6 +405,8 @@ const T: Record<string, Row> = {
   'Dim to': ['调低至', '調低至', '下げる音量', 'Baisser à', 'Abbassa al'],
   'Ambience volume': ['环境音量', '環境音量', '環境音の音量', 'Volume de l’ambiance', 'Volume ambiente'],
   'Drag to move': ['拖动以移动', '拖曳以移動', 'ドラッグで移動', 'Glisser pour déplacer', 'Trascina per spostare'],
+  'Show ambience volume': ['显示环境音量', '顯示環境音量', '環境音の音量を表示', 'Afficher le volume de l’ambiance', 'Mostra il volume ambiente'],
+  'Collapse': ['收起', '收合', '折りたたむ', 'Réduire', 'Comprimi'],
   'Turn ambience off': ['关闭环境音', '關閉環境音', '環境音をオフ', 'Couper l’ambiance', 'Disattiva l’ambiente'],
   'Turn ambience on': ['开启环境音', '開啟環境音', '環境音をオン', 'Activer l’ambiance', 'Attiva l’ambiente'],
   'Ambience off': ['环境音已关闭', '環境音已關閉', '環境音オフ', 'Ambiance coupée', 'Ambiente disattivato'],
@@ -441,6 +443,23 @@ const T: Record<string, Row> = {
   'Reply received': ['收到回复', '收到回覆', '返信を受信', 'Réponse reçue', 'Risposta ricevuta'],
   'Milestone celebration': ['里程碑庆祝', '里程碑慶祝', 'マイルストーンのお祝い', 'Célébration d’étape', 'Celebrazione traguardo'],
   'Screen effect / keyword': ['屏幕特效 / 关键词', '螢幕特效 / 關鍵字', '画面エフェクト／キーワード', 'Effet d’écran / mot-clé', 'Effetto schermo / parola chiave'],
+  // v1.3 — AI sound effects
+  'AI sound effects': ['AI 音效', 'AI 音效', 'AI 効果音', 'Effets sonores de l’IA', 'Effetti sonori dell’IA'],
+  'Effects volume': ['音效音量', '音效音量', '効果音の音量', 'Volume des effets', 'Volume effetti'],
+  'Sound effects': ['音效', '音效', '効果音', 'Effets sonores', 'Effetti sonori'],
+  'Door knock': ['敲门声', '敲門聲', 'ドアをノック', 'Coups à la porte', 'Bussare alla porta'],
+  'Sword clash': ['剑刃相击', '劍刃相擊', '剣のぶつかり合い', 'Choc d’épées', 'Scontro di spade'],
+  'Heartbeat': ['心跳', '心跳', '心臓の鼓動', 'Battement de cœur', 'Battito cardiaco'],
+  'Door creak': ['门吱呀声', '門吱呀聲', 'ドアのきしみ', 'Grincement de porte', 'Cigolio della porta'],
+  'Door slam': ['摔门声', '摔門聲', 'ドアをバタンと閉める', 'Porte qui claque', 'Porta sbattuta'],
+  'Footsteps': ['脚步声', '腳步聲', '足音', 'Bruits de pas', 'Passi'],
+  'Glass break': ['玻璃碎裂', '玻璃碎裂', 'ガラスの割れる音', 'Verre brisé', 'Vetro che si rompe'],
+  'Thunder': ['雷声', '雷聲', '雷鳴', 'Tonnerre', 'Tuono'],
+  'Bell': ['钟声', '鐘聲', '鐘の音', 'Cloche', 'Campana'],
+  'Whoosh': ['呼啸声', '呼嘯聲', 'ヒュッという音', 'Sifflement', 'Sibilo'],
+  'Impact': ['撞击声', '撞擊聲', '衝撃音', 'Impact', 'Impatto'],
+  'Magic': ['魔法', '魔法', '魔法', 'Magie', 'Magia'],
+  'Fire crackle': ['火焰噼啪声', '火焰劈啪聲', '焚き火のパチパチ', 'Crépitement du feu', 'Crepitio del fuoco'],
 }
 
 const LOCALES = ['zh', 'zh-TW', 'ja', 'fr', 'it'] as const

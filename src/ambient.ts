@@ -36,6 +36,11 @@ export class AmbientCanvas {
   private motes: Mote[] = []
   private raf = 0
   private last = 0
+  /**
+   * On a touch screen the scene is drawn at about 30 fps. These are slow, soft particles, and every frame
+   * makes the browser redraw whatever blurs the background behind the messages, which is where a phone struggles.
+   */
+  private minFrameMs = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 28 : 0
   private scene: Scene = 'off'
   private density = 1
   private w = 0
@@ -162,6 +167,10 @@ export class AmbientCanvas {
     const g = this.g
     if (!g || this.scene === 'off') {
       this.raf = 0
+      return
+    }
+    if (now - this.last < this.minFrameMs) {
+      this.raf = requestAnimationFrame(this.tick)
       return
     }
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000))

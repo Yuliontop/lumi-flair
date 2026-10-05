@@ -6,11 +6,13 @@ Effort: **S** is about a day, **M** a few days, **L** a week or more. 💸 marks
 
 ## Recommended for v1.3: "Living Sound"
 
-1. **AI sound effects (M).**
-   - The AI writes `<flair sfx="door-knock">` and the sound plays as the line appears.
-   - It ships with a built-in procedural library: footsteps, door, sword clash, glass, heartbeat, thunder and more.
-   - Users can map their own uploads to any cue as new `sfx:<name>` slots in `SOUND_SLOTS`.
-   - Reuse `director.ts` / tag interceptors and `sound.ts`. Teach the AI the tag through the existing prompt note, keeping it short.
+1. **AI sound effects (M). Released in v1.3 (1.3.1).**
+   - The AI writes `<flair sfx="door-knock"></flair>` (always paired) and the sound plays as the line streams in.
+   - 14 procedural cues: door knock / creak / slam, footsteps, sword clash, glass break, heartbeat, thunder, bell, whoosh, impact, magic, splash, fire crackle.
+   - Users can map their own uploads to any cue (`sfx:<name>` slots).
+   - Off by default. The prompt note is about 200 tokens.
+   - **Next:** user-defined cue names, so you can name a cue ("owl-hoot") and the AI is told it exists. `SOUND_SLOTS` is a static list used for validation today, so slots would have to become dynamic.
+   - **Later:** more cues (animals and voices can't be synthesised convincingly, so those are file-only); fix the interface chimes, which still ignore background dim/mute (`Soundscape.focusLevel` is ready for it).
 2. **Adaptive music (M).**
    - Users assign tracks to moods (calm, tense, romantic, sad, battle), and Flair crossfades as the mood changes.
    - A built-in generated ambient-pad mode covers users without music files.

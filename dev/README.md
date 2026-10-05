@@ -29,10 +29,12 @@ The tests **print what they observe** (they don't assert). Read the output; `run
 
 | Page | What it is |
 |---|---|
-| `lumiverse.html` | A mock Lumiverse page with a ChatView, MessageList, drawer and composer. It provides a fake `ctx` covering settings, events, permissions, a float widget (needs `ui_panels`), the file picker, theme generation (`vendor/lumiverse-theme.js`: Lumiverse's own theme code, kept local and git-ignored; without it only `test_theme.py` can't check colours) and backend vault messages. Test helpers: `__emit(event, payload)`, `__granted`, `__pickFiles`, `__sent`, `__cleanup()` |
+| `lumiverse.html` | A mock Lumiverse page with a ChatView, MessageList, drawer and composer. It provides a fake `ctx` covering settings, events, permissions, a float widget (needs `ui_panels`), the file picker, theme generation (`vendor/lumiverse-theme.js`: Lumiverse's own theme code, kept local and git-ignored; without it only `test_theme.py` can't check colours) and backend vault messages. Test helpers: `__emit(event, payload)`, `__tag(payload)` (fires the `<flair>` tag interceptor: `{attrs, content, fullMatch, messageId, chatId, isStreaming}`), `__granted`, `__pickFiles`, `__sent`, `__cleanup()` |
 | `effects.html` | Just the canvas engine. `fireFx(effect, k, noFlash)` fires a send effect from the fake send button (dark/light via `body.className`) |
 | `nav.html` | Story-navigator emulator with a virtualized list that lazy-loads older messages |
 | `scape.html` | Soundscape engine alone |
+| `sfx.html` | AI sound cues alone. **Open it to listen:** one button per cue, a volume slider, and each cue's measured peak and length. `analyse(cue)` renders a cue offline for the tests |
+| `cine.html` | The cinematic layer (light rays, tint, neon, grain) alone, over a busy wallpaper and blurred cards. `mount('new' \| 'old', light)`, `freeze(ms)`. `old` is the previous version and exists only after `bun dev/build.ts --baseline <checkout>` (see `test_cinematic.py`) |
 | `bench.html` | Deterministic benchmark: `bench('B_NEW', effect, k)`. `B_OLD` exists when a baseline was built with `--baseline` |
 
 ## Tests (`dev/tests/`)
@@ -50,6 +52,13 @@ The tests **print what they observe** (they don't assert). Read the output; `run
 | `test_volume_widget.py` | Floating widget: permission flow, slider (click, keys, wheel), drag isolation, position save and clamp; background dim/mute measured on the real master gain |
 | `test_custom_sounds.py` | Your sounds: upload and validation, scene / always / interface slots, preview, level, reload, delete, missing-file fallback |
 | `test_custom_sounds_combo.py` | A lighting file over a generated scene; widget label for an always-play file |
+| `test_ai_sfx.py` | AI sound effects: every cue has a preview button and a file slot and plays (by name and by near-miss name), plays once per streamed cue, never replays on the final render or for old messages, holds a non-streamed reply's cues until it ends and spaces them out, cap per message, swipe plays again, toggle, background dim/mute, volume 0, your own file for a cue. Asserts (non-empty `errors [...]` fails) |
+| `test_sfx_cues.py` | Each cue rendered offline: peak level, length, silent tail, no NaN; a **character guard** per cue (so a retune can't turn the sword clash back into a bell); a loudness band so the cues sit together; cue-name matching and aliases. Asserts. It measures, it can't listen: use `sfx.html` for that |
+| `test_achievements.py` | Achievements survive a restart, including when the page wakes up while the saved copy is still loading (slow server, dead server, old messages replayed at startup); the panel shows them straight away; the unlock card clears the notch / status bar (`--app-interactive-safe-top`). Asserts |
+| `test_choices.py` | Suggestion chips follow the swipe on screen: a regenerate replaces them (the old ones must not stay, nor pile up), swiping back restores a variant's chips even though the host won't deliver its tags twice, a variant without chips shows none, tags and swipe event in either order, never a second set, a late host replay of the old set shows nothing, continue keeps its options, sending clears them. Asserts |
+| `test_widget_collapse.py` | The floating volume widget collapses to a round button: shape and what shows in each state, folds / opens on the spot toward the nearer screen edge, a drag doesn't open it, remembered across reloads, starts collapsed on a touch screen, stays inside a phone-sized window, keyboard (space / enter) and focus. Asserts |
+| `test_cinematic.py` | The light layer is cheap and unchanged: nothing in it uses a blend mode, mask or live filter; every animation moves only `transform` / `opacity`; nothing animates while invisible; the rays are a small image that follows the chat area's shape; slow movements are stepped on a touch screen. With a baseline built, a **pixel comparison** with the previous version for every light at desktop and phone size. Asserts |
+| `test_mobile_perf.py` | Phone behaviour: the scene is drawn at ~30 fps on a touch screen (~60 on a desktop); the governor's frame loop only runs when something animates; the atmosphere goes the moment the host starts leaving the chat (`data-chat-chrome-leaving`, the home button); closing a chat doesn't re-inject the stylesheet and defers the whole-UI colour work. Asserts |
 
 ## Tools (`dev/tools/`)
 
@@ -58,7 +67,9 @@ The tests **print what they observe** (they don't assert). Read the output; `run
 | `effect_frames.py [effect] [k]` | Frame sheet in dark and light, plus a check that the canvas clears |
 | `record_gif.py [effect] [ms] [theme]` | Preview GIF for releases and Discord |
 | `bench.py [effect …]` | ms per frame at 1× and 2× intensity (compare with `bun dev/build.ts --baseline <old checkout>`) |
-| `widget_shots.py` | Volume widget in 3 states × 2 themes under deliberately hostile host CSS |
+| `bench_cine.py [light …]` | Frames drawn and painting work per second for the light layer, previous version vs now, on a phone-sized page (needs the baseline). Chromium's software renderer, so it is a relative signal, not an iPhone frame time. To make a baseline: `mkdir -p dev/out/base/src && git show <commit>:src/cinematic.ts > dev/out/base/src/cinematic.ts && git show <commit>:src/effects.ts > dev/out/base/src/effects.ts && bun dev/build.ts --baseline dev/out/base` |
+| `widget_shots.py` | Volume widget in 5 states (open: playing / dimmed / off; collapsed: playing / off) × 2 themes under deliberately hostile host CSS |
+| `prompt.ts` | `bun dev/tools/prompt.ts [pref=value …]` prints the exact instructions the AI receives (`{{flair_tags}}`) from the built `dist/backend.js`, with a token estimate |
 
 ## Adding a test
 

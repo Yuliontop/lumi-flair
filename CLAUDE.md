@@ -26,7 +26,7 @@ The tests print what they observe rather than asserting it. **Read the output.**
 
 1. **Bump the version on every change you want Ash to test.** Lumiverse caches the frontend bundle by `identifier:version`, so a reused version silently serves old code.
    - The version lives in three places: `spindle.json`, `package.json` and `VERSION` in `src/backend.ts`.
-   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3. Public is 1.2.0. For v1.3 work, use fresh versions such as 1.3.0, 1.3.1 and so on, and bump each time Ash tests.
+   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1. Public is 1.3.1 (the "v1.3" release, tag `v1.3.1`). For the next work, use fresh versions such as 1.3.2, 1.3.3 and so on, and bump each time Ash tests (the public release can still take whichever number Ash picks).
    - After installing, Ash presses **Ctrl+Shift+R**.
 2. **`dist/` is committed.** Lumiverse installs straight from GitHub without building. Always rebuild before committing.
 3. **Backend install scanner.** `dist/backend.js` must not contain the following (check with grep before every release):
@@ -58,6 +58,8 @@ The tests print what they observe rather than asserting it. **Read the output.**
     - Degrade gracefully when it's missing.
     - The frontend has no permission-change event, so re-check with `getGranted()`.
 13. **i18n.** Every UI label goes through `tr()`, with translations in `src/i18n-dict.ts` (zh, zh-TW, ja, fr, it). Long hints may stay English.
+14. **Never change or save a store before it has loaded.** On a cold start the host replays old messages through our tag interceptors while `vault.loadAll()` is still running, and a save is stamped "now", so it beats every older copy. Use `badges.whenLoaded(...)` / `beats.whenLoaded(...)`; the vault and the settings store ignore early saves. Anything the panel draws from `status()` must be drawn once when the panel is built.
+15. **Phones are the tight case (Ash's iPhone; iOS kills a home-screen app that runs short of memory).** Keep layers flat: no blend modes, masks or live filters, animate only `transform` / `opacity`, never animate an invisible layer, step slow movements under `@media (pointer: coarse)`, and don't run a frame loop that has nothing to watch. Fixed overlays sit below the notch with `var(--app-interactive-safe-top, env(safe-area-inset-top, 0px))`. Details and what the tests enforce: `docs/DEVELOPMENT.md` → Phones.
 
 ## Releasing (Ash publishes; see docs/DEVELOPMENT.md → Release checklist)
 

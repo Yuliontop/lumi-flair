@@ -11,6 +11,9 @@ export class PerfGovernor {
   private low = 0
   private high = 0
   private saver = false
+  /** Times the effects were switched back on and the frame rate dropped again within a minute: each one makes the next recovery slower. */
+  private relapses = 0
+  private recoveredAt = 0
   fps = 60
 
   constructor(
@@ -45,7 +48,8 @@ export class PerfGovernor {
           this.low = 0
         }
         if (!this.saver && this.low >= 2) this.set(true)
-        if (this.saver && this.high >= 4) this.set(false)
+        // 4 smooth windows (8 s) to recover at first; after a relapse, twice as long, so a device that can't keep up doesn't flap.
+        if (this.saver && this.high >= Math.min(64, 4 * 2 ** this.relapses)) this.set(false)
       }
       this.raf = requestAnimationFrame(tick)
     }
@@ -53,12 +57,15 @@ export class PerfGovernor {
   }
 
   private set(v: boolean) {
+    if (v && this.recoveredAt && performance.now() - this.recoveredAt < 60_000) this.relapses++
+    if (!v) this.recoveredAt = performance.now()
     this.saver = v
     this.low = this.high = 0
     this.onChange(this.saving)
   }
 
   reset() {
+    this.relapses = 0
     if (this.saver) this.set(false)
   }
 

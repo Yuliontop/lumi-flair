@@ -31,7 +31,9 @@ failed = []
 for job in jobs:
     name = os.path.basename(job[0])
     print(f'\n=== {name} {" ".join(job[1:])}', flush=True)
-    r = subprocess.run([sys.executable] + job, cwd=OUT, capture_output=True, text=True, timeout=300)
+    # UTF-8 both ways: on Windows the default (cp1252) can't decode what the tests print
+    r = subprocess.run([sys.executable] + job, cwd=OUT, capture_output=True, text=True, timeout=300,
+                       encoding='utf-8', errors='replace', env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
     print(r.stdout.rstrip())
     # Tests print what they observed; any non-empty "errors [...]" (page errors / console errors) is a failure.
     bad = r.returncode != 0 or re.search(r"errors \[(?!\])", r.stdout) is not None

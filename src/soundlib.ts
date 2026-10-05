@@ -19,7 +19,7 @@ export interface SoundMeta {
 }
 
 /** Where a custom sound can be used. */
-export type SoundSlot = string // 'always' | `scene:${Scene}` | `light:${Light}` | `ui:${Chime}`
+export type SoundSlot = string // 'always' | `scene:${Scene}` | `light:${Light}` | `ui:${Chime}` | `sfx:${cue}`
 
 export const MAX_SOUND_BYTES = 40 * 1024 * 1024
 export const MAX_SOUNDS = 40

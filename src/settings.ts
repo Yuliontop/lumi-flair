@@ -1,4 +1,5 @@
 import type { Vault, VaultName } from './persist'
+import { SFX_CUES } from './sfx-cues'
 
 export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'splash' | 'blackhole' | 'petalstorm' | 'none'
 export type BurstEffect = Exclude<SendEffect, 'none'>
@@ -44,6 +45,7 @@ export const SOUND_SLOTS: readonly string[] = [
   ...SCENES.filter((s) => s !== 'off').map((s) => `scene:${s}`),
   ...LIGHTS.filter((l) => l !== 'none').map((l) => `light:${l}`),
   ...UI_SOUNDS.map((u) => `ui:${u}`),
+  ...SFX_CUES.map((c) => `sfx:${c.name}`),
 ]
 
 export interface FlairSettings {
@@ -121,10 +123,15 @@ export interface FlairSettings {
   // v1.2 — floating volume widget (needs ui_panels) and background behaviour
   soundWidget: boolean
   soundWidgetPos: { x: number; y: number } | null
+  /** The floating volume control as a small button (true) or the full pill (false). null: a button on touch screens, the pill elsewhere. */
+  soundWidgetCollapsed: boolean | null
   soundUnfocused: SoundUnfocused
   soundUnfocusedLevel: number // 0.05 – 0.8, share of the volume kept when dimmed
   /** slot (see SOUND_SLOTS) → id of a file in this browser's sound library */
   customSounds: Record<string, string>
+  // v1.3 — AI sound effects: <flair sfx="…"> cues (off by default; adds a short note to every prompt)
+  aiSfx: boolean
+  sfxVolume: number // 0 – 1
 
   // v0.3 — Cinematic layer
   cinematic: boolean
@@ -243,9 +250,12 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   soundscapeVolume: 0.35,
   soundWidget: false,
   soundWidgetPos: null,
+  soundWidgetCollapsed: null,
   soundUnfocused: 'keep',
   soundUnfocusedLevel: 0.3,
   customSounds: {},
+  aiSfx: false,
+  sfxVolume: 0.5,
   cinematic: true,
   vignette: 0.35,
   grain: false,
@@ -392,9 +402,12 @@ export function normalize(raw: unknown): FlairSettings {
     soundscapeVolume: clamp(r.soundscapeVolume, 0, 1, d.soundscapeVolume),
     soundWidget: bool(r.soundWidget, d.soundWidget),
     soundWidgetPos: point(r.soundWidgetPos),
+    soundWidgetCollapsed: typeof r.soundWidgetCollapsed === 'boolean' ? r.soundWidgetCollapsed : null,
     soundUnfocused: pick(r.soundUnfocused, ['keep', 'dim', 'mute'], d.soundUnfocused),
     soundUnfocusedLevel: clamp(r.soundUnfocusedLevel, 0.05, 0.8, d.soundUnfocusedLevel),
     customSounds: soundSlots(r.customSounds),
+    aiSfx: bool(r.aiSfx, d.aiSfx),
+    sfxVolume: clamp(r.sfxVolume, 0, 1, d.sfxVolume),
     cinematic: bool(r.cinematic, d.cinematic),
     vignette: clamp(r.vignette, 0, 1, d.vignette),
     grain: bool(r.grain, d.grain),
@@ -439,6 +452,8 @@ export function createSettingsStore(vault: Vault) {
   let base: FlairSettings = { ...DEFAULT_SETTINGS }
   let activeCharacterId: string | null = null
   let saveTimer: ReturnType<typeof setTimeout> | undefined
+  /** False until the saved copy has been read: until then `base` is only the defaults, and saving them would overwrite the real settings. */
+  let loaded = false
   const listeners = new Set<(s: FlairSettings) => void>()
 
   function effective(): FlairSettings {
@@ -447,6 +462,7 @@ export function createSettingsStore(vault: Vault) {
   }
 
   function persist() {
+    if (!loaded) return
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       saveTimer = undefined
@@ -489,6 +505,7 @@ export function createSettingsStore(vault: Vault) {
     /** Seed from the vault at boot (no save). */
     hydrate(raw: unknown) {
       base = normalize(raw)
+      loaded = true
       return effective()
     },
     /** Replace everything (restore from backup, or a newer config file arrived). */
@@ -508,8 +525,11 @@ export function createSettingsStore(vault: Vault) {
     },
     setActiveCharacter(id: string | null) {
       if (id === activeCharacterId) return
+      // Only a character with a profile changes what the settings are. Re-applying everything for every chat
+      // opened or closed would swap the whole stylesheet each time, in the middle of the page change.
+      const involved = !!(activeCharacterId && base.characterProfiles[activeCharacterId]) || !!(id && base.characterProfiles[id])
       activeCharacterId = id
-      emit()
+      if (involved) emit()
     },
     activeCharacter: () => activeCharacterId,
     hasProfile: (id: string | null) => !!(id && base.characterProfiles[id]),
@@ -554,15 +574,35 @@ export type SettingsStore = ReturnType<typeof createSettingsStore>
  */
 export function createJsonStore<T>(vault: Vault, name: VaultName, fallback: T) {
   let value: T = fallback
+  let loaded = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  const waiting: Array<() => void> = []
   return {
     hydrate(raw: unknown) {
       if (raw !== undefined && raw !== null) value = raw as T
+      loaded = true
+      for (const fn of waiting.splice(0)) {
+        try {
+          fn()
+        } catch (err) {
+          console.error('[Lumi Flair] queued update failed', err)
+        }
+      }
       return value
     },
     get: () => value,
+    /**
+     * Run `fn` once the saved copy has loaded (now, if it already has). Before that `value` is
+     * only the empty fallback: changing it, or saving it, would replace the real saved data.
+     * On a cold start the host replays old messages through us while the load is still in flight.
+     */
+    whenLoaded(fn: () => void) {
+      if (loaded) fn()
+      else waiting.push(fn)
+    },
     set(next: T) {
       value = next
+      if (!loaded) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = undefined

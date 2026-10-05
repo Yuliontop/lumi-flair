@@ -1,4 +1,4 @@
-"""Screenshots of the volume widget in 3 states x 2 themes under hostile host CSS.
+"""Screenshots of the volume widget in 5 states (open: playing, dimmed in the background, off; collapsed: playing, off) x 2 themes under hostile host CSS.
 
 Run from the repo root with the mock server up (see dev/README.md):
     python dev/run.py widget_shots.py
@@ -24,7 +24,7 @@ async def main():
             if css: await pg.add_style_tag(content=css)
             await pg.add_style_tag(content=f"html,body{{background:{bg}!important}}")
             await pg.evaluate("__float.c.style.left='40px'; __float.c.style.top='40px'"); await pg.wait_for_timeout(200)
-            clip={'x':20,'y':20,'width':296,'height':92}
+            clip={'x':20,'y':20,'width':320,'height':92}
             shots=[]
             await pg.evaluate("document.hasFocus=()=>true; window.dispatchEvent(new Event('focus'))"); await pg.wait_for_timeout(250)
             await pg.screenshot(path=f'w_{theme}_on.png', clip=clip); shots.append(f'w_{theme}_on.png')
@@ -33,10 +33,16 @@ async def main():
             await pg.evaluate("document.hasFocus=()=>true; window.dispatchEvent(new Event('focus')); document.querySelector('.lf-sw-btn').click()"); await pg.wait_for_timeout(300)
             await pg.screenshot(path=f'w_{theme}_off.png', clip=clip); shots.append(f'w_{theme}_off.png')
             await pg.evaluate("document.querySelector('.lf-sw-btn').click()"); await pg.wait_for_timeout(300)
+            # collapsed to the round button: playing, then off
+            await pg.evaluate("document.querySelector('.lf-sw-fold').click()"); await pg.wait_for_timeout(300)
+            await pg.screenshot(path=f'w_{theme}_dot_on.png', clip=clip); shots.append(f'w_{theme}_dot_on.png')
+            await pg.evaluate("document.querySelector('.lf-sw').dataset.on='0'"); await pg.wait_for_timeout(100)  # (the look of the off state; the real toggle is in the open pill)
+            await pg.screenshot(path=f'w_{theme}_dot_off.png', clip=clip); shots.append(f'w_{theme}_dot_off.png')
+            await pg.evaluate("document.querySelector('.lf-sw').dataset.on='1'; document.querySelector('.lf-sw-dot').click(); document.activeElement.blur()"); await pg.wait_for_timeout(300)
             rows.append(shots)
         ims=[[Image.open(s) for s in r] for r in rows]
         w,h=ims[0][0].size
-        out=Image.new('RGB',(w*3,h*2))
+        out=Image.new('RGB',(w*5,h*2))
         for y,r in enumerate(ims):
             for x,im in enumerate(r): out.paste(im,(x*w,y*h))
         out.save('sw_hostile.png'); print(out.size)

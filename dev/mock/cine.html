@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+/* The cinematic layer (light tint, rays, vignette, grain) over a busy wallpaper and a few translucent, blurred message cards,
+   like a Lumiverse chat. mount('new' | 'old', light) puts either version of the layer in. */
+html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui;color:#eee;background:#222}
+.view{position:absolute;inset:0;overflow:hidden;background:
+  radial-gradient(circle at 20% 30%,#c0392b,transparent 40%),radial-gradient(circle at 80% 20%,#2980b9,transparent 45%),
+  radial-gradient(circle at 50% 80%,#27ae60,transparent 50%),linear-gradient(135deg,#34495e,#8e44ad)}
+.body{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;gap:12px;padding:70px 14px 14px}
+.card{background:rgba(20,20,30,.45);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 16px;line-height:1.5}
+.lf-ambient-host{display:contents}
+</style></head><body>
+<div class="view" id="view" data-component="ChatView"><div class="lf-ambient-host" id="host"></div>
+<div class="body"><div class="card">The tavern door creaks open and the smell of fresh pastries drifts in.</div><div class="card">"Is that... a cream fountain?" she whispers, eyes wide.</div><div class="card">Somewhere behind the bar, something rumbles.</div></div></div>
+<script type="module">
+  // Two bundles that both declare Cinematic: modules keep them apart. The baseline only exists after `bun dev/build.ts --baseline <checkout>`.
+  import './build/cine.js'
+  if ((await fetch('build/cine-base.js', { method: 'HEAD' })).ok) await import('./build/cine-base.js')
+  window.__ready = true
+</script>
+<script>
+let current = null, styleEl = null
+window.hasOld = () => !!window.C_OLD
+/** Replace the layer with the 'new' or 'old' version, set to a light. extra: {grain, saver, vignette} */
+window.mount = (which, light, extra = {}) => {
+  if (current) current.destroy(); if (styleEl) styleEl.remove()
+  const lib = which === 'old' ? window.C_OLD : window.C_NEW
+  styleEl = document.createElement('style'); styleEl.textContent = lib.CINEMATIC_CSS; document.head.appendChild(styleEl)
+  current = new lib.Cinematic(t => document.createElement(t))
+  document.getElementById('host').appendChild(current.el)
+  const st = { enabled: true, light, vignette: 0.35, grain: false, lightning: false, noFlash: false, motion: true, saver: false, ...extra }
+  current.set(st)
+  if (which === 'old') current.el.dataset.saver = st.saver ? '1' : '0'
+  window.layer = current
+  return true
+}
+/** Freeze every animation at the same moment, so two versions can be compared pixel for pixel. */
+window.freeze = (ms) => { for (const a of document.getAnimations()) { a.pause(); a.currentTime = ms } return document.getAnimations().length }
+</script></body></html>

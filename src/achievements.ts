@@ -38,16 +38,6 @@ export interface AchievementData {
   moodsByChat: Record<string, string[]>
 }
 
-export const EMPTY_ACHIEVEMENTS: AchievementData = {
-  unlocked: {},
-  sent: 0,
-  choices: 0,
-  scenes: [],
-  lastDay: '',
-  streak: 0,
-  moodsByChat: {},
-}
-
 export function normalizeAchievements(raw: unknown): AchievementData {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<AchievementData>
   return {
@@ -102,8 +92,12 @@ export function onMood(data: AchievementData, chatId: string, label: string): st
 }
 
 export const ACHIEVEMENT_CSS = `
-.lf-unlock { position: fixed; top: 18px; right: 18px; z-index: 2147483001; pointer-events: none;
-  display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px; min-width: 240px; max-width: 340px;
+/* Below the notch / status bar on a phone: the host's own toasts use the same variable. Safe-area insets are
+   physical pixels, and this sits in the UI-scale zoom layer, so they are divided by the scale (like the host's viewport sizes). */
+.lf-unlock { position: fixed; z-index: 2147483001; pointer-events: none;
+  top: calc(18px + var(--app-interactive-safe-top, env(safe-area-inset-top, 0px)) / var(--lumiverse-ui-scale, 1) + var(--lf-slot, 0) * 84px);
+  right: calc(18px + env(safe-area-inset-right, 0px) / var(--lumiverse-ui-scale, 1));
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px; min-width: 240px; max-width: min(340px, calc(var(--app-scaled-viewport-width, 100vw) - 36px));
   border-radius: 14px; color: var(--lumiverse-text, #fff);
   background: color-mix(in srgb, var(--lumiverse-bg-elevated, #231e30) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--lf-c, #9370db) 55%, transparent);

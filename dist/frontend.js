@@ -1,3 +1,109 @@
+// src/sfx-cues.ts
+var SFX_CUES = [
+  { name: "door-knock", label: "Door knock", use: "someone knocks" },
+  { name: "door-creak", label: "Door creak", use: "a door or hinge creaks" },
+  { name: "door-slam", label: "Door slam", use: "a door slams" },
+  { name: "footsteps", label: "Footsteps", use: "someone walks or approaches" },
+  { name: "sword-clash", label: "Sword clash", use: "blades meet" },
+  { name: "glass-break", label: "Glass break", use: "glass shatters" },
+  { name: "heartbeat", label: "Heartbeat", use: "fear, tension, a charged moment" },
+  { name: "thunder", label: "Thunder", use: "thunder rolls" },
+  { name: "bell", label: "Bell", use: "a bell tolls" },
+  { name: "whoosh", label: "Whoosh", use: "something swings or rushes past" },
+  { name: "impact", label: "Impact", use: "a punch or heavy blow lands" },
+  { name: "magic", label: "Magic", use: "a spell is cast" },
+  { name: "splash", label: "Splash", use: "something hits water" },
+  { name: "fire-crackle", label: "Fire crackle", use: "a fire crackles" }
+];
+var ALIASES = {
+  knock: "door-knock",
+  knocking: "door-knock",
+  "knock-knock": "door-knock",
+  "door-knocking": "door-knock",
+  creak: "door-creak",
+  creaking: "door-creak",
+  "door-creaking": "door-creak",
+  squeak: "door-creak",
+  hinge: "door-creak",
+  "door-open": "door-creak",
+  "door-opens": "door-creak",
+  slam: "door-slam",
+  "door-slams": "door-slam",
+  "door-shut": "door-slam",
+  "door-close": "door-slam",
+  "door-closes": "door-slam",
+  footstep: "footsteps",
+  steps: "footsteps",
+  step: "footsteps",
+  walking: "footsteps",
+  footfalls: "footsteps",
+  sword: "sword-clash",
+  swords: "sword-clash",
+  clash: "sword-clash",
+  "blade-clash": "sword-clash",
+  "steel-clash": "sword-clash",
+  "sword-fight": "sword-clash",
+  "sword-clang": "sword-clash",
+  "glass-breaks": "glass-break",
+  "glass-shatter": "glass-break",
+  "glass-smash": "glass-break",
+  "breaking-glass": "glass-break",
+  shatter: "glass-break",
+  shattering: "glass-break",
+  "heart-beat": "heartbeat",
+  heartbeats: "heartbeat",
+  heart: "heartbeat",
+  "pounding-heart": "heartbeat",
+  "racing-heart": "heartbeat",
+  thunderclap: "thunder",
+  "thunder-clap": "thunder",
+  "thunder-roll": "thunder",
+  rumble: "thunder",
+  bells: "bell",
+  "church-bell": "bell",
+  "bell-toll": "bell",
+  "bell-ring": "bell",
+  toll: "bell",
+  ding: "bell",
+  swoosh: "whoosh",
+  swish: "whoosh",
+  "whoosh-by": "whoosh",
+  swing: "whoosh",
+  punch: "impact",
+  hit: "impact",
+  thud: "impact",
+  thump: "impact",
+  blow: "impact",
+  smack: "impact",
+  "body-hit": "impact",
+  spell: "magic",
+  "spell-cast": "magic",
+  cast: "magic",
+  sparkle: "magic",
+  magical: "magic",
+  enchant: "magic",
+  splashing: "splash",
+  "water-splash": "splash",
+  plunge: "splash",
+  crackle: "fire-crackle",
+  crackling: "fire-crackle",
+  "fire-crackling": "fire-crackle",
+  fire: "fire-crackle",
+  campfire: "fire-crackle",
+  bonfire: "fire-crackle",
+  flames: "fire-crackle"
+};
+function cueName(raw) {
+  if (!raw)
+    return null;
+  const n = raw.trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "");
+  if (!n)
+    return null;
+  if (SFX_CUES.some((c) => c.name === n))
+    return n;
+  return ALIASES[n] ?? null;
+}
+
 // src/settings.ts
 var MAX_CUSTOM_PACKS = 24;
 var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
@@ -9,7 +115,8 @@ var SOUND_SLOTS = [
   "always",
   ...SCENES.filter((s) => s !== "off").map((s) => `scene:${s}`),
   ...LIGHTS.filter((l) => l !== "none").map((l) => `light:${l}`),
-  ...UI_SOUNDS.map((u) => `ui:${u}`)
+  ...UI_SOUNDS.map((u) => `ui:${u}`),
+  ...SFX_CUES.map((c) => `sfx:${c.name}`)
 ];
 var TEXT_FX = ["shake", "glow", "whisper", "rainbow", "pulse", "big", "typewriter", "fade", "glitch", "flicker"];
 var LOOK_KEYS = [
@@ -95,9 +202,12 @@ var DEFAULT_SETTINGS = {
   soundscapeVolume: 0.35,
   soundWidget: false,
   soundWidgetPos: null,
+  soundWidgetCollapsed: null,
   soundUnfocused: "keep",
   soundUnfocusedLevel: 0.3,
   customSounds: {},
+  aiSfx: false,
+  sfxVolume: 0.5,
   cinematic: true,
   vignette: 0.35,
   grain: false,
@@ -239,9 +349,12 @@ function normalize(raw) {
     soundscapeVolume: clamp(r.soundscapeVolume, 0, 1, d.soundscapeVolume),
     soundWidget: bool(r.soundWidget, d.soundWidget),
     soundWidgetPos: point(r.soundWidgetPos),
+    soundWidgetCollapsed: typeof r.soundWidgetCollapsed === "boolean" ? r.soundWidgetCollapsed : null,
     soundUnfocused: pick(r.soundUnfocused, ["keep", "dim", "mute"], d.soundUnfocused),
     soundUnfocusedLevel: clamp(r.soundUnfocusedLevel, 0.05, 0.8, d.soundUnfocusedLevel),
     customSounds: soundSlots(r.customSounds),
+    aiSfx: bool(r.aiSfx, d.aiSfx),
+    sfxVolume: clamp(r.sfxVolume, 0, 1, d.sfxVolume),
     cinematic: bool(r.cinematic, d.cinematic),
     vignette: clamp(r.vignette, 0, 1, d.vignette),
     grain: bool(r.grain, d.grain),
@@ -277,12 +390,15 @@ function createSettingsStore(vault) {
   let base = { ...DEFAULT_SETTINGS };
   let activeCharacterId = null;
   let saveTimer;
+  let loaded = false;
   const listeners = new Set;
   function effective() {
     const profile = activeCharacterId ? base.characterProfiles[activeCharacterId] : undefined;
     return profile ? { ...base, ...profile } : base;
   }
   function persist() {
+    if (!loaded)
+      return;
     if (saveTimer)
       clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -325,6 +441,7 @@ function createSettingsStore(vault) {
   return {
     hydrate(raw) {
       base = normalize(raw);
+      loaded = true;
       return effective();
     },
     adopt(raw, save = false) {
@@ -344,8 +461,10 @@ function createSettingsStore(vault) {
     setActiveCharacter(id) {
       if (id === activeCharacterId)
         return;
+      const involved = !!(activeCharacterId && base.characterProfiles[activeCharacterId]) || !!(id && base.characterProfiles[id]);
       activeCharacterId = id;
-      emit();
+      if (involved)
+        emit();
     },
     activeCharacter: () => activeCharacterId,
     hasProfile: (id) => !!(id && base.characterProfiles[id]),
@@ -383,16 +502,34 @@ function createSettingsStore(vault) {
 }
 function createJsonStore(vault, name, fallback) {
   let value = fallback;
+  let loaded = false;
   let timer;
+  const waiting = [];
   return {
     hydrate(raw) {
       if (raw !== undefined && raw !== null)
         value = raw;
+      loaded = true;
+      for (const fn of waiting.splice(0)) {
+        try {
+          fn();
+        } catch (err) {
+          console.error("[Lumi Flair] queued update failed", err);
+        }
+      }
       return value;
     },
     get: () => value,
+    whenLoaded(fn) {
+      if (loaded)
+        fn();
+      else
+        waiting.push(fn);
+    },
     set(next) {
       value = next;
+      if (!loaded)
+        return;
       if (timer)
         clearTimeout(timer);
       timer = setTimeout(() => {
@@ -2028,6 +2165,7 @@ class AmbientCanvas {
   motes = [];
   raf = 0;
   last = 0;
+  minFrameMs = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? 28 : 0;
   scene = "off";
   density = 1;
   w = 0;
@@ -2158,6 +2296,10 @@ class AmbientCanvas {
     const g = this.g;
     if (!g || this.scene === "off") {
       this.raf = 0;
+      return;
+    }
+    if (now - this.last < this.minFrameMs) {
+      this.raf = requestAnimationFrame(this.tick);
       return;
     }
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
@@ -2444,6 +2586,366 @@ class SoundBoard {
   destroy() {
     this.ac?.close().catch(() => {});
     this.ac = null;
+  }
+}
+
+// src/sfx.ts
+var rnd = (min, max) => min + Math.random() * (max - min);
+var noiseBuffers = new WeakMap;
+function noise(ac) {
+  let b = noiseBuffers.get(ac);
+  if (!b) {
+    b = ac.createBuffer(1, Math.ceil(ac.sampleRate * 1.5), ac.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0;i < d.length; i++)
+      d[i] = Math.random() * 2 - 1;
+    noiseBuffers.set(ac, b);
+  }
+  return b;
+}
+function tone(ac, out, o) {
+  const osc = ac.createOscillator();
+  const g = ac.createGain();
+  const attack = o.attack ?? 0.004;
+  osc.type = o.type ?? "sine";
+  osc.frequency.setValueAtTime(o.freq, o.at);
+  if (o.to)
+    osc.frequency.exponentialRampToValueAtTime(o.to, o.at + (o.glide ?? o.decay));
+  g.gain.setValueAtTime(0.0001, o.at);
+  g.gain.linearRampToValueAtTime(o.gain, o.at + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, o.at + attack + o.decay);
+  osc.connect(g).connect(out);
+  osc.start(o.at);
+  osc.stop(o.at + attack + o.decay + 0.05);
+  osc.onended = () => g.disconnect();
+}
+function burst(ac, out, o) {
+  const src = ac.createBufferSource();
+  src.buffer = noise(ac);
+  src.loop = true;
+  const f = ac.createBiquadFilter();
+  f.type = o.type;
+  f.Q.value = o.q ?? 0.7;
+  f.frequency.setValueAtTime(o.freq, o.at);
+  if (o.to)
+    f.frequency.exponentialRampToValueAtTime(o.to, o.at + o.dur);
+  const g = ac.createGain();
+  if (o.attack) {
+    g.gain.setValueAtTime(0.0001, o.at);
+    g.gain.linearRampToValueAtTime(o.gain, o.at + o.attack);
+  } else
+    g.gain.setValueAtTime(o.gain, o.at);
+  g.gain.exponentialRampToValueAtTime(0.0001, o.at + o.dur);
+  src.connect(f).connect(g).connect(out);
+  src.start(o.at, rnd(0, 0.5), o.dur + 0.02);
+  src.onended = () => g.disconnect();
+}
+function trim(ac, out, level) {
+  const g = ac.createGain();
+  g.gain.value = level;
+  g.connect(out);
+  return g;
+}
+function saturate(ac, out, drive, level) {
+  const curve = new Float32Array(1024);
+  for (let i = 0;i < curve.length; i++)
+    curve[i] = Math.tanh(drive * (i / (curve.length - 1) * 2 - 1)) / Math.tanh(drive);
+  const shaper = ac.createWaveShaper();
+  shaper.curve = curve;
+  shaper.oversample = "2x";
+  const g = ac.createGain();
+  g.gain.value = level;
+  shaper.connect(g).connect(out);
+  return shaper;
+}
+var doorKnock = (ac, out, t) => {
+  const bus = saturate(ac, out, 2.2, 0.8);
+  const offsets = [0, 0.26 + rnd(-0.02, 0.02), 0.5 + rnd(-0.03, 0.03)];
+  offsets.forEach((dt, i) => {
+    const at = t + dt;
+    const v = (i === 1 ? 0.9 : 1) * rnd(0.88, 1);
+    const p = rnd(0.94, 1.06);
+    tone(ac, bus, { freq: 118 * p, to: 56 * p, glide: 0.1, at, attack: 0.003, decay: 0.28, gain: 0.5 * v });
+    tone(ac, bus, { freq: 175 * p, to: 95 * p, glide: 0.08, at, attack: 0.002, decay: 0.2, gain: 0.5 * v });
+    tone(ac, bus, { type: "triangle", freq: 250 * p, to: 160 * p, glide: 0.07, at, attack: 0.002, decay: 0.12, gain: 0.28 * v });
+    burst(ac, bus, { at, dur: 0.045, gain: 0.55 * v, type: "lowpass", freq: 1200, q: 0.8 });
+    burst(ac, bus, { at, dur: 0.12, gain: 0.34 * v, type: "bandpass", freq: 420 * p, q: 4 });
+  });
+  return 0.5 + 0.35;
+};
+var swordClash = (ac, dest, t) => {
+  const out = ac.createGain();
+  out.gain.value = 0.55;
+  out.connect(dest);
+  const crash = (at, base, level, decay) => {
+    const hp = ac.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 1500;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(level, at + 0.001);
+    g.gain.exponentialRampToValueAtTime(level * 0.3, at + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+    hp.connect(g).connect(out);
+    [1, 1.4471, 1.617, 1.9265, 2.5028, 2.6637].forEach((r, i, all) => {
+      const osc = ac.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = base * r;
+      osc.connect(hp);
+      osc.start(at);
+      osc.stop(at + decay + 0.05);
+      if (i === all.length - 1)
+        osc.onended = () => g.disconnect();
+    });
+  };
+  const ring = (at, pitch, level) => [[1, 0.12, 0.28], [1.37, 0.1, 0.24], [2.09, 0.09, 0.2], [2.83, 0.07, 0.15], [3.9, 0.05, 0.12]].forEach(([r, g, d]) => {
+    tone(ac, out, { freq: 1900 * pitch * r, at, attack: 0.001, decay: d, gain: g * level });
+    tone(ac, out, { freq: 1900 * pitch * r * 1.011, at, attack: 0.001, decay: d, gain: g * level * 0.8 });
+  });
+  const p = rnd(0.92, 1.1);
+  burst(ac, out, { at: t, dur: 0.06, gain: 0.7, type: "highpass", freq: 3000 });
+  burst(ac, out, { at: t, dur: 0.18, gain: 0.4, type: "bandpass", freq: 6500, q: 0.8 });
+  burst(ac, out, { at: t, dur: 0.5, gain: 0.16, type: "highpass", freq: 1800 });
+  crash(t, 620 * p, 0.07, 0.45);
+  ring(t, p, 1);
+  tone(ac, out, { freq: 520 * p, to: 230 * p, glide: 0.05, at: t, attack: 0.001, decay: 0.09, gain: 0.35 });
+  burst(ac, out, { at: t, dur: 0.06, gain: 0.3, type: "bandpass", freq: 900, q: 1.5 });
+  const t2 = t + 0.075;
+  burst(ac, out, { at: t2, dur: 0.05, gain: 0.45, type: "highpass", freq: 3500 });
+  crash(t2, 620 * p * 1.13, 0.04, 0.3);
+  ring(t2, p * 1.13, 0.5);
+  burst(ac, out, { at: t + 0.04, dur: 0.22, gain: 0.1, type: "bandpass", freq: 2500, to: 8000, q: 3 });
+  return 0.8;
+};
+var heartbeat = (ac, out, t) => {
+  const thump = (at, v, f) => {
+    tone(ac, out, { type: "triangle", freq: f * 1.5, to: f * 0.7, glide: 0.09, at, attack: 0.008, decay: 0.16, gain: 0.55 * v });
+    tone(ac, out, { freq: f, to: f * 0.6, glide: 0.12, at, attack: 0.006, decay: 0.22, gain: 0.7 * v });
+    burst(ac, out, { at, dur: 0.07, gain: 0.18 * v, type: "lowpass", freq: 220 });
+  };
+  for (let i = 0;i < 2; i++) {
+    const at = t + i * 0.86;
+    thump(at, 1, 62);
+    thump(at + 0.25, 0.7, 72);
+  }
+  return 0.86 + 0.25 + 0.35;
+};
+var doorCreak = (ac, out, t) => {
+  const dur = 1.7 * rnd(0.9, 1.15);
+  const bus = trim(ac, out, 1);
+  const base = rnd(300, 360);
+  const steps = 24;
+  const path = Array.from({ length: steps }, (_, k) => base * (1 + 0.75 * Math.sin(k / steps * Math.PI * 0.8) + rnd(-0.08, 0.08)));
+  const mix = ac.createGain();
+  const vibrato = ac.createOscillator();
+  vibrato.frequency.value = rnd(5, 7);
+  vibrato.start(t);
+  vibrato.stop(t + dur + 0.05);
+  const voice = (ratio, level) => {
+    const osc = ac.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(path[0] * ratio, t);
+    path.forEach((f, k) => osc.frequency.linearRampToValueAtTime(f * ratio, t + dur * (k + 1) / steps));
+    const depth = ac.createGain();
+    depth.gain.value = base * ratio * 0.02;
+    vibrato.connect(depth).connect(osc.frequency);
+    const g = ac.createGain();
+    g.gain.value = level;
+    osc.connect(g).connect(mix);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+    return osc;
+  };
+  voice(1, 1);
+  voice(1.011, 0.8);
+  const last = voice(1.414, 0.22);
+  const f1 = ac.createBiquadFilter();
+  f1.type = "bandpass";
+  f1.Q.value = 9;
+  f1.frequency.setValueAtTime(1400, t);
+  f1.frequency.linearRampToValueAtTime(2300, t + dur * 0.5);
+  f1.frequency.linearRampToValueAtTime(1700, t + dur);
+  const f2 = ac.createBiquadFilter();
+  f2.type = "bandpass";
+  f2.Q.value = 7;
+  f2.frequency.value = 3100;
+  const formant2 = ac.createGain();
+  formant2.gain.value = 0.5;
+  const env = ac.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(0.55, t + 0.25);
+  env.gain.linearRampToValueAtTime(0.3, t + dur * 0.33);
+  env.gain.linearRampToValueAtTime(1, t + dur * 0.55);
+  env.gain.linearRampToValueAtTime(0.8, t + dur - 0.35);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  mix.connect(f1).connect(env);
+  mix.connect(f2).connect(formant2).connect(env);
+  env.connect(bus);
+  last.onended = () => env.disconnect();
+  const under = trim(ac, out, 0.2);
+  burst(ac, under, { at: t + 0.1, dur: dur - 0.15, gain: 0.35, type: "bandpass", freq: 2600, q: 3, attack: 0.3 });
+  tone(ac, under, { type: "triangle", freq: 105, to: 92, at: t, attack: 0.3, decay: dur - 0.2, gain: 0.4 });
+  return dur + 0.15;
+};
+var doorSlam = (ac, out, t) => {
+  const bus = saturate(ac, out, 2.4, 0.8);
+  const p = rnd(0.94, 1.06);
+  tone(ac, bus, { freq: 95 * p, to: 42 * p, glide: 0.14, at: t, attack: 0.002, decay: 0.4, gain: 0.5 });
+  tone(ac, bus, { freq: 165 * p, to: 80 * p, glide: 0.1, at: t, attack: 0.002, decay: 0.28, gain: 0.6 });
+  burst(ac, bus, { at: t, dur: 0.06, gain: 0.6, type: "lowpass", freq: 2800 });
+  burst(ac, bus, { at: t + 0.01, dur: 0.02, gain: 0.25, type: "bandpass", freq: 2500, q: 1.2 });
+  burst(ac, bus, { at: t, dur: 0.4, gain: 0.4, type: "bandpass", freq: 320 * p, q: 1.8 });
+  burst(ac, out, { at: t + 0.03, dur: 0.7, gain: 0.12, type: "lowpass", freq: 1100 });
+  return 1;
+};
+var footsteps = (ac, out, t) => {
+  const bus = saturate(ac, out, 1.6, 1.3);
+  const gap = rnd(0.38, 0.44);
+  for (let i = 0;i < 4; i++) {
+    const at = t + i * gap + (i ? rnd(-0.015, 0.015) : 0);
+    const v = (i % 2 ? 0.8 : 1) * rnd(0.85, 1);
+    const p = (i % 2 ? 0.9 : 1) * rnd(0.95, 1.05);
+    tone(ac, bus, { freq: 120 * p, to: 62 * p, glide: 0.07, at, attack: 0.002, decay: 0.12, gain: 0.4 * v });
+    burst(ac, bus, { at, dur: 0.07, gain: 0.6 * v, type: "lowpass", freq: 650 * p });
+    burst(ac, bus, { at, dur: 0.02, gain: 0.45 * v, type: "bandpass", freq: 1800 * p, q: 1.2 });
+    burst(ac, bus, { at: at + 0.06, dur: 0.05, gain: 0.18 * v, type: "bandpass", freq: 900 * p, q: 1.5 });
+  }
+  return 3 * gap + 0.35;
+};
+var glassBreak = (ac, out, t) => {
+  const bus = trim(ac, out, 0.62);
+  burst(ac, bus, { at: t, dur: 0.04, gain: 0.8, type: "highpass", freq: 2500 });
+  tone(ac, bus, { freq: 340, to: 160, glide: 0.05, at: t, attack: 0.001, decay: 0.07, gain: 0.35 });
+  burst(ac, bus, { at: t, dur: 0.3, gain: 0.45, type: "bandpass", freq: 4200, q: 1.2 });
+  burst(ac, bus, { at: t + 0.02, dur: 0.45, gain: 0.1, type: "highpass", freq: 4500 });
+  for (let i = 0;i < 26; i++) {
+    const at = t + 0.05 + Math.pow(Math.random(), 1.6) * 0.85;
+    tone(ac, bus, { freq: rnd(2000, 9000), at, attack: 0.001, decay: rnd(0.04, 0.16), gain: rnd(0.08, 0.2) });
+  }
+  for (let i = 0;i < 3; i++) {
+    tone(ac, bus, { freq: rnd(900, 1700), at: t + 0.04 + i * rnd(0.05, 0.12), attack: 0.001, decay: rnd(0.15, 0.3), gain: rnd(0.1, 0.18) });
+  }
+  return 1.1;
+};
+var thunder = (ac, out, t) => {
+  const bus = saturate(ac, out, 1.6, 1);
+  const dur = 2.3;
+  burst(ac, bus, { at: t, dur: 0.14, gain: 0.5, type: "bandpass", freq: 1800, q: 0.7 });
+  burst(ac, bus, { at: t + 0.03, dur, gain: 0.9, type: "lowpass", freq: 220, to: 70, q: 0.9, attack: 0.25 });
+  burst(ac, bus, { at: t + 0.08, dur: dur * 0.8, gain: 0.9, type: "lowpass", freq: 520, to: 140, attack: 0.3 });
+  for (let i = 0;i < 4; i++) {
+    burst(ac, bus, { at: t + 0.35 + i * rnd(0.3, 0.45), dur: 0.5, gain: rnd(0.25, 0.5) * (1 - i * 0.18), type: "lowpass", freq: rnd(200, 450), attack: 0.08 });
+  }
+  tone(ac, bus, { freq: 52, to: 34, at: t + 0.05, attack: 0.2, decay: 1.8, gain: 0.5 });
+  return dur + 0.4;
+};
+var bell = (ac, out, t) => {
+  const bus = trim(ac, out, 0.22);
+  const f = 660 * rnd(0.97, 1.03);
+  [[0.5, 0.3, 2.4], [1, 0.5, 2.2], [1.183, 0.28, 1.7], [1.506, 0.22, 1.4], [2, 0.3, 1.5], [2.514, 0.14, 1], [3.011, 0.12, 0.8], [4.166, 0.08, 0.55]].forEach(([r, g, d]) => {
+    tone(ac, bus, { freq: f * r, at: t, attack: 0.002, decay: d, gain: g });
+    tone(ac, bus, { freq: f * r * 1.004, at: t, attack: 0.002, decay: d * 0.95, gain: g * 0.5 });
+  });
+  burst(ac, bus, { at: t, dur: 0.03, gain: 0.25, type: "bandpass", freq: 3200 });
+  return 2.5;
+};
+var whoosh = (ac, out, t) => {
+  const bus = trim(ac, out, 1.1);
+  burst(ac, bus, { at: t, dur: 0.55, gain: 0.8, type: "bandpass", freq: 380, to: 2600, q: 1.1, attack: 0.2 });
+  burst(ac, bus, { at: t + 0.05, dur: 0.45, gain: 0.35, type: "bandpass", freq: 1800, to: 4500, q: 0.9, attack: 0.2 });
+  return 0.65;
+};
+var impact = (ac, out, t) => {
+  const bus = saturate(ac, out, 2.6, 0.65);
+  tone(ac, bus, { freq: 150, to: 48, glide: 0.09, at: t, attack: 0.001, decay: 0.32, gain: 0.55 });
+  tone(ac, bus, { freq: 240, to: 110, glide: 0.06, at: t, attack: 0.001, decay: 0.16, gain: 0.5 });
+  burst(ac, bus, { at: t, dur: 0.07, gain: 0.7, type: "lowpass", freq: 900 });
+  burst(ac, bus, { at: t, dur: 0.04, gain: 0.3, type: "bandpass", freq: 1800, q: 1 });
+  return 0.45;
+};
+var magic = (ac, out, t) => {
+  const bus = trim(ac, out, 0.8);
+  const root = 700 * rnd(0.97, 1.03);
+  [1, 1.25, 1.5, 1.875, 2.25, 3].forEach((r, i) => {
+    const at = t + i * 0.065;
+    tone(ac, bus, { type: "triangle", freq: root * r, at, attack: 0.004, decay: 0.7, gain: 0.2 });
+    tone(ac, bus, { freq: root * r * 2.003, at, attack: 0.004, decay: 0.5, gain: 0.1 });
+  });
+  burst(ac, bus, { at: t, dur: 0.6, gain: 0.12, type: "bandpass", freq: 900, to: 7000, q: 2, attack: 0.25 });
+  tone(ac, bus, { freq: root * 2, at: t + 0.2, attack: 0.15, decay: 1, gain: 0.12 });
+  tone(ac, bus, { freq: root * 2 * 1.006, at: t + 0.2, attack: 0.15, decay: 1, gain: 0.1 });
+  for (let i = 0;i < 16; i++)
+    tone(ac, bus, { freq: rnd(3000, 9000), at: t + 0.15 + Math.random() * 0.8, attack: 0.001, decay: rnd(0.06, 0.2), gain: rnd(0.04, 0.1) });
+  return 1.5;
+};
+var splash2 = (ac, out, t) => {
+  const bus = trim(ac, out, 1.15);
+  burst(ac, bus, { at: t, dur: 0.18, gain: 0.7, type: "bandpass", freq: 2200, q: 0.8 });
+  burst(ac, bus, { at: t, dur: 0.5, gain: 0.35, type: "lowpass", freq: 900 });
+  burst(ac, bus, { at: t + 0.03, dur: 0.4, gain: 0.25, type: "highpass", freq: 3500 });
+  for (let i = 0;i < 10; i++) {
+    const f = rnd(350, 1100);
+    tone(ac, bus, { freq: f, to: f * rnd(1.6, 2.4), glide: 0.05, at: t + 0.08 + Math.pow(Math.random(), 1.3) * 0.6, attack: 0.003, decay: rnd(0.05, 0.1), gain: rnd(0.1, 0.22) });
+  }
+  return 0.9;
+};
+var fireCrackle = (ac, out, t) => {
+  const bus = trim(ac, saturate(ac, out, 1.4, 0.85), 1.8);
+  const dur = 1.7;
+  burst(ac, bus, { at: t, dur, gain: 0.06, type: "bandpass", freq: 300, q: 0.6, attack: 0.15 });
+  for (let i = 0;i < 34; i++) {
+    const at = t + 0.02 + Math.pow(Math.random(), 1.2) * (dur - 0.2);
+    const big = Math.random() < 0.18;
+    burst(ac, bus, { at, dur: big ? rnd(0.012, 0.02) : rnd(0.004, 0.01), gain: big ? rnd(0.4, 0.65) : rnd(0.1, 0.35), type: "bandpass", freq: rnd(1200, 4500), q: rnd(0.8, 2) });
+    if (big)
+      tone(ac, bus, { freq: rnd(160, 260), to: 70, glide: 0.03, at, attack: 0.001, decay: 0.04, gain: 0.2 });
+  }
+  return dur + 0.1;
+};
+var RECIPES = new Map([
+  ["door-knock", doorKnock],
+  ["door-creak", doorCreak],
+  ["door-slam", doorSlam],
+  ["footsteps", footsteps],
+  ["sword-clash", swordClash],
+  ["glass-break", glassBreak],
+  ["heartbeat", heartbeat],
+  ["thunder", thunder],
+  ["bell", bell],
+  ["whoosh", whoosh],
+  ["impact", impact],
+  ["magic", magic],
+  ["splash", splash2],
+  ["fire-crackle", fireCrackle]
+]);
+function renderCue(ac, out, cue, at = 0) {
+  return RECIPES.get(cue)?.(ac, out, at) ?? 0;
+}
+
+class SfxBoard {
+  context;
+  constructor(context) {
+    this.context = context;
+  }
+  play(cue, volume) {
+    if (volume <= 0 || !RECIPES.has(cue))
+      return false;
+    const ac = this.context();
+    if (!ac || ac.state === "closed")
+      return false;
+    if (ac.state === "suspended")
+      ac.resume().catch(() => {});
+    const master = ac.createGain();
+    master.gain.value = Math.min(1, volume) * 0.6;
+    master.connect(ac.destination);
+    try {
+      const len = renderCue(ac, master, cue, ac.currentTime + 0.02);
+      setTimeout(() => master.disconnect(), (len + 0.4) * 1000);
+      return true;
+    } catch {
+      master.disconnect();
+      return false;
+    }
   }
 }
 
@@ -3122,6 +3624,9 @@ class Soundscape {
     if (this.focused || this.unfocused === "keep")
       return 1;
     return this.unfocused === "mute" ? 0 : this.dimLevel;
+  }
+  get focusLevel() {
+    return document.hidden ? 0 : this.focusFactor();
   }
   applyVolume(fast = false) {
     if (!this.ac || !this.master)
@@ -3827,6 +4332,8 @@ var T = {
   "Dim to": ["调低至", "調低至", "下げる音量", "Baisser à", "Abbassa al"],
   "Ambience volume": ["环境音量", "環境音量", "環境音の音量", "Volume de l’ambiance", "Volume ambiente"],
   "Drag to move": ["拖动以移动", "拖曳以移動", "ドラッグで移動", "Glisser pour déplacer", "Trascina per spostare"],
+  "Show ambience volume": ["显示环境音量", "顯示環境音量", "環境音の音量を表示", "Afficher le volume de l’ambiance", "Mostra il volume ambiente"],
+  Collapse: ["收起", "收合", "折りたたむ", "Réduire", "Comprimi"],
   "Turn ambience off": ["关闭环境音", "關閉環境音", "環境音をオフ", "Couper l’ambiance", "Disattiva l’ambiente"],
   "Turn ambience on": ["开启环境音", "開啟環境音", "環境音をオン", "Activer l’ambiance", "Attiva l’ambiente"],
   "Ambience off": ["环境音已关闭", "環境音已關閉", "環境音オフ", "Ambiance coupée", "Ambiente disattivato"],
@@ -3861,7 +4368,23 @@ var T = {
   "Message sent": ["消息已发送", "訊息已傳送", "メッセージ送信", "Message envoyé", "Messaggio inviato"],
   "Reply received": ["收到回复", "收到回覆", "返信を受信", "Réponse reçue", "Risposta ricevuta"],
   "Milestone celebration": ["里程碑庆祝", "里程碑慶祝", "マイルストーンのお祝い", "Célébration d’étape", "Celebrazione traguardo"],
-  "Screen effect / keyword": ["屏幕特效 / 关键词", "螢幕特效 / 關鍵字", "画面エフェクト／キーワード", "Effet d’écran / mot-clé", "Effetto schermo / parola chiave"]
+  "Screen effect / keyword": ["屏幕特效 / 关键词", "螢幕特效 / 關鍵字", "画面エフェクト／キーワード", "Effet d’écran / mot-clé", "Effetto schermo / parola chiave"],
+  "AI sound effects": ["AI 音效", "AI 音效", "AI 効果音", "Effets sonores de l’IA", "Effetti sonori dell’IA"],
+  "Effects volume": ["音效音量", "音效音量", "効果音の音量", "Volume des effets", "Volume effetti"],
+  "Sound effects": ["音效", "音效", "効果音", "Effets sonores", "Effetti sonori"],
+  "Door knock": ["敲门声", "敲門聲", "ドアをノック", "Coups à la porte", "Bussare alla porta"],
+  "Sword clash": ["剑刃相击", "劍刃相擊", "剣のぶつかり合い", "Choc d’épées", "Scontro di spade"],
+  Heartbeat: ["心跳", "心跳", "心臓の鼓動", "Battement de cœur", "Battito cardiaco"],
+  "Door creak": ["门吱呀声", "門吱呀聲", "ドアのきしみ", "Grincement de porte", "Cigolio della porta"],
+  "Door slam": ["摔门声", "摔門聲", "ドアをバタンと閉める", "Porte qui claque", "Porta sbattuta"],
+  Footsteps: ["脚步声", "腳步聲", "足音", "Bruits de pas", "Passi"],
+  "Glass break": ["玻璃碎裂", "玻璃碎裂", "ガラスの割れる音", "Verre brisé", "Vetro che si rompe"],
+  Thunder: ["雷声", "雷聲", "雷鳴", "Tonnerre", "Tuono"],
+  Bell: ["钟声", "鐘聲", "鐘の音", "Cloche", "Campana"],
+  Whoosh: ["呼啸声", "呼嘯聲", "ヒュッという音", "Sifflement", "Sibilo"],
+  Impact: ["撞击声", "撞擊聲", "衝撃音", "Impact", "Impatto"],
+  Magic: ["魔法", "魔法", "魔法", "Magie", "Magia"],
+  "Fire crackle": ["火焰噼啪声", "火焰劈啪聲", "焚き火のパチパチ", "Crépitement du feu", "Crepitio del fuoco"]
 };
 var LOCALES = ["zh", "zh-TW", "ja", "fr", "it"];
 var DICT = Object.fromEntries(LOCALES.map((loc, i) => [loc, Object.fromEntries(Object.entries(T).map(([en, row]) => [en, row[i]]))]));
@@ -3878,11 +4401,13 @@ function tr(en) {
 }
 
 // src/soundwidget.ts
-var W = 256;
+var W = 288;
 var H = 52;
+var DOT = 44;
 var ICON_ON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path class="lf-sw-w1" d="M15.5 8.5a5 5 0 0 1 0 7"/><path class="lf-sw-w2" d="M19 5a10 10 0 0 1 0 14"/></svg>';
 var ICON_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>';
 var GRIP = '<svg viewBox="0 0 8 20" width="8" height="20" fill="currentColor" aria-hidden="true"><circle cx="2" cy="4" r="1.3"/><circle cx="6" cy="4" r="1.3"/><circle cx="2" cy="10" r="1.3"/><circle cx="6" cy="10" r="1.3"/><circle cx="2" cy="16" r="1.3"/><circle cx="6" cy="16" r="1.3"/></svg>';
+var FOLD = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 var SOUND_WIDGET_CSS = `
 .lf-sw,.lf-sw *{box-sizing:border-box;margin:0;padding:0;text-align:left;line-height:normal;letter-spacing:normal;text-transform:none;text-indent:0;float:none}
 .lf-sw{position:relative;width:${W}px;height:${H}px;display:flex;flex-direction:row;align-items:center;gap:8px;padding:0 14px 0 8px;
@@ -3918,6 +4443,22 @@ var SOUND_WIDGET_CSS = `
 .lf-sw .lf-sw-slider:active .lf-sw-thumb{transform:scale(1.15)}
 .lf-sw[data-on="0"] .lf-sw-slider{opacity:.55}
 .lf-sw .lf-sw-pct{display:block;flex:none;width:36px;text-align:right;font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;color:var(--lumiverse-text-dim,#ccc);white-space:nowrap}
+.lf-sw .lf-sw-fold{flex:none;width:28px;height:28px;min-width:0;min-height:0;max-width:none;padding:0;border:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;box-shadow:none;outline:none;font:inherit;background:var(--lumiverse-fill,rgba(255,255,255,.08));color:var(--lumiverse-text-dim,#ccc);transition:background .15s}
+.lf-sw .lf-sw-fold svg{display:block;flex:none;width:16px;height:16px;min-width:0}
+.lf-sw[data-anchor="l"] .lf-sw-fold svg{transform:scaleX(-1)}
+.lf-sw .lf-sw-fold:hover{background:var(--lumiverse-fill-subtle,rgba(255,255,255,.14))}
+.lf-sw .lf-sw-fold:focus-visible,.lf-sw .lf-sw-dot:focus-visible{outline:2px solid var(--lumiverse-primary,#9370db);outline-offset:2px}
+.lf-sw .lf-sw-dot{display:none}
+.lf-sw[data-collapsed="1"]{width:${DOT}px;height:${DOT}px;padding:0;gap:0;border-radius:50%;justify-content:center;cursor:pointer}
+.lf-sw[data-collapsed="1"] > :not(.lf-sw-dot){display:none}
+.lf-sw[data-collapsed="1"] .lf-sw-dot{display:flex;flex:none;width:100%;height:100%;min-width:0;min-height:0;max-width:none;padding:0;border:0;border-radius:50%;
+  align-items:center;justify-content:center;cursor:pointer;box-shadow:none;outline:none;font:inherit;background:transparent;color:var(--lumiverse-text-muted,#bbb)}
+.lf-sw[data-collapsed="1"] .lf-sw-dot svg{display:block;flex:none;width:20px;height:20px;min-width:0}
+.lf-sw[data-collapsed="1"][data-on="1"]{background:var(--lumiverse-primary,#9370db);border-color:transparent}
+.lf-sw[data-collapsed="1"][data-on="1"] .lf-sw-dot{color:var(--lumiverse-primary-contrast,#fff)}
+.lf-sw[data-collapsed="1"][data-on="1"][data-state="playing"] .lf-sw-w1,.lf-sw[data-collapsed="1"][data-on="1"][data-state="playing"] .lf-sw-w2{animation:lf-sw-wave 1.6s ease-in-out infinite}
+.lf-sw[data-collapsed="1"][data-on="1"][data-state="playing"] .lf-sw-w2{animation-delay:.2s}
 `;
 
 class SoundWidget {
@@ -3926,6 +4467,9 @@ class SoundWidget {
   w = null;
   el = null;
   btn = null;
+  dot = null;
+  fold = null;
+  collapsed = false;
   label = null;
   range = null;
   value = 0;
@@ -3957,15 +4501,30 @@ class SoundWidget {
     this.render();
     return true;
   }
+  dims() {
+    return this.collapsed ? { w: DOT, h: DOT } : { w: W, h: H };
+  }
+  wantCollapsed() {
+    const c = this.deps.settings().soundWidgetCollapsed;
+    if (typeof c === "boolean")
+      return c;
+    return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  }
   defaultPos() {
-    return { x: Math.max(12, window.innerWidth - W - 24), y: 72 };
+    const d = this.dims();
+    return { x: Math.max(12, window.innerWidth - d.w - (this.collapsed ? 12 : 24)), y: 72 };
+  }
+  anchor(p, d = this.dims()) {
+    return p.x + d.w / 2 > window.innerWidth / 2 ? "r" : "l";
   }
   create() {
+    this.collapsed = this.wantCollapsed();
     const saved = this.deps.settings().soundWidgetPos;
     const pos = this.clamp(saved ?? this.defaultPos());
+    const d = this.dims();
     const w = this.ctx.ui.createFloatWidget({
-      width: W,
-      height: H,
+      width: d.w,
+      height: d.h,
       initialPosition: pos,
       snapToEdge: false,
       tooltip: tr("Ambience volume"),
@@ -4040,13 +4599,32 @@ class SoundWidget {
     mid.append(label, range);
     const pct = document.createElement("span");
     pct.className = "lf-sw-pct";
-    for (const ctl of [btn, range]) {
+    const fold = document.createElement("button");
+    fold.type = "button";
+    fold.className = "lf-sw-fold";
+    fold.innerHTML = FOLD;
+    fold.title = tr("Collapse");
+    fold.setAttribute("aria-label", tr("Collapse"));
+    fold.setAttribute("aria-expanded", "true");
+    fold.addEventListener("click", (e) => this.setCollapsed(true, e.detail === 0));
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = "lf-sw-dot";
+    dot.title = tr("Show ambience volume");
+    dot.setAttribute("aria-label", tr("Show ambience volume"));
+    dot.setAttribute("aria-expanded", "false");
+    dot.addEventListener("click", (e) => this.setCollapsed(false, e.detail === 0));
+    for (const ctl of [btn, range, fold]) {
       for (const ev of ["pointerdown", "mousedown", "touchstart"])
         ctl.addEventListener(ev, (e) => e.stopPropagation());
     }
-    el.append(grip, btn, mid, pct);
+    el.dataset.collapsed = this.collapsed ? "1" : "0";
+    el.dataset.anchor = this.anchor(pos);
+    el.append(grip, btn, mid, pct, fold, dot);
     w.root.appendChild(el);
     this.el = el;
+    this.dot = dot;
+    this.fold = fold;
     this.btn = btn;
     this.label = label;
     this.range = range;
@@ -4055,13 +4633,14 @@ class SoundWidget {
       const c = this.clamp(p);
       if (c.x !== p.x || c.y !== p.y)
         w.moveTo(c.x, c.y);
+      el.dataset.anchor = this.anchor(c);
       this.deps.update({ soundWidgetPos: c });
     });
     window.addEventListener("resize", this.onResize);
   }
-  clamp(p) {
-    const maxX = Math.max(0, window.innerWidth - W - 4);
-    const maxY = Math.max(0, window.innerHeight - H - 4);
+  clamp(p, d = this.dims()) {
+    const maxX = Math.max(0, window.innerWidth - d.w - 4);
+    const maxY = Math.max(0, window.innerHeight - d.h - 4);
     return { x: Math.round(Math.max(4, Math.min(maxX, p.x))), y: Math.round(Math.max(4, Math.min(maxY, p.y))) };
   }
   keepOnScreen() {
@@ -4071,6 +4650,27 @@ class SoundWidget {
     const c = this.clamp(p);
     if (c.x !== p.x || c.y !== p.y)
       this.w.moveTo(c.x, c.y);
+    if (this.el)
+      this.el.dataset.anchor = this.anchor(c);
+  }
+  setCollapsed(next, keyboard = false) {
+    const { w, el } = this;
+    if (!w || !el || next === this.collapsed)
+      return;
+    const from = this.dims();
+    const p = w.getPosition();
+    const side = this.anchor(p, from);
+    this.collapsed = next;
+    const to = this.dims();
+    const c = this.clamp({ x: side === "r" ? p.x + from.w - to.w : p.x, y: p.y + from.h / 2 - to.h / 2 }, to);
+    el.dataset.collapsed = next ? "1" : "0";
+    el.dataset.anchor = side;
+    w.setSize(to.w, to.h);
+    w.moveTo(c.x, c.y);
+    this.deps.update({ soundWidgetCollapsed: next, soundWidgetPos: c });
+    this.render();
+    if (keyboard)
+      (next ? this.dot : this.fold)?.focus({ preventScroll: true });
   }
   setValue(v, commit) {
     this.value = v;
@@ -4108,6 +4708,8 @@ class SoundWidget {
     el.dataset.on = on ? "1" : "0";
     el.dataset.state = v.state;
     btn.innerHTML = on && s.soundscapeVolume > 0 ? ICON_ON : ICON_OFF;
+    if (this.dot)
+      this.dot.innerHTML = btn.innerHTML;
     btn.setAttribute("aria-pressed", String(on));
     btn.title = on ? tr("Turn ambience off") : tr("Turn ambience on");
     btn.setAttribute("aria-label", btn.title);
@@ -4143,35 +4745,91 @@ class SoundWidget {
       this.w?.destroy();
     } catch {}
     this.w = null;
-    this.el = this.btn = this.label = this.range = this.pct = null;
+    this.el = this.btn = this.dot = this.fold = this.label = this.range = this.pct = null;
     this.dragging = false;
   }
 }
 
 // src/cinematic.ts
+var RAYS = {
+  box: { x: -0.06, y: -0.06, w: 0.9, h: 0.52 },
+  from: { x: 0.052, y: -0.34 },
+  fade: { x: 0.08, y: -0.2, rx: 0.686, ry: 0.588 },
+  alpha: 0.1,
+  turn: 200
+};
+var RAY_DAY = [255, 236, 200];
+var RAY_DUSK = [255, 245, 167];
+var RAY_LIGHTS = new Set(["dawn", "day", "dusk"]);
+function raysImage(w, h, rgb) {
+  const k = Math.min(0.5, 320 / (w * RAYS.box.w));
+  const bw = Math.max(8, Math.round(w * RAYS.box.w * k));
+  const bh = Math.max(8, Math.round(h * RAYS.box.h * k));
+  const c = document.createElement("canvas");
+  c.width = bw;
+  c.height = bh;
+  const g = c.getContext("2d");
+  if (!g)
+    return "";
+  const img = g.createImageData(bw, bh);
+  const d = img.data;
+  const sx = RAYS.from.x * w;
+  const sy = RAYS.from.y * h;
+  const mx = RAYS.fade.x * w;
+  const my = RAYS.fade.y * h;
+  const rx = RAYS.fade.rx * w;
+  const ry = RAYS.fade.ry * h;
+  for (let j = 0;j < bh; j++) {
+    const y = (RAYS.box.y + (j + 0.5) / bh * RAYS.box.h) * h;
+    const ny = (y - my) / ry;
+    for (let i = 0;i < bw; i++) {
+      const x = (RAYS.box.x + (i + 0.5) / bw * RAYS.box.w) * w;
+      const nx = (x - mx) / rx;
+      const fade = 1 - Math.sqrt(nx * nx + ny * ny);
+      if (fade <= 0)
+        continue;
+      let a = Math.atan2(x - sx, sy - y) * 180 / Math.PI - RAYS.turn;
+      a = (a % 360 + 360) % 360 % 16;
+      const beam = a < 6 ? 0 : a < 7 ? a - 6 : a < 9 ? 1 : a < 10 ? 10 - a : 0;
+      if (beam <= 0)
+        continue;
+      const p = (j * bw + i) * 4;
+      d[p] = rgb[0];
+      d[p + 1] = rgb[1];
+      d[p + 2] = rgb[2];
+      d[p + 3] = Math.round(255 * RAYS.alpha * beam * fade);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c.toDataURL("image/png");
+}
+var pct = (v) => `${+(v * 100).toFixed(3)}%`;
+var RAYS_ORIGIN = `${pct((0.5 - RAYS.box.x) / RAYS.box.w)} ${pct((0.5 - RAYS.box.y) / RAYS.box.h)}`;
 var CINEMATIC_CSS = `
 .lf-cine { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 .lf-cine > div { position: absolute; inset: 0; pointer-events: none; }
-.lf-cine .lf-tint { opacity: 0; transition: opacity 2.4s ease, background 2.4s ease; mix-blend-mode: screen; }
-.lf-cine[data-light="night"] .lf-tint, .lf-cine[data-light="storm"] .lf-tint { mix-blend-mode: normal; }
-.lf-cine .lf-rays { opacity: 0; transition: opacity 3s ease; inset: -20%;
-  background: repeating-conic-gradient(from 200deg at 18% -10%, rgba(255,240,210,.0) 0deg 6deg, rgba(255,236,200,.10) 7deg 9deg, rgba(255,240,210,0) 10deg 16deg);
-  -webkit-mask: radial-gradient(ellipse 70% 60% at 20% 0%, #000 0%, transparent 70%); mask: radial-gradient(ellipse 70% 60% at 20% 0%, #000 0%, transparent 70%);
-  animation: lf-rays-sway 18s ease-in-out infinite alternate; }
+.lf-cine .lf-tint { opacity: 0; transition: opacity 2.4s ease, background 2.4s ease; }
+.lf-cine .lf-rays { opacity: 0; transition: opacity 3s ease; inset: ${pct(RAYS.box.y)} auto auto ${pct(RAYS.box.x)}; width: ${pct(RAYS.box.w)}; height: ${pct(RAYS.box.h)};
+  background: center / 100% 100% no-repeat; transform-origin: ${RAYS_ORIGIN}; }
 .lf-cine .lf-vignette { background: radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,calc(var(--lf-vignette, .35) * 1.6)) 100%); transition: background 2s ease; }
-.lf-cine .lf-grain { opacity: 0; transition: opacity 1s ease; background-size: 160px 160px; mix-blend-mode: overlay; animation: lf-grain .6s steps(4) infinite; }
+.lf-cine .lf-grain { opacity: 0; transition: opacity 1s ease; background-size: 160px 160px; mix-blend-mode: overlay; inset: -80px; }
 .lf-cine .lf-flash { opacity: 0; background: radial-gradient(ellipse at 60% 10%, rgba(220,230,255,.9), rgba(180,200,255,.35) 45%, transparent 75%); }
-.lf-cine[data-grain="1"] .lf-grain { opacity: .07; }
+.lf-cine[data-grain="1"] .lf-grain { opacity: .07; animation: lf-grain .6s steps(4) infinite; }
 
 .lf-cine[data-light="dawn"]   .lf-tint { opacity: 1; background: radial-gradient(ellipse at 15% 0%, rgba(255,170,120,.55), transparent 65%), linear-gradient(180deg, rgba(255,190,150,.18), transparent 60%); }
 .lf-cine[data-light="day"]    .lf-tint { opacity: 1; background: linear-gradient(180deg, rgba(255,250,235,.16), transparent 55%); }
 .lf-cine[data-light="dusk"]   .lf-tint { opacity: 1; background: linear-gradient(180deg, rgba(255,140,70,.35), rgba(170,70,140,.22) 55%, rgba(40,30,90,.25)); }
 .lf-cine[data-light="night"]  .lf-tint { opacity: 1; background: radial-gradient(ellipse at 80% 0%, rgba(140,170,255,.25), transparent 55%), linear-gradient(180deg, rgba(10,20,60,.45), rgba(5,8,25,.35)); }
-.lf-cine[data-light="candle"] .lf-tint { opacity: 1; background: radial-gradient(ellipse at 50% 110%, rgba(255,150,60,.55), rgba(255,110,40,.15) 50%, transparent 75%); animation: lf-candle 3.2s ease-in-out infinite; }
+.lf-cine[data-light="candle"] .lf-tint { opacity: 1; background: radial-gradient(ellipse at 50% 110%, rgba(255,150,60,.55), rgba(255,110,40,.15) 50%, transparent 75%); animation: lf-candle 3.2s var(--lf-flicker-ease, ease-in-out) infinite; }
 .lf-cine[data-light="storm"]  .lf-tint { opacity: 1; background: linear-gradient(180deg, rgba(40,55,80,.55), rgba(20,25,40,.45)); }
-.lf-cine[data-light="neon"]   .lf-tint { opacity: 1; background: radial-gradient(ellipse at 0% 50%, rgba(255,40,200,.35), transparent 55%), radial-gradient(ellipse at 100% 50%, rgba(0,220,255,.35), transparent 55%); animation: lf-neon 6s ease-in-out infinite alternate; }
-.lf-cine[data-light="dawn"] .lf-rays, .lf-cine[data-light="dusk"] .lf-rays, .lf-cine[data-light="day"] .lf-rays { opacity: 1; }
-.lf-cine[data-light="dusk"] .lf-rays { filter: sepia(1) saturate(3) hue-rotate(-20deg); }
+/* Neon drifts between two colourings by cross-fading two layers (a hue-rotate filter animation would be redrawn every frame). */
+.lf-cine[data-light="neon"]   .lf-tint { opacity: 1; }
+.lf-cine[data-light="neon"]   .lf-tint::before, .lf-cine[data-light="neon"] .lf-tint::after { content: ''; position: absolute; inset: 0; }
+.lf-cine[data-light="neon"]   .lf-tint::before { background: radial-gradient(ellipse at 0% 50%, rgba(255,40,200,.35), transparent 55%), radial-gradient(ellipse at 100% 50%, rgba(0,220,255,.35), transparent 55%); animation: lf-neon-out 6s var(--lf-drift-ease, ease-in-out) infinite alternate; }
+.lf-cine[data-light="neon"]   .lf-tint::after { opacity: 0; background: radial-gradient(ellipse at 0% 50%, rgba(255,44,75,.35), transparent 55%), radial-gradient(ellipse at 100% 50%, rgba(92,183,255,.35), transparent 55%); animation: lf-neon-in 6s var(--lf-drift-ease, ease-in-out) infinite alternate; }
+/* The sway only runs while the rays are showing: an animation on an invisible layer still keeps the browser drawing frames. */
+.lf-cine[data-light="dawn"] .lf-rays, .lf-cine[data-light="dusk"] .lf-rays, .lf-cine[data-light="day"] .lf-rays {
+  opacity: 1; will-change: transform; animation: lf-rays-sway 18s var(--lf-sway-ease, ease-in-out) infinite alternate; }
 .lf-cine[data-light="night"] .lf-vignette, .lf-cine[data-light="storm"] .lf-vignette {
   background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,calc(var(--lf-vignette, .35) * 2.1)) 100%); }
 
@@ -4180,9 +4838,10 @@ var CINEMATIC_CSS = `
 .lf-cine.lf-flashing.lf-soft .lf-flash { animation: lf-lightning-soft 2.4s ease-in-out; }
 
 @keyframes lf-rays-sway { from { transform: rotate(-2deg); } to { transform: rotate(3deg); } }
-@keyframes lf-grain { 0% { background-position: 0 0; } 25% { background-position: -40px 20px; } 50% { background-position: 30px -50px; } 75% { background-position: -60px -10px; } 100% { background-position: 0 0; } }
+@keyframes lf-grain { 0% { transform: translate(0, 0); } 25% { transform: translate(-40px, 20px); } 50% { transform: translate(30px, -50px); } 75% { transform: translate(-60px, -10px); } 100% { transform: translate(0, 0); } }
 @keyframes lf-candle { 0%, 100% { opacity: 1; } 30% { opacity: .82; } 55% { opacity: .95; } 70% { opacity: .78; } }
-@keyframes lf-neon { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(40deg); } }
+@keyframes lf-neon-out { to { opacity: 0; } }
+@keyframes lf-neon-in { to { opacity: 1; } }
 @keyframes lf-lightning { 0% { opacity: 0; } 4% { opacity: .9; } 9% { opacity: .1; } 14% { opacity: .7; } 40% { opacity: .15; } 100% { opacity: 0; } }
 @keyframes lf-lightning-soft { 0% { opacity: 0; } 35% { opacity: .22; } 100% { opacity: 0; } }
 @keyframes lf-camshake {
@@ -4194,8 +4853,15 @@ var CINEMATIC_CSS = `
   80% { transform: translate(-1px, 1px); }
 }
 
+/* On a touch screen the slow movements (the rays' sway, neon's drift, the candle's flicker) are taken in small steps
+   instead of every frame: each change makes the browser redraw whatever blurs the background behind the messages,
+   which is where the cost is on a phone. The steps are far finer than the eye can tell apart. */
+@media (pointer: coarse) {
+  .lf-cine { --lf-sway-ease: steps(60, end); --lf-drift-ease: steps(30, end); --lf-flicker-ease: steps(6, end); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .lf-cine .lf-rays, .lf-cine .lf-grain, .lf-cine .lf-tint { animation: none !important; }
+  .lf-cine .lf-rays, .lf-cine .lf-grain, .lf-cine .lf-tint, .lf-cine .lf-tint::before, .lf-cine .lf-tint::after { animation: none !important; }
 }
 `;
 var grainUrl = null;
@@ -4221,8 +4887,11 @@ function grainTile() {
 class Cinematic {
   el;
   flashEl;
+  raysEl;
+  raysFor = { w: 0, h: 0, dusk: false };
+  watch = null;
   lightningTimer = null;
-  st = { enabled: false, light: "none", vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true };
+  st = { enabled: false, light: "none", vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false };
   onThunder = null;
   constructor(make) {
     this.el = make("div");
@@ -4234,12 +4903,16 @@ class Cinematic {
       return d;
     };
     layer("lf-tint");
-    layer("lf-rays");
+    this.raysEl = layer("lf-rays");
     layer("lf-vignette");
     const grain = layer("lf-grain");
     grain.style.backgroundImage = `url("${grainTile()}")`;
     this.flashEl = layer("lf-flash");
     this.flashEl.addEventListener("animationend", () => this.el.classList.remove("lf-flashing"));
+    if (typeof ResizeObserver !== "undefined") {
+      this.watch = new ResizeObserver(() => this.paintRays());
+      this.watch.observe(this.el);
+    }
   }
   set(next) {
     this.st = next;
@@ -4247,8 +4920,29 @@ class Cinematic {
     this.el.style.display = on ? "" : "none";
     this.el.dataset.light = on ? next.light : "none";
     this.el.dataset.grain = on && next.grain ? "1" : "0";
+    this.el.dataset.saver = next.saver ? "1" : "0";
     this.el.style.setProperty("--lf-vignette", String(on ? next.vignette : 0));
+    this.paintRays();
     this.scheduleLightning();
+  }
+  get animating() {
+    const s = this.st;
+    return s.enabled && s.motion && (s.light === "candle" || s.light === "neon" || RAY_LIGHTS.has(s.light) || s.grain);
+  }
+  paintRays() {
+    const s = this.st;
+    if (!s.enabled || s.saver || !RAY_LIGHTS.has(s.light))
+      return;
+    const w = this.el.clientWidth;
+    const h = this.el.clientHeight;
+    if (w < 60 || h < 60)
+      return;
+    const dusk = s.light === "dusk";
+    const f = this.raysFor;
+    if (this.raysEl.style.backgroundImage && dusk === f.dusk && Math.abs(w - f.w) < f.w * 0.04 && Math.abs(h - f.h) < f.h * 0.04)
+      return;
+    this.raysFor = { w, h, dusk };
+    this.raysEl.style.backgroundImage = `url("${raysImage(w, h, dusk ? RAY_DUSK : RAY_DAY)}")`;
   }
   scheduleLightning() {
     if (this.lightningTimer)
@@ -4273,6 +4967,7 @@ class Cinematic {
   destroy() {
     if (this.lightningTimer)
       clearTimeout(this.lightningTimer);
+    this.watch?.disconnect();
     this.el.remove();
   }
 }
@@ -4490,6 +5185,21 @@ function clickSend() {
   btn.click();
   return true;
 }
+var MAX_OPTIONS = 4;
+var TAG_RE = /<flair-choice\b[^>]*>([\s\S]*?)<\/flair-choice>/gi;
+var cleanOption = (text) => text.replace(/<[^>]*>/g, "").trim().slice(0, 160);
+var sameOptions = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+function choicesIn(content) {
+  const out = [];
+  for (const m of content.matchAll(TAG_RE)) {
+    const clean = cleanOption(m[1] ?? "");
+    if (clean && !out.includes(clean))
+      out.push(clean);
+    if (out.length >= MAX_OPTIONS)
+      break;
+  }
+  return out;
+}
 
 class ChoiceManager {
   ctx;
@@ -4502,32 +5212,45 @@ class ChoiceManager {
     this.ctx = ctx;
   }
   add(messageId, text) {
-    const clean = text.replace(/<[^>]*>/g, "").trim().slice(0, 160);
+    const clean = cleanOption(text);
     if (!clean)
       return;
-    const list = this.pending.get(messageId) ?? [];
-    if (!list.includes(clean))
-      list.push(clean);
-    this.pending.set(messageId, list.slice(0, 4));
+    const entry = this.pending.get(messageId) ?? { options: [], fixed: false };
+    if (entry.fixed)
+      return;
+    if (!entry.options.includes(clean) && entry.options.length < MAX_OPTIONS)
+      entry.options.push(clean);
+    this.pending.set(messageId, entry);
     queueMicrotask(() => setTimeout(() => this.renderFor(messageId), 30));
+  }
+  swiped(messageId, content) {
+    if (!this.enabled)
+      return;
+    this.pending.set(messageId, { options: choicesIn(content), fixed: true });
+    this.renderFor(messageId);
   }
   renderFor(messageId) {
     if (!this.enabled)
       return;
-    if (this.ctx.messages.getLatestMessageId() !== messageId)
+    const shown = this.rendered?.messageId === messageId ? this.rendered : null;
+    if (this.ctx.messages.getLatestMessageId() !== messageId) {
+      if (shown)
+        this.hide();
       return;
-    const options = this.pending.get(messageId);
-    if (!options?.length)
-      return;
-    if (this.rendered?.messageId === messageId && this.rendered.el.isConnected) {
-      if (this.rendered.el.querySelectorAll(".lf-choice").length === options.length)
-        return;
     }
+    const options = this.pending.get(messageId)?.options ?? [];
+    if (!options.length) {
+      if (shown)
+        this.hide();
+      return;
+    }
+    if (shown && shown.el.isConnected && sameOptions(shown.options, options))
+      return;
     const el = this.ctx.dom.findMessageElement(messageId);
     if (!el)
       return;
     const isCard = el.matches(':is([data-component="BubbleMessage"],[data-component="MinimalMessage"])');
-    this.clear();
+    this.hide();
     const html = `<div class="lf-choices" role="group" aria-label="Suggested replies">${options.map((o, i) => `<button type="button" class="lf-choice" data-lf-choice="${i}"></button>`).join("")}</div>`;
     const wrap = this.ctx.dom.inject(el, html, isCard ? "afterend" : "beforeend");
     wrap.querySelectorAll(".lf-choice").forEach((btn, i) => {
@@ -4543,16 +5266,25 @@ class ChoiceManager {
         this.onPick?.(options[i]);
       });
     });
-    this.rendered = { messageId, el: wrap };
+    this.rendered = { messageId, el: wrap, options: [...options] };
+  }
+  pause() {
+    this.hide();
+    for (const entry of this.pending.values())
+      entry.fixed = false;
+  }
+  hide() {
+    const r = this.rendered;
+    if (!r)
+      return;
+    this.rendered = null;
+    this.ctx.dom.uninject(r.el);
+    r.el.replaceChildren();
+    r.el.hidden = true;
   }
   clear() {
-    if (this.rendered) {
-      this.ctx.dom.uninject(this.rendered.el);
-      this.rendered = null;
-    }
-  }
-  forget(messageId) {
-    this.pending.delete(messageId);
+    this.hide();
+    this.pending.clear();
   }
 }
 
@@ -4691,15 +5423,6 @@ var ACHIEVEMENTS = [
   { id: "shutterbug", icon: "\uD83D\uDCF8", title: "Shutterbug", desc: "Create a Moment Card." },
   { id: "packrat", icon: "\uD83C\uDFA8", title: "Set Dresser", desc: "Apply a Flair Pack." }
 ];
-var EMPTY_ACHIEVEMENTS = {
-  unlocked: {},
-  sent: 0,
-  choices: 0,
-  scenes: [],
-  lastDay: "",
-  streak: 0,
-  moodsByChat: {}
-};
 function normalizeAchievements(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   return {
@@ -4758,8 +5481,12 @@ function onMood(data, chatId, label) {
   return list.length >= 5 ? ["moods"] : [];
 }
 var ACHIEVEMENT_CSS = `
-.lf-unlock { position: fixed; top: 18px; right: 18px; z-index: 2147483001; pointer-events: none;
-  display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px; min-width: 240px; max-width: 340px;
+/* Below the notch / status bar on a phone: the host's own toasts use the same variable. Safe-area insets are
+   physical pixels, and this sits in the UI-scale zoom layer, so they are divided by the scale (like the host's viewport sizes). */
+.lf-unlock { position: fixed; z-index: 2147483001; pointer-events: none;
+  top: calc(18px + var(--app-interactive-safe-top, env(safe-area-inset-top, 0px)) / var(--lumiverse-ui-scale, 1) + var(--lf-slot, 0) * 84px);
+  right: calc(18px + env(safe-area-inset-right, 0px) / var(--lumiverse-ui-scale, 1));
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px; min-width: 240px; max-width: min(340px, calc(var(--app-scaled-viewport-width, 100vw) - 36px));
   border-radius: 14px; color: var(--lumiverse-text, #fff);
   background: color-mix(in srgb, var(--lumiverse-bg-elevated, #231e30) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--lf-c, #9370db) 55%, transparent);
@@ -5373,6 +6100,8 @@ class PerfGovernor {
   low = 0;
   high = 0;
   saver = false;
+  relapses = 0;
+  recoveredAt = 0;
   fps = 60;
   constructor(isActive, onChange) {
     this.isActive = isActive;
@@ -5406,7 +6135,7 @@ class PerfGovernor {
         }
         if (!this.saver && this.low >= 2)
           this.set(true);
-        if (this.saver && this.high >= 4)
+        if (this.saver && this.high >= Math.min(64, 4 * 2 ** this.relapses))
           this.set(false);
       }
       this.raf = requestAnimationFrame(tick);
@@ -5414,11 +6143,16 @@ class PerfGovernor {
     this.raf = requestAnimationFrame(tick);
   }
   set(v) {
+    if (v && this.recoveredAt && performance.now() - this.recoveredAt < 60000)
+      this.relapses++;
+    if (!v)
+      this.recoveredAt = performance.now();
     this.saver = v;
     this.low = this.high = 0;
     this.onChange(this.saving);
   }
   reset() {
+    this.relapses = 0;
     if (this.saver)
       this.set(false);
   }
@@ -5718,7 +6452,8 @@ var SLOT_LABEL = {
   "ui:receive": { label: "Reply received", group: "Interface" },
   "ui:fanfare": { label: "Milestone celebration", group: "Interface" },
   "ui:achievement": { label: "Achievement unlocked", group: "Interface" },
-  "ui:sparkle": { label: "Screen effect / keyword", group: "Interface" }
+  "ui:sparkle": { label: "Screen effect / keyword", group: "Interface" },
+  ...Object.fromEntries(SFX_CUES.map((c) => [`sfx:${c.name}`, { label: c.label, group: "Sound effects" }]))
 };
 var fmtDuration = (sec) => {
   const s = Math.max(0, Math.round(sec));
@@ -6573,7 +7308,7 @@ function mountPanel(ctx, store, actions) {
   const grid = document.createElement("div");
   grid.className = "lf-badges";
   ach.body.appendChild(grid);
-  let achKey = "";
+  let achKey = null;
   statusSyncers.push((st) => {
     const key = Object.keys(st.unlocked).sort().join(",");
     if (key === achKey)
@@ -6605,6 +7340,12 @@ function mountPanel(ctx, store, actions) {
   toggle(snd.body, "Soundscapes", "soundscape");
   hint(snd.body, "Rain, wind, crackling fire, night crickets, spring birds or a deep-space hum — generated live to match the scene and lighting, crossfading as the story moves. No audio files.");
   slider(snd.body, "Soundscape volume", "soundscapeVolume", 0, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  toggle(snd.body, "AI sound effects", "aiSfx");
+  hint(snd.body, "The AI can add short sound cues to a reply — a door knock, a sword clash, a heartbeat — that play as the line appears. Adds a short note (about 200 tokens) to each request, and uses the same “Add the instructions to every prompt” setting as the other AI tags. Assign your own files to any cue under “Your sounds”.");
+  slider(snd.body, "Effects volume", "sfxVolume", 0, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  const cueRow = buttons(snd.body);
+  for (const c of SFX_CUES)
+    button(cueRow, c.label, () => actions.previewSfx(c.name), "secondary", I.sound);
   toggle(snd.body, "Floating volume widget", "soundWidget", async (next) => !next || actions.status().panelsPermission || await actions.requestPanelsPermission());
   hint(snd.body, "A small pill you can drag anywhere: turn the ambience on or off and set its volume without opening this panel. Needs the “UI panels” permission.");
   const widgetGrant = button(buttons(snd.body), "Allow the floating widget", async () => {
@@ -6900,6 +7641,8 @@ function mountPanel(ctx, store, actions) {
     userRow.style.display = s.userColor === "custom" ? "" : "none";
   }
   syncVisibility(s0);
+  for (const fn of statusSyncers)
+    fn(actions.status());
   tab.root.appendChild(panel);
   const unsub = store.subscribe((s) => {
     syncVisibility(s);
@@ -7273,6 +8016,7 @@ function newest(...items) {
 class Vault {
   ctx;
   canWrite = { account: false, file: false, browser: true };
+  loaded = false;
   current = new Map;
   req = 0;
   pendingLoads = new Map;
@@ -7450,10 +8194,15 @@ class Vault {
     });
     if (this.current.size)
       this.st.lastSavedAt = Math.max(...[...this.current.values()].map((e) => e.at));
+    this.loaded = true;
     this.emit();
     return out;
   }
   save(name, data) {
+    if (!this.loaded) {
+      console.warn("[Lumi Flair] Ignored a save made before the saved copy was read");
+      return;
+    }
     const e = { at: Date.now(), data };
     this.current.set(name, e);
     this.st.saving = true;
@@ -7557,6 +8306,8 @@ async function pickBackup(ctx) {
 
 // src/frontend.ts
 var AI_FX_WINDOW_MS = 30000;
+var SFX_MAX_PER_MESSAGE = 4;
+var SFX_GAP_MS = 700;
 var CARD2 = ':is([data-component="BubbleMessage"],[data-component="MinimalMessage"])[data-message-id]';
 function setup(ctx) {
   ctx.deferReady();
@@ -7567,7 +8318,7 @@ function setup(ctx) {
   const store = createSettingsStore(vault);
   bindCustomPacks(() => store.getBase().customPacks);
   const beats = createJsonStore(vault, "heartbeat", {});
-  const badges = createJsonStore(vault, "achievements", EMPTY_ACHIEVEMENTS);
+  const badges = createJsonStore(vault, "achievements", normalizeAchievements(null));
   const disposers = [];
   let disposed = false;
   const on = (event, fn) => disposers.push(ctx.events.on(event, fn));
@@ -7592,7 +8343,11 @@ function setup(ctx) {
     recentGenerated: new Map,
     pendingAiFx: new Map,
     firedAiFx: new Set,
-    shaken: new Set
+    shaken: new Set,
+    sfxEpoch: 0,
+    sfxFired: new Map,
+    pendingSfx: new Map,
+    sfxNextAt: 0
   };
   const director = new DirectorState;
   const statusListeners = new Set;
@@ -7621,6 +8376,7 @@ function setup(ctx) {
   const fx = new FxCanvas(fxEl);
   const ambient = new AmbientCanvas(ambientEl);
   const sound = new SoundBoard;
+  const sfx = new SfxBoard(() => sound.context());
   const scape = new Soundscape;
   scape.onState = () => notifyStatus();
   const lib = new SoundLibrary;
@@ -7698,7 +8454,9 @@ function setup(ctx) {
   const onMotionChange = () => applyAll();
   reducedMotion.addEventListener?.("change", onMotionChange);
   disposers.push(() => reducedMotion.removeEventListener?.("change", onMotionChange));
-  const perf = new PerfGovernor(() => store.get().perfGovernor && (ambient.current !== "off" || cine.el.isConnected), (saver) => {
+  const touchScreen = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const lightAnimating = () => cine.animating && !touchScreen();
+  const perf = new PerfGovernor(() => store.get().perfGovernor && (ambient.current !== "off" || lightAnimating()), (saver) => {
     state.saver = saver;
     applyAmbient();
     applyCinematic();
@@ -7777,24 +8535,30 @@ function setup(ctx) {
     const { css, durationMs } = entranceRule(messageId, kind);
     tempRule(`${kind}:${messageId}`, css, durationMs + 400);
   }
+  function earn(track) {
+    badges.whenLoaded(() => {
+      const data = badges.get();
+      const ids = track(data);
+      const s = store.get();
+      let changed = false;
+      for (const id of ids) {
+        if (data.unlocked[id])
+          continue;
+        const def = ACHIEVEMENTS.find((a) => a.id === id);
+        if (!def)
+          continue;
+        data.unlocked[id] = Date.now();
+        changed = true;
+        if (s.enabled && s.achievements)
+          showUnlock(def.icon, tr(def.title), tr(def.desc));
+      }
+      badges.set({ ...data });
+      if (changed)
+        notifyStatus();
+    });
+  }
   function unlock(ids) {
-    const data = badges.get();
-    const s = store.get();
-    let changed = false;
-    for (const id of ids) {
-      if (data.unlocked[id])
-        continue;
-      const def = ACHIEVEMENTS.find((a) => a.id === id);
-      if (!def)
-        continue;
-      data.unlocked[id] = Date.now();
-      changed = true;
-      if (s.enabled && s.achievements)
-        showUnlock(def.icon, tr(def.title), tr(def.desc));
-    }
-    badges.set({ ...data });
-    if (changed)
-      notifyStatus();
+    earn(() => ids);
   }
   function showUnlock(icon, title, desc) {
     const el = ctx.dom.createElement("div", { class: "lf-unlock", role: "status" });
@@ -7810,7 +8574,7 @@ function setup(ctx) {
     body.append(small, b, d);
     el.append(ico, body);
     const existing = overlay.querySelectorAll(".lf-unlock").length;
-    el.style.top = `${18 + existing * 84}px`;
+    el.style.setProperty("--lf-slot", String(existing));
     overlay.appendChild(el);
     playSound("achievement");
     setTimeout(() => el.remove(), 5000);
@@ -7865,7 +8629,8 @@ function setup(ctx) {
       aiEffects: s.enabled && s.aiEffects,
       sceneDirector: s.enabled && s.sceneDirector,
       choices: s.enabled && s.choiceChips,
-      autoInject: s.enabled && s.autoInject && (s.textEffects || s.aiEffects || s.sceneDirector || s.choiceChips),
+      sfx: s.enabled && s.aiSfx,
+      autoInject: s.enabled && s.autoInject && (s.textEffects || s.aiEffects || s.sceneDirector || s.choiceChips || s.aiSfx),
       disabledFx: s.textFxOff
     };
     const key = JSON.stringify(prefs);
@@ -7944,8 +8709,11 @@ function setup(ctx) {
       return auto;
     return s.ambientScene;
   }
+  function chatLeaving() {
+    return !!document.querySelector("[data-chat-chrome-leaving]");
+  }
   function resolveScene() {
-    if (!motionAllowed() || !ensureAmbientHost())
+    if (!motionAllowed() || !ensureAmbientHost() || chatLeaving())
       return "off";
     return sceneRaw();
   }
@@ -7961,7 +8729,7 @@ function setup(ctx) {
     if (scene !== state.lastScene) {
       state.lastScene = scene;
       if (scene !== "off")
-        unlock(onScene(badges.get(), scene));
+        earn((d) => onScene(d, scene));
     }
     if (scene !== "off" && s.perfGovernor)
       perf.start();
@@ -7972,15 +8740,34 @@ function setup(ctx) {
     const hostOk = ensureAmbientHost();
     const saving = state.saver || perf.saving;
     cine.set({
-      enabled: s.enabled && s.cinematic && hostOk,
+      enabled: s.enabled && s.cinematic && hostOk && !chatLeaving(),
       light: resolveLight(),
       vignette: s.vignette,
       grain: s.grain && !saving && motionAllowed(),
       lightning: s.lightning,
       noFlash: s.noFlash,
-      motion: motionAllowed()
+      motion: motionAllowed(),
+      saver: saving
     });
-    cine.el.dataset.saver = saving ? "1" : "0";
+    if (s.perfGovernor && lightAnimating())
+      perf.start();
+  }
+  if (typeof MutationObserver !== "undefined") {
+    let wasLeaving = false;
+    const leaveWatch = new MutationObserver(() => {
+      const leaving = chatLeaving();
+      if (leaving === wasLeaving)
+        return;
+      wasLeaving = leaving;
+      if (disposed)
+        return;
+      if (leaving)
+        stopComposer();
+      applyAmbient();
+      applyCinematic();
+    });
+    leaveWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-chat-chrome-leaving"] });
+    disposers.push(() => leaveWatch.disconnect());
   }
   function applySoundscape() {
     const s = store.get();
@@ -8080,6 +8867,17 @@ function setup(ctx) {
       }
     }
     store.setActiveCharacter(characterId);
+    if (!chatId) {
+      applyAmbient();
+      applyCinematic();
+      setTimeout(() => {
+        if (disposed || state.chatId)
+          return;
+        applyColor();
+        notifyStatus();
+      }, 900);
+      return;
+    }
     applyColor();
     applyAmbient();
     applyCinematic();
@@ -8102,23 +8900,25 @@ function setup(ctx) {
     const gone = new Set([...p.messageIds ?? [], ...p.messageId ? [p.messageId] : []]);
     if (!gone.size)
       return;
-    const all = beats.get();
-    let changed = false;
-    const next = {};
-    for (const [chat, list] of Object.entries(all)) {
-      if (p.chatId && chat !== p.chatId) {
-        next[chat] = list;
-        continue;
+    beats.whenLoaded(() => {
+      const all = beats.get();
+      let changed = false;
+      const next = {};
+      for (const [chat, list] of Object.entries(all)) {
+        if (p.chatId && chat !== p.chatId) {
+          next[chat] = list;
+          continue;
+        }
+        const kept = list.filter((x) => !gone.has(x.id));
+        if (kept.length !== list.length)
+          changed = true;
+        next[chat] = kept;
       }
-      const kept = list.filter((x) => !gone.has(x.id));
-      if (kept.length !== list.length)
-        changed = true;
-      next[chat] = kept;
-    }
-    if (changed) {
-      beats.set(next);
-      notifyStatus();
-    }
+      if (changed) {
+        beats.set(next);
+        notifyStatus();
+      }
+    });
   });
   on("CHAT_SWITCHED", () => {
     storyNav.cancel();
@@ -8227,7 +9027,7 @@ function setup(ctx) {
   function setMood(chatId, label) {
     const color = moodColorFor(label, parseMoodMap(store.get().moodMap));
     state.mood.set(chatId, { label, color, at: Date.now() });
-    unlock(onMood(badges.get(), chatId, label));
+    earn((d) => onMood(d, chatId, label));
     if (chatId === state.chatId) {
       applyColor();
       notifyStatus();
@@ -8242,20 +9042,24 @@ function setup(ctx) {
     const tv = valenceForText(content);
     const v = lv === null ? tv : lv * 0.65 + tv * 0.35;
     const p = { id: messageId, i: i < 0 ? ids.length : i, v, label: fresh?.label ?? "", color: fresh?.color ?? null, t: Date.now() };
-    beats.set(addPoint(beats.get(), chatId, p));
-    notifyStatus();
+    beats.whenLoaded(() => {
+      beats.set(addPoint(beats.get(), chatId, p));
+      notifyStatus();
+    });
   }
   function refineLatestBeat(chatId, label, color) {
-    const list = beats.get()[chatId];
-    const last = list?.at(-1);
-    if (!last || Date.now() - last.t > 90000)
-      return;
-    const lv = valenceForLabel(label);
-    if (lv === null)
-      return;
-    const updated = { ...last, v: lv * 0.65 + last.v * 0.35, label, color };
-    beats.set(addPoint(beats.get(), chatId, updated));
-    notifyStatus();
+    beats.whenLoaded(() => {
+      const list = beats.get()[chatId];
+      const last = list?.at(-1);
+      if (!last || Date.now() - last.t > 90000)
+        return;
+      const lv = valenceForLabel(label);
+      if (lv === null)
+        return;
+      const updated = { ...last, v: lv * 0.65 + last.v * 0.35, label, color };
+      beats.set(addPoint(beats.get(), chatId, updated));
+      notifyStatus();
+    });
   }
   function fireAiEffect(messageId, effect) {
     if (state.firedAiFx.has(messageId))
@@ -8268,6 +9072,64 @@ function setup(ctx) {
     burst(effect, messageOrigin(messageId), 1.2);
     playSound("sparkle");
     unlock(["showstopper"]);
+  }
+  function playCue(cue, volume) {
+    const id = customFor(`sfx:${cue}`);
+    const ac = id ? sound.context() : null;
+    if (id && ac) {
+      lib.source(id, ac).then((src) => src ? sound.playFile(src, volume) : sfx.play(cue, volume)).catch(() => sfx.play(cue, volume));
+      return;
+    }
+    sfx.play(cue, volume);
+  }
+  function fireSfx(messageId, cue, key) {
+    let rec = state.sfxFired.get(messageId);
+    if (!rec) {
+      rec = { epoch: state.sfxEpoch, keys: new Set };
+      state.sfxFired.set(messageId, rec);
+      if (state.sfxFired.size > 200)
+        state.sfxFired.delete(state.sfxFired.keys().next().value);
+    }
+    if (rec.keys.has(key) || rec.keys.size >= SFX_MAX_PER_MESSAGE)
+      return;
+    rec.keys.add(key);
+    const now = Date.now();
+    const at = Math.max(now, state.sfxNextAt);
+    state.sfxNextAt = at + SFX_GAP_MS;
+    setTimeout(() => {
+      if (disposed)
+        return;
+      const s = store.get();
+      if (!s.enabled || !s.aiSfx)
+        return;
+      const volume = s.sfxVolume * scape.focusLevel;
+      if (volume > 0)
+        playCue(cue, volume);
+    }, at - now);
+  }
+  function handleSfx(messageId, cue, key, streaming) {
+    const s = store.get();
+    if (!s.enabled || !s.aiSfx || s.sfxVolume <= 0)
+      return;
+    let rec = state.sfxFired.get(messageId);
+    if (streaming && rec && rec.epoch < state.sfxEpoch) {
+      state.sfxFired.delete(messageId);
+      rec = undefined;
+    }
+    if (rec?.keys.has(key))
+      return;
+    const at = state.recentGenerated.get(messageId);
+    if (streaming || at !== undefined && Date.now() - at < AI_FX_WINDOW_MS) {
+      fireSfx(messageId, cue, key);
+      return;
+    }
+    const pending = state.pendingSfx.get(messageId) ?? { items: [], at: 0 };
+    if (!pending.items.some((i) => i.key === key))
+      pending.items.push({ cue, key });
+    pending.at = Date.now();
+    state.pendingSfx.set(messageId, pending);
+    if (state.pendingSfx.size > 50)
+      state.pendingSfx.delete(state.pendingSfx.keys().next().value);
   }
   function applyDirection(chatId, messageId, attrs) {
     const s = store.get();
@@ -8290,12 +9152,17 @@ function setup(ctx) {
   }
   try {
     disposers.push(ctx.messages.registerTagInterceptor({ tagName: "flair", removeFromMessage: true }, (p) => {
-      if (p.isStreaming || p.isUser || !p.messageId)
+      if (p.isUser || !p.messageId)
+        return;
+      const cue = cueName(p.attrs?.sfx);
+      if (cue && isActiveChat(p.chatId))
+        handleSfx(p.messageId, cue, p.fullMatch || cue, !!p.isStreaming);
+      if (p.isStreaming)
         return;
       const chatId = p.chatId ?? state.chatId;
       if (chatId)
         applyDirection(chatId, p.messageId, p.attrs ?? {});
-      const raw = (p.attrs?.effect || p.content || "").trim().toLowerCase();
+      const raw = (p.attrs?.effect || (p.attrs?.sfx !== undefined ? "" : p.content) || "").trim().toLowerCase();
       if (!raw || state.firedAiFx.has(p.messageId))
         return;
       const effect = BURST_EFFECTS.includes(raw) ? raw : "sparkle";
@@ -8316,11 +9183,10 @@ function setup(ctx) {
     console.warn("[Lumi Flair] Tag interceptor unavailable", err);
   }
   choices.onPick = () => {
-    const data = badges.get();
-    data.choices += 1;
-    badges.set({ ...data });
-    if (data.choices >= 10)
-      unlock(["choices_10"]);
+    earn((d) => {
+      d.choices += 1;
+      return d.choices >= 10 ? ["choices_10"] : [];
+    });
     playSound("send");
   };
   on("MESSAGE_SENT", (raw) => {
@@ -8335,13 +9201,17 @@ function setup(ctx) {
       animateMessage(p.message.id, s.userEntrance);
     checkTriggers(p.message.content, sendOrigin());
     checkMilestone(p.chatId ?? state.chatId ?? undefined);
-    unlock(onSent(badges.get()));
+    earn((d) => onSent(d));
   });
   on("GENERATION_STARTED", (raw) => {
     const p = raw;
+    state.sfxEpoch++;
     if (!isActiveChat(p?.chatId) || p?.generationType === "impersonate")
       return;
-    choices.clear();
+    if (p?.generationType === "continue")
+      choices.pause();
+    else
+      choices.clear();
     startComposer(p?.generationId ?? "unknown");
   });
   on("STREAM_TOKEN_RECEIVED", (raw) => {
@@ -8368,12 +9238,20 @@ function setup(ctx) {
     for (const [id, v] of state.pendingAiFx)
       if (now - v.at > AI_FX_WINDOW_MS)
         state.pendingAiFx.delete(id);
+    for (const [id, v] of state.pendingSfx)
+      if (now - v.at > AI_FX_WINDOW_MS)
+        state.pendingSfx.delete(id);
     if (!isActiveChat(p.chatId))
       return;
     const s = store.get();
     if (!s.enabled)
       return;
     const messageId = p.messageId;
+    const pendingCues = state.pendingSfx.get(messageId);
+    state.pendingSfx.delete(messageId);
+    if (pendingCues && s.aiSfx && s.sfxVolume > 0)
+      for (const i of pendingCues.items)
+        fireSfx(messageId, i.cue, i.key);
     if (s.characterEntrance !== "none")
       animateMessage(messageId, "bloom");
     playSound("receive");
@@ -8424,6 +9302,8 @@ function setup(ctx) {
   });
   on("MESSAGE_SWIPED", (raw) => {
     const p = raw;
+    if (p?.message?.id && isActiveChat(p.chatId))
+      choices.swiped(p.message.id, p.message.content ?? "");
     const s = store.get();
     if (!s.enabled || s.swipeTransition === "none" || p?.action !== "navigated" || !isActiveChat(p.chatId))
       return;
@@ -8773,6 +9653,7 @@ function setup(ctx) {
         sound.play("receive", s.soundVolume || 0.4, moodPitch(currentMood()?.label ?? null));
         setTimeout(() => sound.play("send", s.soundVolume || 0.4), 650);
       },
+      previewSfx: (cue) => playCue(cue, store.get().sfxVolume || 0.5),
       exportTheme: () => exportThemePack(ctx, store.get()),
       requestTintPermission: requestTint,
       requestInjectPermission: requestInject,

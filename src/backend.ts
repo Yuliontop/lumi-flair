@@ -12,7 +12,10 @@
  *    flash as raw text during a cold chat load.
  *  - Optional whole-UI mood tint via spindle.theme.applyPalette (needs
  *    `app_manipulation`; Lumiverse restores the theme when cleared/disabled).
+ *  - AI sound effects note (<flair sfx="…">), when the user turns them on.
  */
+import { SFX_CUES } from './sfx-cues'
+
 declare const spindle: import('lumiverse-spindle-types').SpindleAPI
 
 type Frequency = 'every' | 'often' | 'sparing'
@@ -22,11 +25,13 @@ interface Prefs {
   aiEffects: boolean
   sceneDirector: boolean
   choices: boolean
+  /** AI sound effects (<flair sfx="…">). Off until the user turns them on. */
+  sfx: boolean
   autoInject: boolean
   /** Effects the user switched off: never taught to the AI. */
   disabledFx: string[]
 }
-const DEFAULT_PREFS: Prefs = { frequency: 'every', textEffects: true, aiEffects: true, sceneDirector: true, choices: true, autoInject: true, disabledFx: [] }
+const DEFAULT_PREFS: Prefs = { frequency: 'every', textEffects: true, aiEffects: true, sceneDirector: true, choices: true, sfx: false, autoInject: true, disabledFx: [] }
 
 /** Marker so we never inject twice (e.g. when the user also placed {{flair_tags}}). */
 const MARKER = '[Lumi Flair'
@@ -85,6 +90,12 @@ function buildInstructions(p: Prefs): string {
       `${intro('choices')}When the user's character faces a meaningful decision, end the reply with 2 or 3 short options written from the user's point of view, each in its own tag: <flair-choice>Follow her into the forest</flair-choice>. Keep each under 10 words and make them genuinely different. Skip it when there is no real decision. Never decide for the user.`,
     )
   }
+  if (p.sfx) {
+    const cues = SFX_CUES.map((c) => `${c.name} (${c.use})`).join(', ')
+    parts.push(
+      `${intro('sound effects')}Sound effects: when something in the scene makes a distinct sound the reader should hear, put a sound cue at the START of the paragraph where it happens: <flair sfx="door-knock"></flair>. Cues: ${cues}. Use only these names, always write the closing tag, and use at most 3 cues per reply; most replies need none. The reader never sees the tag; it plays the sound.`,
+    )
+  }
   return parts.join('\n')
 }
 
@@ -136,7 +147,7 @@ type PrefsMessage = { type: 'prefs' } & Partial<Prefs>
 // ── Config files: per-user, outside the extension folder ──
 // data/users/<userId>/extensions/lumi_flair/<name>.json — survives reinstalls.
 const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat'])
-const VERSION = '1.2.0'
+const VERSION = '1.3.1'
 
 async function vaultLoad(req: number, names: unknown, userId: string) {
   const files: Record<string, unknown> = {}
@@ -302,6 +313,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       aiEffects: msg.aiEffects !== false,
       sceneDirector: msg.sceneDirector !== false,
       choices: msg.choices !== false,
+      sfx: msg.sfx === true,
       autoInject: msg.autoInject === true,
       disabledFx: Array.isArray(msg.disabledFx) ? msg.disabledFx.filter((fx): fx is string => typeof fx === 'string' && KNOWN_FX.has(fx)) : [],
     }
@@ -347,7 +359,7 @@ function syncInterceptor() {
   if (want && !interceptorDisposer) {
     interceptorDisposer = spindle.registerInterceptor(async (messages, context) => {
       const prefs = prefsByUser.get(context.userId) ?? (prefsByUser.size === 0 ? DEFAULT_PREFS : null)
-      if (!prefs?.autoInject || (!prefs.textEffects && !prefs.aiEffects && !prefs.sceneDirector && !prefs.choices)) return messages
+      if (!prefs?.autoInject || (!prefs.textEffects && !prefs.aiEffects && !prefs.sceneDirector && !prefs.choices && !prefs.sfx)) return messages
       if (context.generationType === 'impersonate' || context.generationType === 'quiet') return messages
       if (messages.some((m) => contentText(m.content).includes(MARKER))) return messages
       const text = buildInstructions(prefs)

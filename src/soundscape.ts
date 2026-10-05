@@ -532,6 +532,11 @@ export class Soundscape {
     return this.unfocused === 'mute' ? 0 : this.dimLevel
   }
 
+  /** Share of the volume that one-shot sounds (AI sound effects) should keep right now: 1 in front, the dim level or 0 in the background. */
+  get focusLevel(): number {
+    return document.hidden ? 0 : this.focusFactor()
+  }
+
   private applyVolume(fast = false) {
     if (!this.ac || !this.master) return
     const target = this.enabled && !document.hidden ? this.volume * 0.6 * this.focusFactor() : 0
