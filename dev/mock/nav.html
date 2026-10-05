@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;background:#0f0c18;color:#eee;font-family:system-ui}
+[data-component=MessageList]{position:absolute;left:40px;top:20px;width:600px;height:700px;overflow-y:auto;background:#151122}
+#spacer{position:relative}
+.row{position:absolute;left:0;right:0;box-sizing:border-box;padding:8px 12px;border-bottom:1px solid #2a2340}
+.loading{position:sticky;top:0;text-align:center;font-size:12px;color:#aaa}
+</style></head><body>
+<div data-component="MessageList"><div id="spacer"></div></div>
+<script src="build/nav.js"></script>
+<script>
+const TOTAL=800, PAGE=50
+const H=i=>60+((i*37)%200)
+const server=Array.from({length:TOTAL},(_,i)=>({id:'msg'+i,index_in_chat:i}))
+let loaded=server.slice(TOTAL-PAGE), armed=false, loading=false, loads=0
+const list=document.querySelector('[data-component=MessageList]'), spacer=document.getElementById('spacer')
+function layout(){let y=0;return loaded.map(m=>{const t=y;y+=H(m.index_in_chat);return {m,t,h:H(m.index_in_chat)}})}
+function render(){const L=layout();const tot=L.length?L.at(-1).t+L.at(-1).h:0;spacer.style.height=tot+'px';spacer.innerHTML='';
+  const a=list.scrollTop-600,b=list.scrollTop+list.clientHeight+600
+  L.forEach((r,vi)=>{if(r.t+r.h<a||r.t>b)return;const d=document.createElement('div');d.className='row';d.style.top=r.t+'px';d.style.height=r.h+'px';d.dataset.virtualIndex=vi;d.dataset.messageId=r.m.id;d.dataset.component='BubbleMessage';d.textContent='#'+r.m.index_in_chat;spacer.appendChild(d)})}
+list.addEventListener('scroll',()=>{render();const thr=96
+  if(list.scrollTop>thr)armed=true
+  if(list.scrollTop<=thr&&armed&&!loading&&loaded[0].index_in_chat>0){armed=false;loading=true;loads++
+    setTimeout(()=>{const first=loaded[0].index_in_chat;const add=server.slice(Math.max(0,first-PAGE),first);const addH=add.reduce((s,m)=>s+H(m.index_in_chat),0)
+      loaded=add.concat(loaded);render();list.scrollTop+=addH;loading=false;render()},80+Math.random()*220)}})
+render();list.scrollTop=list.scrollHeight;render()
+window.ctx={messages:{listMessageIds:()=>loaded.map(m=>m.id),async get(id){await new Promise(r=>setTimeout(r,20));return server.find(m=>m.id===id)||null}}}
+window.arrived=[];window.nav=new StoryNavigator(ctx,()=>document.body,id=>arrived.push(id))
+window.center=id=>{const r=document.querySelector(`[data-message-id="${id}"]`);if(!r)return null;const lr=list.getBoundingClientRect(),rr=r.getBoundingClientRect();return Math.round((rr.top+rr.height/2)-(lr.top+lr.height/2))}
+window.stats=()=>({loads,loaded:loaded.length})
+</script></body></html>

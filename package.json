@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "bun build src/frontend.ts --outfile dist/frontend.js --target browser && bun build src/backend.ts --outfile dist/backend.js --target bun",
-    "typecheck": "tsc --noEmit"
+    "dev:build": "bun dev/build.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "python dev/run.py"
   },
   "devDependencies": {
-    "lumiverse-spindle-types": "^0.6.37"
+    "lumiverse-spindle-types": "^0.6.37",
+    "typescript": "^5.6.0"
   },
   "description": "Lumi Flair, a Lumiverse extension: let the story control the room.",
   "license": "MIT",

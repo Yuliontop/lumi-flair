@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# dev tooling output (regenerate with `bun dev/build.ts` and `python dev/make_fixtures.py`)
+dev/out/
+dev/mock/build/
+dev/mock/fixtures/
+# Lumiverse's theme engine, copied locally for the mock (not ours to redistribute)
+dev/mock/vendor/
+__pycache__/

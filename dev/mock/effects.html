@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;height:100vh;font-family:system-ui;background:var(--bg);color:var(--fg);overflow:hidden}
+body.dark{--bg:#14111d;--fg:#e8e3f3;--card:#1f1a2c;--line:#2e2740}
+body.light{--bg:#f4f1ea;--fg:#2a2433;--card:#ffffff;--line:#e2dccf}
+.chat{width:620px;margin:30px auto;min-height:60vh;display:flex;flex-direction:column;gap:12px}
+.msg{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;line-height:1.5}
+.composer{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;width:620px;height:54px;background:var(--card);border:1px solid var(--line);border-radius:16px}
+.send{position:absolute;right:10px;top:9px;width:36px;height:36px;border-radius:50%;background:#9370db}
+canvas{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none}
+</style></head><body class="dark"><div data-component="ChatView">
+<div id="body" data-lumiverse-surface="chat-body"><div class="chat" data-component="MessageList"><div class="msg">The tavern door creaks open and the smell of fresh pastries drifts in.</div><div class="msg">"Is that... a cream fountain?" she whispers, eyes wide.</div><div class="msg">Somewhere behind the bar, something rumbles.</div></div>
+</div><div class="composer"><div class="send" id="send"></div></div>
+</div><canvas id="c"></canvas>
+<script src="build/effects.js"></script>
+<script>
+window.fx = new FxCanvas(document.getElementById('c'))
+const st=document.createElement('style');document.head.appendChild(st);st.textContent=CINE
+window.fireFx = (effect,k=1,noFlash=false) => { const r=document.getElementById('send').getBoundingClientRect(); const l=document.querySelector('[data-component=MessageList]').getBoundingClientRect();
+  const center={x:l.left+l.width/2,y:innerHeight*0.42};
+  if(effect==='blackhole'&&!noFlash){ const w=document.createElement('style'); const b=document.getElementById('body').getBoundingClientRect(); w.textContent=warpRule((center.x-b.left)/b.width*100,(center.y-b.top)/b.height*100,HOLE); document.head.appendChild(w); setTimeout(()=>w.remove(),HOLE.total*1000+60) }
+  playSendEffect(fx,effect,{x:r.left+r.width/2,y:r.top+r.height/2},{r:147,g:112,b:219},k,{center,noFlash}) }
+window.fire = (k=1) => { const r=document.getElementById('send').getBoundingClientRect(); playSendEffect(fx,'creamy',{x:r.left+r.width/2,y:r.top+r.height/2},{r:147,g:112,b:219},k) }
+</script></body></html>
