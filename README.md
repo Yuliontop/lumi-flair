@@ -21,8 +21,10 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Soundscapes** | Rain, wind, crackling fire, crickets, birdsong and a space hum, generated live with no audio files. They crossfade with the scene and recover by themselves if the browser pauses audio |
 | **AI sound effects** | The AI adds short sound cues to its replies (a door knock, a sword clash, a heartbeat, thunder…) that play as the line appears. 14 cues are generated live with no audio files, and you can assign your own file to any of them. Off by default |
 | **Volume widget** | An optional floating pill you can drag anywhere: turn the ambience on or off and set its volume without opening the panel. It shows what's playing and remembers where you left it. Fold it into a small round button to keep the screen clear (it starts that way on phones) |
-| **Your own sounds** | Upload your own audio (MP3, OGG, WAV, M4A, FLAC…) and use it as a seamless looping ambience for any scene or lighting, as one track that always plays, or as your send, reply, milestone, achievement and screen-effect sounds. Files stay in your browser, with a level control and preview for each |
+| **Your own sounds** | Upload your own audio (MP3, OGG, WAV, M4A, FLAC…) and use it as a seamless looping ambience for any scene or lighting, as one track that always plays, as a character's intro theme, or as your send, reply, milestone, achievement, screen-effect and typewriter-key sounds. Files stay in your browser, with a level control and preview for each |
 | **Background sound** | Optionally dim (to a level you choose) or mute the soundscape while you're in another window or app, then fade it back when you return |
+| **Character intro** | Opening a chat plays a short name card in the character's aura colour, with an optional theme sound from your library (each character can have their own). In group chats a small chip names whoever is speaking, in their own colour, and the other messages dim while they talk |
+| **Typewriter pacing** | Replies appear at a steady pace instead of in bursts, as if typed, with soft key sounds that follow the character's mood (or your own sound). Off by default |
 | **Camera shake** | A short shake when a reply shouts with `big` or `shake` text |
 | **No flashing** | One switch replaces every flash with a soft fade and stops flicker, for light-sensitive viewers |
 
@@ -61,10 +63,12 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | Feature | What it does |
 |---|---|
 | **Story heartbeat** | A chart of each chat's emotional arc. Click any point to jump to that message, even far back in the chat |
-| **Moment Cards** | Turn any reply into a share-ready image with the avatar, name and quote |
+| **Moment Cards** | Turn any reply, or just the lines you pick, into a wide share-ready image with the avatar, name and quote. It saves like a window capture: rounded corners and a soft shadow on a transparent background |
+| **Favourite moments** | Pin any message, or a selected line, with the ★ under it. Pins collect in a reel in the panel, show as stars on the story heartbeat and jump you back to the moment. Optionally they're saved to Lumiverse's memory so the AI remembers them |
+| **Theater mode** | One click hides the interface and leaves the story full-screen, with larger type, long replies shown in full and a gentle auto-scroll. The atmosphere and soundscape carry on |
 | **Achievements** | 15 badges, such as Night Owl, Showstopper and a 7-day streak |
 | **Celebrations** | Confetti at message milestones, plus your own keyword triggers (`happy birthday => confetti`) |
-| **Sounds, spotlight & commands** | Soft synthesized chimes, a spotlight reading mode, and 12 `Flair: …` commands in Ctrl/Cmd+K |
+| **Sounds, spotlight & commands** | Soft synthesized chimes, a spotlight reading mode, and 15 `Flair: …` commands in Ctrl/Cmd+K |
 
 ### Comfort & compatibility
 
@@ -83,7 +87,7 @@ Every change you make is saved within a fraction of a second, to three places at
 | Where | Why |
 |---|---|
 | **Your Lumiverse account** (`ctx.settings`) | Follows you to every device and browser you sign in from |
-| **A config file on the server**: `data/users/<your id>/extensions/lumi_flair/settings.json` (plus `achievements.json` and `heartbeat.json`) | A readable JSON file you can back up. It lives outside the extension folder, so it survives removing and re-importing Flair |
+| **A config file on the server**: `data/users/<your id>/extensions/lumi_flair/settings.json` (plus `achievements.json`, `heartbeat.json` and `moments.json`) | A readable JSON file you can back up. It lives outside the extension folder, so it survives removing and re-importing Flair |
 | **This browser** (localStorage) | Instant, and still works if the server is briefly unreachable |
 
 When Lumiverse starts, Flair reads all three copies and uses the **newest** one, then refreshes any copy that is missing or older. If the server is slow to answer, Flair waits for it before writing to the file, so a slow start can never replace your saved config with the defaults.
@@ -94,13 +98,14 @@ When Lumiverse starts, Flair reads all three copies and uses the **newest** one,
 
 ## Permissions
 
-Lumi Flair requests three permissions. All are optional, and Lumiverse asks for each one the first time you turn on the feature that needs it:
+Lumi Flair requests four permissions. All are optional, and Lumiverse asks for each one the first time you turn on the feature that needs it:
 
 | Permission | Used for |
 |---|---|
 | `interceptor` | **Add the instructions to every prompt** (on by default). Flair adds a short styling note just before the latest message on each generation, so the AI keeps using text effects in nearly every reply. The note covers text effects, scene direction, screen effects and choices, following your settings. It appears as **Lumi Flair storytelling** in Prompt Breakdown. It's skipped for impersonate and quiet generations, and when `{{flair_tags}}` is already in the prompt |
 | `app_manipulation` | **Lumiverse theme matching** (packs and Character Aware) through `spindle.theme.generateVariables` and `apply`, and **Tint the whole UI with the mood** (`applyPalette`, or folded into the matched theme). Both are layered and fully removable |
 | `ui_panels` | The **floating volume widget** (Sound → Floating volume widget), a small draggable float widget. Nothing is shown unless you turn it on |
+| `memories` | **Save pins to Lumiverse memory** (Favourite moments). Each pinned line is added to Lumiverse's memory as a short fact about whoever said it. Nothing is saved unless you turn it on, and it only ever adds |
 
 ## Teaching the AI
 
@@ -159,7 +164,9 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 | AI sound effects | The `flair` tag interceptor also reads `sfx="…"`. Each cue is a short WebAudio recipe (noise bursts, resonant filters and sine partials), rendered live and routed through the soundscape's master gain, so volume and background dimming apply. Your own file for a cue replaces the generated one |
 | Soundscapes | WebAudio graphs of filtered noise, LFOs and short grains. They start after your first click or key press, because browsers block audio until then |
 | Auras | Reads the colour from avatar images that are already loaded, then writes `:has(img[src=…])` rules so the colour follows the avatar through virtualization |
-| Moment Card button | Uses `ctx.ui.registerDomDecorator` on the `message_actions` mount. This works in current Lumiverse but isn't in the published types yet. If a display mode has no action pill, use the Share section or the command instead |
+| Message buttons (★ pin, Moment Card, theater) | Use `ctx.ui.registerDomDecorator` on the `message_actions` mount. This works in current Lumiverse but isn't in the published types yet. If a display mode has no action pill, use the panel or the commands instead |
+| Typewriter pacing | Nothing in Lumiverse's message is changed: the part not revealed yet is painted transparent with the CSS Custom Highlight API (a range from the reveal point to the end), re-hidden by a MutationObserver before the browser paints new text. Needs Chrome/Edge 105+, Safari 17.2+ or Firefox 140+ |
+| Theater mode | While it's on, one stylesheet hides Lumiverse's chrome by its stable selectors (`data-component`, `data-spindle-mount`) and enlarges message text; the auto-scroll moves the message list's `scrollTop` and only runs while there is something to scroll |
 | Backend | Pushes the `{{flair_tags}}` macro, registers the commands, declares the tag-interceptor capability, and applies the optional mood palette |
 
 ## Compatibility notes
@@ -167,10 +174,17 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 - Hover effects only run on devices with a mouse or trackpad (`@media (hover: hover)`). On touch devices, **Tap glow** takes their place.
 - When your OS asks for reduced motion and **Respect reduce motion** is on, particles, scenes, text animation and entrance animations are skipped. Colours and glows stay.
 - Command palette commands carry no user id. On an operator-scoped install (Import Local by an owner or admin), a command is broadcast, and every connected user's Flair settings apply it. On a single-user instance this makes no difference.
-- Settings, achievements and heartbeat points are stored per user in your account settings and your own config files. Nothing leaves your server.
+- Settings, achievements, heartbeat points and pinned moments are stored per user in your account settings and your own config files. Nothing leaves your server.
 
 ## Changelog
 
+- **1.4.11 (release v1.4):** Center Stage.
+  - **Favourite moments:** a ★ in each message's action bar pins the message, or just the line you selected. Pins collect in a reel in the panel (jump to it, remove it), show as gold stars on the story heartbeat, survive restarts (`moments.json`), and can also be added with `Flair: Pin the latest message…` or the panel button. Optionally, **Save pins to Lumiverse memory** adds each pin as a short fact about whoever said it, through Lumiverse's own memory API (needs the Memory Cortex and the optional `memories` permission, requested only when you turn it on; Flair adds no tokens of its own, and Lumiverse can only add facts, so unpinning doesn't remove one).
+  - **Character intro:** opening a chat plays a ~2 s name card in the character's aura colour, with their portrait. Tap to skip; reduced motion gets a plain fade. An optional **theme sound** from Your sounds plays with it (per character when they have their own look). In group chats a chip above the composer names whoever is speaking, in their avatar colour, and the other messages dim to 70% while they write.
+  - **Theater mode:** one click hides Lumiverse's interface (toolbars, docks, side drawer, action bars, reply box) and leaves the story full-screen, keeping your chat width. Text is larger (100–220%), long replies are shown in full, and a gentle auto-scroll (8 speeds) pauses while you scroll and stops at the end. A small control bar fades away and comes back with a tap: leave, pause, speed, text size, and a reply box so you can answer without leaving. Esc, Space and +/− on a keyboard. Start it from the button under any message (it starts reading there), the Extras menu, the panel or `Flair: Toggle theater mode`.
+  - **Typewriter pacing:** an optional steady reveal of streaming replies (10–120 characters a second), never more than a moment behind what has arrived, with soft key sounds that sound lower when the character is sad and brighter when happy. Your own **Typewriter key** sound can replace them. Off by default; off with reduced motion.
+  - **Moment Cards:** wide 1600×1000 cards (portrait on the left, quote on the right, as large as it fits), a text box to pick the lines that go on the card (or start from a selection in the message), a live preview, and a PNG saved like a window capture: rounded corners and a soft drop shadow on a transparent background.
+  - **Fixes:** Flair's buttons sit in one row with Lumiverse's in the message action bar, at its size. Flair's windows (Moment Card, Save my look, Welcome) no longer close when a text selection is dragged outside them.
 - **1.3.1 (release v1.3):** Living Sound, plus fixes from phones.
   - **AI sound effects:** the AI can write `<flair sfx="door-knock"></flair>` and the sound plays as the line streams in. 14 generated cues (door knock, creak and slam, footsteps, sword clash, glass break, heartbeat, thunder, bell, whoosh, impact, magic, splash, fire crackle), each with a preview button, and your own file can replace any of them under **Your sounds**. Off by default; a note of about 200 tokens is added to the prompt when it's on. Cues play once, never for old messages, at most a few per reply, again on a swipe, and follow the effects volume and background dimming.
   - **Choice chips follow swipes:** a new swipe replaces the chips instead of piling a second set on top, and swiping back brings that version's own chips back.

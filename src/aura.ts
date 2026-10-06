@@ -146,15 +146,41 @@ export class AuraManager {
     }
   }
 
-  /** Aura of the newest mounted character message (whoever spoke last). */
-  latest(): { aura: Aura; messageId: string } | null {
+  /** Aura (and avatar address) of the newest mounted character message (whoever spoke last). */
+  latest(): { aura: Aura; messageId: string; avatar: string } | null {
     const cards = document.querySelectorAll<HTMLElement>(`${CARD_SEL}:not([data-part="user"])`)
     for (let i = cards.length - 1; i >= 0; i--) {
-      const src = this.avatarOf(cards[i])?.getAttribute('src')
-      const a = src ? this.bySrc.get(src) : null
-      if (a && typeof a === 'object') return { aura: a, messageId: cards[i].dataset.messageId ?? '' }
+      const found = this.of(cards[i])
+      if (found) return { ...found, messageId: cards[i].dataset.messageId ?? '' }
     }
     return null
+  }
+
+  private of(card: Element): { aura: Aura; avatar: string } | null {
+    const src = this.avatarOf(card)?.getAttribute('src')
+    const a = src ? this.bySrc.get(src) : null
+    return src && a && typeof a === 'object' ? { aura: a, avatar: src } : null
+  }
+
+  /** A character's aura, found by the name shown on one of their mounted messages (newest first). */
+  forSpeaker(name: string): { aura: Aura; avatar: string } | null {
+    const want = name.trim().toLowerCase()
+    if (!want) return null
+    const cards = document.querySelectorAll<HTMLElement>(`${CARD_SEL}:not([data-part="user"])`)
+    for (let i = cards.length - 1; i >= 0; i--) {
+      // CSS-module class names are hashed, so match the name label by substring.
+      const label = cards[i].querySelector('[class*="_name_"]')?.textContent?.trim().toLowerCase()
+      if (label !== want) continue
+      const found = this.of(cards[i])
+      if (found) return found
+    }
+    return null
+  }
+
+  /** Aura of the message being written right now. */
+  forStreaming(): { aura: Aura; avatar: string } | null {
+    const card = document.querySelector(`${CARD_SEL}[data-part="streaming"]`)
+    return card ? this.of(card) : null
   }
 
   /** Aura for a mounted message card, if we have sampled its avatar. */

@@ -92,13 +92,16 @@ spindle.commands.register([
   { id: "soundscape", label: "Flair: Toggle soundscapes", description: "Rain, fire, wind and night ambience that follow the scene", keywords: ["ambience", "soundscape", "rain", "audio"], scope: "global" },
   { id: "next-pack", label: "Flair: Next Flair Pack", description: "Cycle Classic, Cozy Fantasy, Cyberpunk, Horror, Sakura, Deep Space, Noir", keywords: ["pack", "theme", "look", "preset"], scope: "global" },
   { id: "moment", label: "Flair: Moment Card of latest reply", description: "Turn the latest message into a share-ready image", keywords: ["share", "image", "card", "screenshot"], scope: "chat" },
+  { id: "pin", label: "Flair: Pin the latest message as a favourite moment", description: "Add the latest message to your favourite moments, or take it off again", keywords: ["favourite", "favorite", "bookmark", "star", "save", "pin"], scope: "chat" },
+  { id: "theater", label: "Flair: Toggle theater mode", description: "Hide the interface and read the story full-screen, with larger type and a gentle auto-scroll", keywords: ["theater", "theatre", "reading", "fullscreen", "focus", "zen", "immersive"], scope: "chat" },
+  { id: "intro", label: "Flair: Play the character intro", description: "Show the name card that plays when a chat opens", keywords: ["intro", "entrance", "name", "card", "character"], scope: "chat" },
   { id: "welcome", label: "Flair: Show welcome", description: "Pick a Flair Pack and optional extras", keywords: ["setup", "onboarding", "welcome"], scope: "global" }
 ]);
 spindle.commands.onInvoked((commandId) => {
   spindle.sendToFrontend({ type: "command", id: commandId });
 });
-var VAULT_FILES = new Set(["settings", "achievements", "heartbeat"]);
-var VERSION = "1.3.1";
+var VAULT_FILES = new Set(["settings", "achievements", "heartbeat", "moments"]);
+var VERSION = "1.4.11";
 async function vaultLoad(req, names, userId) {
   const files = {};
   const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && VAULT_FILES.has(n)) : [];
@@ -238,10 +241,49 @@ function queueTheme(userId, spec) {
     job.running = false;
   })();
 }
+var MEMORY_BATCH = 60;
+var MEMORY_TEXT = 200;
+var clean = (v, max) => typeof v === "string" ? v.replace(/\s+/g, " ").slice(0, max).trim() : "";
+async function pinsToMemory(raw, userId) {
+  const req = typeof raw.req === "number" ? raw.req : 0;
+  const reply = (ok, saved, reason) => spindle.sendToFrontend({ type: "pin_memory_result", req, ok, saved, reason }, userId);
+  const chatId = clean(raw.chatId, 200);
+  if (!chatId)
+    return reply(false, 0, "no chat");
+  if (!spindle.permissions.has("memories"))
+    return reply(false, 0, "memories not granted");
+  const byName = new Map;
+  for (const item of (Array.isArray(raw.items) ? raw.items : []).slice(0, MEMORY_BATCH)) {
+    const it = item;
+    const who = clean(it?.who, 80);
+    const text = clean(it?.text, MEMORY_TEXT);
+    if (!who || !text)
+      continue;
+    const facts = byName.get(who) ?? [];
+    facts.push(`${who} said this, and the reader pinned it as a favourite moment: \u201C${text}\u201D`);
+    byName.set(who, facts);
+  }
+  let saved = 0;
+  try {
+    for (const [who, facts] of byName) {
+      let entity = await spindle.memories.entities.findByName(chatId, who, userId);
+      if (!entity)
+        entity = await spindle.memories.entities.upsert(chatId, { name: who, type: "character", confidence: 1 }, { userId });
+      await spindle.memories.entities.addFacts(entity.id, facts, userId);
+      saved += facts.length;
+    }
+    reply(true, saved);
+  } catch (err) {
+    spindle.log.warn(`[Lumi Flair] could not save pins to memory: ${String(err)}`);
+    reply(false, saved, String(err?.message ?? err).slice(0, 200));
+  }
+}
 spindle.onFrontendMessage(async (raw, userId) => {
   const tm = raw;
   if (tm?.type === "ui_theme")
     return queueTheme(userId, tm.spec ? cleanSpec(tm.spec) : null);
+  if (tm?.type === "pin_memory")
+    return void await pinsToMemory(raw, userId);
   const vm = raw;
   if (vm?.type === "vault_load" && typeof vm.req === "number")
     return void await vaultLoad(vm.req, vm.names, userId);

@@ -23,10 +23,13 @@ import { matchTrigger, milestoneAtOrBelow, parseTriggers } from './celebrate'
 import { exportThemePack } from './themepack'
 import { DirectorState, parseDirection } from './director'
 import { Soundscape, type CustomBed } from './soundscape'
-import { SOUND_ACCEPT, SoundLibrary } from './soundlib'
+import { SOUND_ACCEPT, SoundLibrary, type AudioSource } from './soundlib'
 import { SoundWidget, SOUND_WIDGET_CSS } from './soundwidget'
 import { Cinematic, CINEMATIC_CSS, blackHoleWarpRule, cameraShakeRule } from './cinematic'
 import { AuraManager } from './aura'
+import { INTRO_CSS, IntroCard, SpeakerChip, hashColor } from './intro'
+import { THEATER_CSS, THEATER_ICON, Theater } from './theater'
+import { TYPEWRITER_CSS, Typewriter } from './typewriter'
 import { ChoiceManager, CHOICES_CSS } from './choices'
 import { addPoint, HEARTBEAT_CSS, valenceForLabel, valenceForText, type BeatPoint, type HeartbeatData } from './heartbeat'
 import {
@@ -39,6 +42,7 @@ import {
   type AchievementData,
 } from './achievements'
 import { MOMENT_CSS, plainText, showMomentCard } from './momentcard'
+import { excerpt, isPinned, normalizePins, PIN_CSS, PIN_MEMORY_MAX, removePins, setPin, STAR_SVG, type Pin, type PinData } from './moments'
 import { allPacks, bindCustomPacks, exportPack, importPack, packById, packFromLook, type PackFile, type PackTheme } from './packs'
 import { PerfGovernor } from './perf'
 import { showWelcome, WELCOME_CSS } from './welcome'
@@ -57,6 +61,19 @@ interface GenerationStartedPayload {
   generationId?: string
   chatId?: string
   generationType?: string
+  /** The message a continue / swipe / regenerate writes into. */
+  targetMessageId?: string
+  /** Group chats: who is about to speak. */
+  characterId?: string
+  characterName?: string
+}
+interface GroupTurnPayload {
+  chatId?: string
+  characterId?: string
+  characterName?: string
+  generationId?: string
+  turnIndex?: number
+  totalExpected?: number
 }
 interface StreamTokenPayload {
   generationId?: string
@@ -85,7 +102,10 @@ interface SwipePayload {
   swipeId?: number
   previousSwipeId?: number
 }
-type BackendMessage = { type: 'command'; id: string } | { type: 'tint_result'; ok: boolean; reason?: string }
+type BackendMessage =
+  | { type: 'command'; id: string }
+  | { type: 'tint_result'; ok: boolean; reason?: string }
+  | { type: 'pin_memory_result'; req: number; ok: boolean; saved: number; reason?: string }
 
 /** The host implements this on ctx.ui at runtime; it is not in the published types yet. */
 type DomDecoratorApi = {
@@ -116,6 +136,7 @@ export function setup(ctx: SpindleFrontendContext) {
   bindCustomPacks(() => store.getBase().customPacks)
   const beats = createJsonStore<HeartbeatData>(vault, 'heartbeat', {})
   const badges = createJsonStore<AchievementData>(vault, 'achievements', normalizeAchievements(null))
+  const pins = createJsonStore<PinData>(vault, 'moments', {})
   const disposers: Array<() => void> = []
   let disposed = false
   const on = (event: string, fn: (payload: unknown) => void) => disposers.push(ctx.events.on(event, fn))
@@ -130,6 +151,8 @@ export function setup(ctx: SpindleFrontendContext) {
     tintPermission: false,
     injectPermission: false,
     panelsPermission: false,
+    memoriesPermission: false,
+    memoryNote: null as string | null,
     room: 14,
     saver: false,
     lastPrefsKey: '',
@@ -152,11 +175,12 @@ export function setup(ctx: SpindleFrontendContext) {
   }
   const director = new DirectorState()
   const statusListeners = new Set<(s: PanelStatus) => void>()
+  const pinListeners = new Set<() => void>() // the star buttons under the messages
 
   // ── Styles ──
   disposers.push(
     ctx.dom.addStyle(
-      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join('\n'),
+      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join('\n'),
     ),
   )
   let removeMainCss: (() => void) | null = null
@@ -183,7 +207,11 @@ export function setup(ctx: SpindleFrontendContext) {
   const colorStyle = ctx.dom.createElement('style')
   const composerStyle = ctx.dom.createElement('style')
   const auraStyle = ctx.dom.createElement('style')
-  overlayWrap.append(colorStyle, composerStyle, auraStyle)
+  const theaterStyle = ctx.dom.createElement('style')
+  overlayWrap.append(colorStyle, composerStyle, auraStyle, theaterStyle)
+  const theaterWrap = ctx.dom.inject('body', '<div class="lf-th-root"></div>')
+  const introCard = new IntroCard(overlay)
+  const speaker = new SpeakerChip(overlay)
 
   const fx = new FxCanvas(fxEl)
   const ambient = new AmbientCanvas(ambientEl)
@@ -259,6 +287,11 @@ export function setup(ctx: SpindleFrontendContext) {
     lib.destroy()
     cine.destroy()
     choices.clear()
+    introCard.destroy()
+    speaker.destroy()
+    theater.destroy()
+    typewriter.stop()
+    ctx.dom.uninject(theaterWrap)
     ctx.dom.uninject(overlayWrap)
   })
 
@@ -294,6 +327,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const n = parseInt(hex.slice(1), 16)
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
   }
+  const hexOf = (c: RGB) => '#' + [c.r, c.g, c.b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')
 
   /** Where the send effect launches from: the send button, else the composer. */
   function sendOrigin(): Point {
@@ -674,11 +708,14 @@ export function setup(ctx: SpindleFrontendContext) {
       tintPermission: state.tintPermission,
       injectPermission: state.injectPermission,
       panelsPermission: state.panelsPermission,
+      memoriesPermission: state.memoriesPermission,
+      memoryNote: state.memoryNote,
       directed: dir ? [dir.scene, dir.light, dir.mood].filter(Boolean).join(' · ') : null,
       light: resolveLight(),
       saver: state.saver || perf.saving,
       auraColors: auras.list().map((a) => a.color),
       beats: state.chatId ? beats.get()[state.chatId] ?? [] : [],
+      pins: state.chatId ? pins.get()[state.chatId] ?? [] : [],
       unlocked: badges.get().unlocked,
       soundscape: scape.state,
       uiThemeLabel: state.themeLabel,
@@ -689,6 +726,7 @@ export function setup(ctx: SpindleFrontendContext) {
     }
   }
   function notifyStatus() {
+    for (const fn of pinListeners) fn()
     const st = status()
     for (const fn of statusListeners) {
       try {
@@ -697,6 +735,230 @@ export function setup(ctx: SpindleFrontendContext) {
         console.error('[Lumi Flair] status listener failed', err)
       }
     }
+  }
+
+  // ── Theater mode ──
+  // The host's own drawer can only be closed by its tab button (no extension call for it), so press that, only when it is open.
+  function closeHostDrawer() {
+    try {
+      if (!ctx.ui.events?.getDrawerState?.().open) return
+    } catch {
+      return
+    }
+    const tab = document.querySelector('[data-spindle-mount="sidebar"]')?.parentElement?.parentElement?.firstElementChild
+    if (tab instanceof HTMLButtonElement) tab.click()
+  }
+  const theater = new Theater({
+    root: theaterWrap.querySelector('.lf-th-root') as HTMLElement,
+    style: theaterStyle,
+    get: () => {
+      const s = store.get()
+      return { scale: s.theaterScale, speed: s.theaterSpeed, scroll: s.theaterScroll }
+    },
+    set: (patch) => store.update(patch),
+    motion: motionAllowed,
+    list: () => document.querySelector<HTMLElement>('[data-component="MessageList"]'),
+    latest: () => {
+      const id = ctx.messages.getLatestMessageId()
+      return id ? cardFor(id) : null
+    },
+    closeDrawer: closeHostDrawer,
+    tr,
+    changed: () => notifyStatus(),
+  })
+
+  // ── Typewriter pacing ──
+  // The reply is revealed at a steady pace (see typewriter.ts), with soft keys that follow the mood.
+  let keySrc: { id: string; src: AudioSource } | null = null
+  function typeKey(space: boolean) {
+    const s = store.get()
+    if (!s.enabled || !s.sound || !s.typewriterSound || document.hidden) return
+    const away = scape.backgrounded
+    if (away === 'mute') return
+    const volume = s.soundVolume * 0.8 * (away === 'dim' ? s.soundUnfocusedLevel : 1)
+    const semis = moodPitch(currentMood()?.label ?? null)
+    const id = customFor('ui:key')
+    const ac = sound.context()
+    if (id && ac && keySrc?.id !== id) {
+      // The user's own key sound: decoded once, then every key uses it (the built-in one plays meanwhile).
+      void lib.source(id, ac).then((src) => { if (src) keySrc = { id, src } }).catch(() => {})
+    }
+    sound.key(volume, semis, space, id && keySrc?.id === id ? keySrc.src : undefined)
+  }
+  const typewriter = new Typewriter({
+    get: () => {
+      const s = store.get()
+      return { on: s.enabled && s.typewriter, cps: s.typewriterCps }
+    },
+    motion: motionAllowed,
+    // The message being written (the newest one, should a finished one still be marked as streaming), else the one we follow.
+    content: (id) =>
+      [...document.querySelectorAll<HTMLElement>(`${CARD}[data-part="streaming"] [data-component="MessageContent"]`)].at(-1) ??
+      (id ? cardFor(id)?.querySelector<HTMLElement>('[data-component="MessageContent"]') ?? null : null),
+    list: () => document.querySelector<HTMLElement>('[data-component="MessageList"]'),
+    key: typeKey,
+  })
+
+  // ── Character intro ──
+  // Opening a chat plays a short name card in the character's aura colour, every time a chat is opened.
+  // In a group chat there is no one name to show, so a chip names whoever is speaking instead, and the other messages dim.
+  let introRun = 0
+  const isGroupChat = () => !!document.querySelector('[data-component="MessageList"][data-group-chat]')
+
+  /** The theme sound for the card: needs interface sounds on, honours the window being in the background, and never plays late. */
+  async function playIntroSound(id: string) {
+    const s = store.get()
+    if (!s.enabled || !s.sound || !lib.has(id) || document.hidden) return
+    const away = scape.backgrounded
+    if (away === 'mute') return
+    const ac = sound.context()
+    if (!ac) return
+    // A page nobody has touched yet can't make sound; a sound that comes late, after the card has gone, is worse than none.
+    if (ac.state === 'suspended') await Promise.race([ac.resume().catch(() => {}), new Promise((r) => setTimeout(r, 400))])
+    if (disposed || ac.state !== 'running') return
+    const src = await lib.source(id, ac).catch(() => null)
+    if (src && !disposed) sound.playFile(src, s.soundVolume * (away === 'dim' ? s.soundUnfocusedLevel : 1), 8)
+  }
+
+  function showIntro(name: string, color: string, avatar: string | null) {
+    // The part of the chat that is on screen.
+    const view = document.querySelector<HTMLElement>('[data-component="ChatView"]')?.getBoundingClientRect()
+    const left = Math.max(0, view?.left ?? 0)
+    const top = Math.max(0, view?.top ?? 0)
+    const area = view ? { left, top, width: Math.min(window.innerWidth, view.right) - left, height: Math.min(window.innerHeight, view.bottom) - top } : null
+    introCard.show({ name, color, avatar, kicker: tr('A conversation with'), motion: motionAllowed(), area })
+    const id = store.get().introSound
+    if (id) void playIntroSound(id)
+  }
+
+  function startIntro(chatId: string) {
+    const run = ++introRun
+    const t0 = performance.now()
+    const attempt = () => {
+      if (disposed || run !== introRun || state.chatId !== chatId) return
+      const s = store.get()
+      // (While the welcome is still to be seen, the card would only land on top of it.)
+      if (!s.enabled || !s.intro || !s.welcomed) return
+      const waited = performance.now() - t0
+      const retry = () => {
+        if (waited < 3200) setTimeout(attempt, 150)
+      }
+      // Wait for the chat to be on screen: only then can we tell a group chat from a single character.
+      if (!document.querySelector('[data-component="MessageList"]')) return retry()
+      if (isGroupChat()) return
+      const name = state.characterName
+      if (!name) return retry()
+      const found = auras.enabled ? auras.latest() : null
+      // Their colour comes from an avatar on screen; give it a moment, then settle for the theme colour.
+      if (!found && auras.enabled && waited < 1800) return retry()
+      showIntro(name, found?.aura.color ?? state.charAura ?? hexOf(charColor()), found?.avatar ?? null)
+    }
+    setTimeout(attempt, 450)
+  }
+
+  /** Play it now (the panel's Preview, the command), whatever the settings. */
+  function previewIntro() {
+    const found = auras.enabled ? auras.latest() : null
+    showIntro(state.characterName || tr('Your character'), found?.aura.color ?? state.charAura ?? hexOf(charColor()), found?.avatar ?? null)
+  }
+
+  // Group chats: who is speaking.
+  const speakerColors = new Map<string, string>() // character id → the colour taken from their avatar
+  const SPOT_KEY = 'groupspot'
+  let speakerRun = 0
+  let speakerGen = '' // generation of the turn on show
+  let spotOn = false
+  let speakerTurns = 0 // how many turns the round has, as far as the host told us (0: not known)
+  let speakerTimer: ReturnType<typeof setTimeout> | undefined
+  let speakerHide: ReturnType<typeof setTimeout> | undefined
+
+  function chipPlace() {
+    const list = document.querySelector<HTMLElement>('[data-component="MessageList"]')?.getBoundingClientRect()
+    const input = document.querySelector<HTMLElement>('[data-component="InputArea"]')?.getBoundingClientRect()
+    return {
+      x: list && list.width > 0 ? list.left + list.width / 2 : window.innerWidth / 2,
+      bottom: input && input.height > 0 ? window.innerHeight - input.top + 12 : 110,
+    }
+  }
+
+  /** The other messages step back while someone is writing (opacity only, and only the messages on screen). */
+  const spotlightRule = (dim: boolean) =>
+    `:root [data-component="MessageList"][data-group-chat] ${CARD}:not([data-part="streaming"]) { opacity: ${dim ? '.7' : '1'}; transition: opacity .3s ease; }`
+
+  function speakerStart(p: { chatId?: string; characterId?: string; characterName?: string; generationId?: string; turn?: number; total?: number }) {
+    const s = store.get()
+    const name = (p.characterName ?? '').trim()
+    if (disposed || !s.enabled || !s.introGroup || !name || !isActiveChat(p.chatId) || !isGroupChat()) return
+    const gen = p.generationId ?? ''
+    const total = p.total && p.total > 1 ? p.total : 0
+    // Two events can announce one turn; show it once, unless the second one brings the turn count.
+    if (gen && gen === speakerGen && speaker.showing && (!total || total === speakerTurns)) return
+    speakerGen = gen
+    speakerTurns = total
+    const run = ++speakerRun
+    const id = p.characterId || name
+    const known = speakerColors.get(id)
+    speaker.show({ name, color: known ?? hashColor(id), turn: (p.turn ?? 0) + 1, total, motion: motionAllowed(), ...chipPlace() })
+    spotOn = true
+    tempRule(SPOT_KEY, spotlightRule(true), 120_000)
+    // If the end of this turn is never reported, it still goes away.
+    clearTimeout(speakerHide)
+    speakerHide = setTimeout(speakerFinish, 120_000)
+    if (known || !auras.enabled) return
+    // A character who hasn't spoken yet has no colour on screen until their message appears.
+    const t0 = performance.now()
+    const poll = () => {
+      if (disposed || run !== speakerRun) return
+      auras.scan()
+      const waited = performance.now() - t0
+      const hit = auras.forSpeaker(name) ?? (waited > 250 ? auras.forStreaming() : null)
+      if (hit) {
+        speakerColors.set(id, hit.aura.color)
+        speaker.setColor(hit.aura.color)
+        return
+      }
+      if (waited < 2400) speakerTimer = setTimeout(poll, 150)
+    }
+    clearTimeout(speakerTimer)
+    poll()
+  }
+
+  /** Chip away, and the other messages come back up (smoothly). */
+  function speakerFinish() {
+    speakerRun++
+    speakerGen = ''
+    speaker.hide(false)
+    if (spotOn) {
+      spotOn = false
+      tempRule(SPOT_KEY, spotlightRule(false), 450)
+    }
+  }
+
+  /** The speaker is done: the chip and the dimming leave shortly, unless the next speaker starts first. */
+  function speakerEnd(delay = 700) {
+    if (!speaker.showing) return
+    clearTimeout(speakerHide)
+    speakerHide = setTimeout(speakerFinish, delay)
+  }
+
+  function speakerReset() {
+    clearTimeout(speakerHide)
+    clearTimeout(speakerTimer)
+    speakerFinish()
+    speaker.hide(true)
+  }
+  disposers.push(() => {
+    clearTimeout(speakerHide)
+    clearTimeout(speakerTimer)
+  })
+
+  function previewSpeaker() {
+    const name = state.characterName || tr('Your character')
+    const found = auras.enabled ? auras.latest() : null
+    const color = found?.aura.color ?? state.charAura ?? hashColor(name)
+    speaker.show({ name, color, turn: 1, total: 3, motion: motionAllowed(), ...chipPlace() })
+    clearTimeout(speakerHide)
+    speakerHide = setTimeout(() => speaker.hide(false), 2600)
   }
 
   // ── Active chat / character tracking ──
@@ -708,7 +970,14 @@ export function setup(ctx: SpindleFrontendContext) {
     const chatChanged = chatId !== state.chatId
     state.chatId = chatId
     state.characterId = characterId
-    if (chatChanged) choices.clear()
+    if (chatChanged) {
+      choices.clear()
+      speakerReset()
+      typewriter.stop()
+      introRun++ // an intro still waiting on the old chat is off
+      introCard.hide(false)
+      if (chatId) startIntro(chatId)
+    }
     if (charChanged) {
       state.characterName = null
       const req = ++nameRequest
@@ -726,6 +995,7 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     store.setActiveCharacter(characterId) // emits → applyAll when a profile is involved
     if (!chatId) {
+      theater.exit() // the home screen has the interface theater mode hides
       // Left the chat, so the home screen is being mounted. The atmosphere goes now; the whole-UI colour and
       // theme changes wait until the page change has settled, because restyling everything in the middle of it
       // is what a memory-starved iOS home-screen app can least afford.
@@ -748,6 +1018,10 @@ export function setup(ctx: SpindleFrontendContext) {
     measureRoom()
     auras.scan()
     refreshCharAura()
+    if (speaker.showing) {
+      const at = chipPlace()
+      speaker.place(at.x, at.bottom)
+    }
     // ChatView remounts on navigation; keep the atmosphere layers attached to the live one.
     const view = document.querySelector('[data-component="ChatView"]')
     if (view !== ambientChatView || (ambientHost && !ambientHost.isConnected)) {
@@ -761,6 +1035,12 @@ export function setup(ctx: SpindleFrontendContext) {
     const p = (raw ?? {}) as { chatId?: string; messageId?: string; messageIds?: string[] }
     const gone = new Set([...(p.messageIds ?? []), ...(p.messageId ? [p.messageId] : [])])
     if (!gone.size) return
+    pins.whenLoaded(() => {
+      const next = removePins(pins.get(), p.chatId, gone)
+      if (next === pins.get()) return
+      pins.set(next)
+      notifyStatus()
+    })
     beats.whenLoaded(() => {
       const all = beats.get()
       let changed = false
@@ -1081,7 +1361,17 @@ export function setup(ctx: SpindleFrontendContext) {
     if (p?.generationType === 'continue') choices.pause()
     else choices.clear()
     startComposer(p?.generationId ?? 'unknown')
+    if (p) speakerStart(p)
+    // A continued reply keeps the text it had; only what is added is typed out.
+    typewriter.start(p?.generationType === 'continue' ? p.targetMessageId ?? null : null)
   })
+
+  // A host that announces group turns itself also tells us how many speakers the round has.
+  on('GROUP_TURN_STARTED', (raw) => {
+    const p = raw as GroupTurnPayload
+    if (p?.chatId) speakerStart({ ...p, turn: p.turnIndex, total: p.totalExpected })
+  })
+  on('GROUP_ROUND_COMPLETE', () => speakerEnd(300))
 
   on('STREAM_TOKEN_RECEIVED', (raw) => {
     const g = state.generating
@@ -1090,10 +1380,17 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!p?.generationId || g.id === 'unknown' || p.generationId === g.id) g.tokens++
   })
 
-  on('GENERATION_STOPPED', () => stopComposer())
+  on('GENERATION_STOPPED', () => {
+    stopComposer()
+    speakerEnd(200)
+    typewriter.end()
+  })
 
   on('GENERATION_ENDED', (raw) => {
     const p = raw as GenerationEndedPayload
+    if (!p?.generationId || !speakerGen || p.generationId === speakerGen) speakerEnd()
+    if (!p?.error && p?.generationType !== 'impersonate') typewriter.end()
+    else typewriter.stop()
     if (!state.generating || !p?.generationId || state.generating.id === p.generationId || state.generating.id === 'unknown') {
       stopComposer()
     }
@@ -1186,7 +1483,8 @@ export function setup(ctx: SpindleFrontendContext) {
   disposers.push(() => document.removeEventListener('pointerdown', onTap, { capture: true }))
 
   // ── Moment Cards ──
-  async function makeMoment(messageId: string | null) {
+  /** `picked`: what was selected in the message when the button was pressed (the card starts with just that). */
+  async function makeMoment(messageId: string | null, picked: string | null = null) {
     if (!messageId) return
     const card = cardFor(messageId)
     let name = ''
@@ -1200,17 +1498,115 @@ export function setup(ctx: SpindleFrontendContext) {
     } catch {
       /* fall back to DOM */
     }
-    if (!text && card) text = card.innerText
-    if (!name) name = state.characterName ?? 'Lumiverse'
+    if (!text && card) text = (card.querySelector<HTMLElement>('[data-component="MessageContent"]') ?? card).innerText
+    if (!name) name = (card?.querySelector('[class*="_name_"]')?.textContent ?? '').trim() || (state.characterName ?? 'Lumiverse')
     const avatarSrc = card?.querySelector('img[src]')?.getAttribute('src') ?? null
     const aura = auras.forMessage(messageId)
     await showMomentCard(
       ctx,
       { name, text: plainText(text), avatarSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date() },
       () => unlock(['shutterbug']),
+      picked,
     )
   }
-  // A small camera button in each message's action pill (Bubble mode).
+
+  // ── Pinned moments ──
+  /** What is selected inside one message, as a short line (null when nothing, or it's elsewhere). */
+  function selectedIn(messageId: string): string | null {
+    const raw = selectionIn(messageId)
+    const t = raw ? excerpt(raw) : ''
+    return t.length > 1 ? t : null
+  }
+  /** The selected text inside one message, in full (null when nothing, or it's elsewhere). */
+  function selectionIn(messageId: string): string | null {
+    const sel = window.getSelection()
+    const card = cardFor(messageId)
+    if (!sel || sel.isCollapsed || !card || !card.contains(sel.anchorNode) || !card.contains(sel.focusNode)) return null
+    const t = sel.toString().trim()
+    return t.length > 1 ? t : null
+  }
+  /**
+   * Pin a message, or take its pin off. If the reader selected a line, that line is pinned (and a message
+   * that is already pinned takes the new line instead of losing its pin).
+   */
+  function pinMessage(messageId: string | null, picked: string | null = null) {
+    // Before the first load has finished, state.chatId isn't set yet; the pin waits for the load below.
+    const chatId = state.chatId ?? ctx.getActiveChat()?.chatId ?? null
+    if (!messageId || !chatId) return
+    const line = picked ?? selectedIn(messageId)
+    const card = cardFor(messageId)
+    const user = card?.getAttribute('data-part') === 'user'
+    const body = card?.querySelector<HTMLElement>('[data-component="MessageContent"]') ?? card
+    const text = line ?? excerpt(body?.innerText ?? '')
+    const name = card?.querySelector<HTMLElement>('[class*="_name_"]')?.textContent?.trim()
+    const ids = ctx.messages.listMessageIds()
+    const at = ids.indexOf(messageId)
+    const aura = auras.forMessage(messageId)
+    pins.whenLoaded(() => {
+      const all = pins.get()
+      if (isPinned(all, chatId, messageId) && !line) {
+        pins.set(removePins(all, chatId, new Set([messageId])))
+      } else {
+        if (!text) return
+        const pin: Pin = {
+          id: messageId,
+          i: at < 0 ? ids.length : at,
+          text,
+          whole: !line,
+          who: name || (user ? '' : state.characterName ?? ''),
+          user,
+          color: aura?.color ?? null,
+          t: Date.now(),
+        }
+        pins.set(setPin(all, chatId, pin))
+        if (store.get().pinMemory && state.memoriesPermission) void remember(chatId, [pin])
+      }
+      notifyStatus()
+    })
+  }
+  // Save pins to Lumiverse's memory through the backend (it adds a short fact on the speaker).
+  const memoryWaits = new Map<number, (r: { ok: boolean; saved: number; reason?: string }) => void>()
+  let memoryReq = 0
+  function sendPinsToMemory(chatId: string, list: readonly Pin[]) {
+    const items = list.filter((p) => p.who).map((p) => ({ who: p.who, text: excerpt(p.text, PIN_MEMORY_MAX) }))
+    if (!items.length) return Promise.resolve({ ok: true, saved: 0, reason: 'unnamed' })
+    const req = ++memoryReq
+    return new Promise<{ ok: boolean; saved: number; reason?: string }>((resolve) => {
+      const done = (r: { ok: boolean; saved: number; reason?: string }) => {
+        clearTimeout(timer)
+        memoryWaits.delete(req)
+        resolve(r)
+      }
+      const timer = setTimeout(() => done({ ok: false, saved: 0, reason: 'no answer' }), 15_000)
+      memoryWaits.set(req, done)
+      ctx.sendToBackend({ type: 'pin_memory', req, chatId, items })
+    })
+  }
+  async function remember(chatId: string, list: readonly Pin[]) {
+    const r = await sendPinsToMemory(chatId, list)
+    if (!r.ok) console.warn('[Lumi Flair] Saving pins to memory failed:', r.reason)
+    state.memoryNote = !r.ok
+      ? tr('Couldn’t save to Lumiverse memory.')
+      : r.saved
+        ? tr('Saved to Lumiverse memory.')
+        : list.length
+          ? tr('Nothing to save: those pins have no speaker name.')
+          : null
+    notifyStatus()
+  }
+  disposers.push(() => memoryWaits.clear())
+  async function jumpToPin(pin: { id: string }) {
+    const res = await storyNav.jump(pin.id)
+    if (res === 'missing' && state.chatId) {
+      pins.whenLoaded(() => {
+        pins.set(removePins(pins.get(), state.chatId ?? undefined, new Set([pin.id])))
+        notifyStatus()
+      })
+    }
+    return res
+  }
+
+  // A star and a camera button in each message's action pill (Bubble mode).
   try {
     const ui = ctx.ui as unknown as DomDecoratorApi
     const CAM =
@@ -1220,18 +1616,59 @@ export function setup(ctx: SpindleFrontendContext) {
       render: (root, rctx) => {
         const id = /^message:(.+):actions$/.exec(rctx.scope)?.[1]
         if (!id) return
+        const star = document.createElement('button')
+        star.type = 'button'
+        star.className = 'lf-moment-btn lf-pin-btn'
+        star.innerHTML = STAR_SVG
+        // Tapping can clear a selection, so read it as the press starts.
+        let picked: string | null = null
+        const syncStar = () => {
+          const on = isPinned(pins.get(), state.chatId, id)
+          if (star.dataset.on === (on ? '1' : '0')) return
+          star.dataset.on = on ? '1' : '0'
+          star.setAttribute('aria-pressed', String(on))
+          star.title = tr(on ? 'Unpin this moment' : 'Pin this moment')
+          star.setAttribute('aria-label', tr(on ? 'Remove from favourite moments' : 'Pin as a favourite moment'))
+        }
+        star.addEventListener('pointerdown', () => (picked = selectedIn(id)))
+        star.addEventListener('click', (e) => {
+          e.stopPropagation()
+          pinMessage(id, picked)
+          picked = null
+        })
+        syncStar()
+        pinListeners.add(syncStar)
         const b = document.createElement('button')
         b.type = 'button'
         b.className = 'lf-moment-btn'
         b.title = tr('Moment Card')
         b.setAttribute('aria-label', tr('Make a Moment Card'))
         b.innerHTML = CAM
+        // Like the star: a selection in the message is read as the press starts (the tap can clear it).
+        let shot: string | null = null
+        b.addEventListener('pointerdown', () => (shot = selectionIn(id)))
         b.addEventListener('click', (e) => {
           e.stopPropagation()
-          void makeMoment(id)
+          void makeMoment(id, shot ?? selectionIn(id))
+          shot = null
         })
-        root.appendChild(b)
-        return () => b.remove()
+        const th = document.createElement('button')
+        th.type = 'button'
+        th.className = 'lf-moment-btn'
+        th.title = tr('Read in theater mode')
+        th.setAttribute('aria-label', tr('Read from here in theater mode'))
+        th.innerHTML = THEATER_ICON
+        th.addEventListener('click', (e) => {
+          e.stopPropagation()
+          theater.enter(cardFor(id))
+        })
+        root.append(star, b, th)
+        return () => {
+          pinListeners.delete(syncStar)
+          star.remove()
+          b.remove()
+          th.remove()
+        }
       },
     })
     if (off) disposers.push(off)
@@ -1277,6 +1714,7 @@ export function setup(ctx: SpindleFrontendContext) {
       if (msg?.type === 'command') runCommand(msg.id)
       const tr2 = raw as { type?: string; ok?: boolean; reason?: string }
       if (tr2?.type === 'theme_result' && !tr2.ok) console.warn('[Lumi Flair] Lumiverse theme matching unavailable:', tr2.reason)
+      if (msg?.type === 'pin_memory_result') memoryWaits.get(msg.req)?.(msg)
       if (msg?.type === 'tint_result' && !msg.ok) {
         console.warn('[Lumi Flair] Mood UI tint unavailable:', msg.reason)
       }
@@ -1320,6 +1758,12 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       case 'moment':
         return void makeMoment(ctx.messages.getLatestMessageId())
+      case 'pin':
+        return pinMessage(ctx.messages.getLatestMessageId())
+      case 'intro':
+        return previewIntro()
+      case 'theater':
+        return theater.toggle()
       case 'welcome':
         return openWelcome()
       case 'open':
@@ -1328,7 +1772,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   // ── Input bar (Extras) quick toggles ──
-  const inputActions: { spotlight?: SpindleInputBarActionHandle; flair?: SpindleInputBarActionHandle } = {}
+  const inputActions: { spotlight?: SpindleInputBarActionHandle; flair?: SpindleInputBarActionHandle; theater?: SpindleInputBarActionHandle } = {}
   const SPOT_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
   const FLAIR_ICON =
@@ -1338,9 +1782,12 @@ export function setup(ctx: SpindleFrontendContext) {
     disposers.push(inputActions.spotlight.onClick(() => runCommand('spotlight')))
     inputActions.flair = ctx.ui.registerInputBarAction({ id: 'flair', label: tr('Flair effects'), subtitle: tr('On'), iconSvg: FLAIR_ICON })
     disposers.push(inputActions.flair.onClick(() => runCommand('toggle')))
+    inputActions.theater = ctx.ui.registerInputBarAction({ id: 'theater', label: tr('Theater mode'), subtitle: tr('Hide the interface and read'), iconSvg: THEATER_ICON })
+    disposers.push(inputActions.theater.onClick(() => runCommand('theater')))
     disposers.push(() => {
       inputActions.spotlight?.destroy()
       inputActions.flair?.destroy()
+      inputActions.theater?.destroy()
     })
   } catch (err) {
     console.warn('[Lumi Flair] Input bar actions unavailable', err)
@@ -1352,13 +1799,20 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   // ── Permissions ──
-  type Perm = 'interceptor' | 'app_manipulation' | 'ui_panels'
+  type Perm = 'interceptor' | 'app_manipulation' | 'ui_panels' | 'memories'
   const hasPerm = (perm: Perm) =>
-    perm === 'interceptor' ? state.injectPermission : perm === 'app_manipulation' ? state.tintPermission : state.panelsPermission
+    perm === 'interceptor'
+      ? state.injectPermission
+      : perm === 'app_manipulation'
+        ? state.tintPermission
+        : perm === 'memories'
+          ? state.memoriesPermission
+          : state.panelsPermission
   function adoptGranted(granted: string[]) {
     state.tintPermission = granted.includes('app_manipulation')
     state.injectPermission = granted.includes('interceptor')
     state.panelsPermission = granted.includes('ui_panels')
+    state.memoriesPermission = granted.includes('memories')
   }
   async function requestPermission(perm: Perm, reason: string): Promise<boolean> {
     try {
@@ -1376,6 +1830,8 @@ export function setup(ctx: SpindleFrontendContext) {
     requestPermission('interceptor', tr('Lumi Flair adds a short note to each prompt so the AI uses text effects, directs scenes and offers choices.'))
   const requestTint = () =>
     requestPermission('app_manipulation', tr('Lumi Flair restyles Lumiverse’s colours to match your Flair Pack, the speaking character or their mood. Your saved theme is never changed — switching it off restores it.'))
+  const requestMemories = () =>
+    requestPermission('memories', tr('Lumi Flair adds the moments you pin to Lumiverse’s memory as short facts about whoever said them, so the AI can remember them. It only ever adds, and only while this is switched on in Flair.'))
   const requestPanels = () =>
     requestPermission('ui_panels', tr('Lumi Flair shows a small floating volume control for the ambient soundscape. You can drag it anywhere and turn it off in Flair’s Sound settings.'))
 
@@ -1481,6 +1937,7 @@ export function setup(ctx: SpindleFrontendContext) {
     store.flush()
     beats.flush()
     badges.flush()
+    pins.flush()
   }
   const onHide = () => document.visibilityState === 'hidden' && flushAll()
   window.addEventListener('pagehide', flushAll)
@@ -1497,6 +1954,10 @@ export function setup(ctx: SpindleFrontendContext) {
       if (save) badges.set(badges.get())
     }
     if (saved.heartbeat && save) beats.set(beats.get())
+    if (saved.moments) {
+      pins.hydrate(normalizePins(saved.moments))
+      if (save) pins.set(pins.get())
+    }
     if (saved.settings) store.adopt(saved.settings, save)
     notifyStatus()
   }
@@ -1510,12 +1971,14 @@ export function setup(ctx: SpindleFrontendContext) {
       store.hydrate(saved.settings)
       beats.hydrate(saved.heartbeat)
       badges.hydrate(normalizeAchievements(saved.achievements))
+      pins.hydrate(normalizePins(saved.moments))
     })
     .then(() => {
       if (disposed) return
       checkActive()
       applyAll()
       store.subscribe(() => applyAll())
+      store.subscribe(() => theater.refresh())
       panel = mountPanel(ctx, store, {
         previewSend: () => fireSendEffect(true),
         previewHover: () => {
@@ -1563,6 +2026,27 @@ export function setup(ctx: SpindleFrontendContext) {
           })
         },
         momentLatest: () => makeMoment(ctx.messages.getLatestMessageId()),
+        pinLatest: () => pinMessage(ctx.messages.getLatestMessageId()),
+        previewIntro,
+        previewSpeaker,
+        enterTheater: () => theater.enter(),
+        previewTypewriter: (el) => typewriter.preview(el),
+        typewriterSupported: () => typewriter.supported,
+        unpin: (id) => {
+          const chatId = state.chatId
+          if (!chatId) return
+          pins.whenLoaded(() => {
+            pins.set(removePins(pins.get(), chatId, new Set([id])))
+            notifyStatus()
+          })
+        },
+        jumpToPin,
+        savePinsToMemory: async () => {
+          if (!state.memoriesPermission && !(await requestMemories())) return
+          const chatId = state.chatId
+          if (chatId) await remember(chatId, pins.get()[chatId] ?? [])
+        },
+        requestMemoriesPermission: requestMemories,
         jumpTo: async (p) => {
           const res = await storyNav.jump(p.id)
           if (res === 'missing' && state.chatId) {
@@ -1579,7 +2063,7 @@ export function setup(ctx: SpindleFrontendContext) {
         openWelcome,
         backupSettings: () => {
           flushAll()
-          downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get() }, ctx.manifest?.version ?? '')
+          downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get(), moments: pins.get() }, ctx.manifest?.version ?? '')
         },
         restoreSettings: async () => {
           const saved = await pickBackup(ctx)

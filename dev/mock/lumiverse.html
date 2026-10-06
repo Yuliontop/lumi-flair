@@ -1560,8 +1560,9 @@ const ctx={
   locale:{get(){return window.__locale||'en'},subscribe(){return ()=>{}}},
   uploads:{async pickFile(o){window.__pickOpts=o; if(window.__pickFiles) return window.__pickFiles; return [{name:'p.json',mimeType:'application/json',sizeBytes:10,bytes:new TextEncoder().encode(JSON.stringify(window.__importPack))}]}},
   ui:{
-    showModal(o){const bd=mk('div');bd.className='fake-modal';bd.style.cssText='position:fixed;left:50%;top:40px;transform:translateX(-50%);width:'+(o.width||420)+'px;max-height:80vh;overflow:auto;background:#1c1828;border:1px solid #444;border-radius:12px;padding:12px;z-index:2147483600';const h=mk('h3');h.textContent=o.title;h.style.margin='0 0 8px';const root=mk('div');bd.append(h,root);document.body.appendChild(bd);const ds=[];window.__modal={root,title:o.title};return {root,modalId:'m',setTitle(){},onDismiss(f){ds.push(f);return ()=>{}},dismiss(){bd.remove();ds.forEach(f=>f());window.__modal=null}}},
-    registerDomDecorator(o){window.__decor=o;document.querySelectorAll('[data-message-id][data-component]').forEach(c=>{const r=mk('span');r.className='fake-actions';c.appendChild(r);o.render(r,{scope:'message:'+c.dataset.messageId+':actions'})});return ()=>{}},
+    events:{ getDrawerState(){return {open:!!window.__drawerOpen,tabId:null}}, onDrawerChange(){return ()=>{}} },
+    showModal(o){window.__modalWidth=o.width;const bd=mk('div');bd.className='fake-modal';bd.style.cssText='position:fixed;left:50%;top:40px;transform:translateX(-50%);width:'+(o.width||420)+'px;max-height:80vh;overflow:auto;background:#1c1828;border:1px solid #444;border-radius:12px;padding:12px;z-index:2147483600';const h=mk('h3');h.textContent=o.title;h.style.margin='0 0 8px';const root=mk('div');bd.append(h,root);const ds=[];const close=()=>{(back||bd).remove();ds.forEach(f=>f());window.__modal=null};let back=null;if(window.__modalBackdrop){back=mk('div');back.className='fake-backdrop';back.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2147483599';back.appendChild(bd);back.addEventListener('click',e=>{if(e.target===back)close()});document.body.appendChild(back)}else document.body.appendChild(bd);window.__modal={root,title:o.title};return {root,modalId:'m',setTitle(){},onDismiss(f){ds.push(f);return ()=>{}},dismiss:close}},
+    registerDomDecorator(o){window.__decor=o;document.querySelectorAll('[data-message-id][data-component]').forEach(c=>{const r=mk('div');r.className='fake-actions';r.setAttribute('data-spindle-extension-root','lumi_flair');c.appendChild(r);o.render(r,{scope:'message:'+c.dataset.messageId+':actions'})});return ()=>{}},
     async showConfirm(){window.__confirmed=true;return {confirmed:true}},
     createFloatWidget(o){ if(!(window.__granted||[]).includes('ui_panels')) throw new Error('PERMISSION_DENIED: ui_panels');
       const c=mk('div'); c.className='fake-float'; c.style.cssText=`position:fixed;left:${o.initialPosition.x}px;top:${o.initialPosition.y}px;width:${o.width}px;height:${o.height}px;z-index:2147483000`; const root=mk('div'); c.appendChild(root); document.body.appendChild(c);
@@ -1585,7 +1586,7 @@ const ctx={
     async set(k,v){ chk(k); if(window.__acctDown) throw new Error('down'); localStorage.setItem('srv:acct:'+k, JSON.stringify(v)); stored[k]=v },
     async remove(k){ localStorage.removeItem('srv:acct:'+k) }, watch(){return ()=>{}}, core:{get(){},watch(){return ()=>{}},list(){return []},isReady(){return true}} },
   getActiveChat(){return window.__active ?? {chatId:'c1',characterId:'char1'}},
-  characters:{ async get(id){return {name:'Hazel'}} },
+  characters:{ async get(id){return {name:window.__charName||'Hazel'}} },
   permissions:{ async getGranted(){return window.__granted||[]}, async request(p){window.__granted=p;return p} },
   dom2:0, messages:{ getLatestMessageId(){return window.__latest||'m4'}, listMessageIds(){return Array.from({length:window.__msgCount},(_, i)=>'x'+i)}, registerTagInterceptor(o,h){(window.__tags??={})[o.tagName]=h;tagHandler=window.__tags.flair;window.__tagOpts=window.__tagOpts||o;return ()=>{}}, async get(id){const el=document.querySelector(`[data-message-id='${id}'][data-component]`);return el?{id,name:'Hazel',content:el.innerText,is_user:false}:null} },
   manifest:{version:'0.3.1'},
@@ -1598,6 +1599,7 @@ const ctx={
       return }
     const delay = window.__backendDelay ?? 20;
     if(p.type==='vault_load'){ if(window.__backendDead) return; setTimeout(()=>{const files={};for(const n of p.names){const r=localStorage.getItem('srv:file:'+n+'.json'); if(r) files[n]=JSON.parse(r)} backendHandler&&backendHandler({type:'vault_data',req:p.req,files})}, delay) }
+    if(p.type==='pin_memory'){ setTimeout(()=>backendHandler&&backendHandler({type:'pin_memory_result',req:p.req,ok:!window.__memFail,saved:window.__memFail?0:p.items.length,reason:window.__memFail?'boom':undefined}), 20) }
     if(p.type==='vault_save'){ if(window.__backendDead) return; setTimeout(()=>{localStorage.setItem('srv:file:'+p.name+'.json', JSON.stringify({lumiFlair:'0.3.1',savedAt:new Date(p.data.at).toISOString(),at:p.data.at,data:p.data.data})); backendHandler&&backendHandler({type:'vault_saved',name:p.name,at:p.data.at})}, delay) }
   },
   onBackendMessage(h){backendHandler=h;return ()=>{}},

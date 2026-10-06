@@ -110,7 +110,7 @@ var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash"
 var BURST_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm"];
 var SCENES = ["off", "snow", "rain", "embers", "fireflies", "petals", "stars"];
 var LIGHTS = ["none", "dawn", "day", "dusk", "night", "candle", "storm", "neon"];
-var UI_SOUNDS = ["send", "receive", "fanfare", "achievement", "sparkle"];
+var UI_SOUNDS = ["send", "receive", "fanfare", "achievement", "sparkle", "key"];
 var SOUND_SLOTS = [
   "always",
   ...SCENES.filter((s) => s !== "off").map((s) => `scene:${s}`),
@@ -136,7 +136,8 @@ var LOOK_KEYS = [
   "ambientScene",
   "swipeTransition",
   "lightDefault",
-  "textFxOff"
+  "textFxOff",
+  "introSound"
 ];
 var DEFAULT_MOOD_MAP = [
   "happy, joy, excited, laughing, smile, playful, cheerful, triumphant = #ffc94d",
@@ -203,6 +204,16 @@ var DEFAULT_SETTINGS = {
   soundWidget: false,
   soundWidgetPos: null,
   soundWidgetCollapsed: null,
+  pinMemory: false,
+  typewriter: false,
+  typewriterCps: 40,
+  typewriterSound: true,
+  theaterScale: 1.35,
+  theaterSpeed: 3,
+  theaterScroll: true,
+  intro: true,
+  introGroup: true,
+  introSound: "",
   soundUnfocused: "keep",
   soundUnfocusedLevel: 0.3,
   customSounds: {},
@@ -234,12 +245,13 @@ function clamp(n, min, max, fallback) {
 function pick(v, allowed, fallback) {
   return typeof v === "string" && allowed.includes(v) ? v : fallback;
 }
+var SOUND_ID = /^snd_[a-z0-9]{4,40}$/;
 function soundSlots(v) {
   const out = {};
   if (!v || typeof v !== "object")
     return out;
   for (const [k, id] of Object.entries(v)) {
-    if (SOUND_SLOTS.includes(k) && typeof id === "string" && /^snd_[a-z0-9]{4,40}$/.test(id))
+    if (SOUND_SLOTS.includes(k) && typeof id === "string" && SOUND_ID.test(id))
       out[k] = id;
   }
   return out;
@@ -350,6 +362,16 @@ function normalize(raw) {
     soundWidget: bool(r.soundWidget, d.soundWidget),
     soundWidgetPos: point(r.soundWidgetPos),
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === "boolean" ? r.soundWidgetCollapsed : null,
+    pinMemory: bool(r.pinMemory, d.pinMemory),
+    typewriter: bool(r.typewriter, d.typewriter),
+    typewriterCps: Math.round(clamp(r.typewriterCps, 10, 120, d.typewriterCps)),
+    typewriterSound: bool(r.typewriterSound, d.typewriterSound),
+    theaterScale: clamp(r.theaterScale, 1, 2.2, d.theaterScale),
+    theaterSpeed: Math.round(clamp(r.theaterSpeed, 1, 8, d.theaterSpeed)),
+    theaterScroll: bool(r.theaterScroll, d.theaterScroll),
+    intro: bool(r.intro, d.intro),
+    introGroup: bool(r.introGroup, d.introGroup),
+    introSound: typeof r.introSound === "string" && SOUND_ID.test(r.introSound) ? r.introSound : "",
     soundUnfocused: pick(r.soundUnfocused, ["keep", "dim", "mute"], d.soundUnfocused),
     soundUnfocusedLevel: clamp(r.soundUnfocusedLevel, 0.05, 0.8, d.soundUnfocusedLevel),
     customSounds: soundSlots(r.customSounds),
@@ -2534,7 +2556,66 @@ class SoundBoard {
         break;
     }
   }
-  playFile(src, volume) {
+  noise = null;
+  key(volume, semitones = 0, space = false, src) {
+    if (volume <= 0)
+      return;
+    const ac = this.ctx();
+    if (!ac || ac.state !== "running")
+      return;
+    const t = ac.currentTime + 0.005;
+    const out = ac.createGain();
+    out.connect(ac.destination);
+    const shift = Math.pow(2, semitones / 12) * (0.94 + Math.random() * 0.12);
+    if (src?.kind === "buffer") {
+      const n = ac.createBufferSource();
+      n.buffer = src.buffer;
+      n.playbackRate.value = shift * (space ? 0.85 : 1);
+      const level = Math.min(1, volume) * 0.5 * src.level * (space ? 0.7 : 1);
+      out.gain.setValueAtTime(level, t);
+      out.gain.setValueAtTime(level, t + 0.18);
+      out.gain.linearRampToValueAtTime(0.0001, t + 0.25);
+      n.connect(out);
+      n.start(t);
+      n.stop(t + 0.26);
+      n.onended = () => out.disconnect();
+      return;
+    }
+    if (!this.noise) {
+      const len = Math.floor(ac.sampleRate * 0.04);
+      this.noise = ac.createBuffer(1, len, ac.sampleRate);
+      const d = this.noise.getChannelData(0);
+      for (let i = 0;i < len; i++)
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+    }
+    const level = Math.min(1, volume) * (space ? 0.16 : 0.22);
+    out.gain.setValueAtTime(level, t);
+    const n = ac.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ac.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = (space ? 1300 : 2600) * shift;
+    bp.Q.value = 1.4;
+    const ng = ac.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(1, t + 0.002);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + (space ? 0.05 : 0.03));
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t);
+    n.stop(t + 0.06);
+    const o = ac.createOscillator();
+    o.type = "sine";
+    o.frequency.value = (space ? 120 : 190) * shift;
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(space ? 0.5 : 0.35, t + 0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + (space ? 0.07 : 0.04));
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.08);
+    o.onended = () => out.disconnect();
+  }
+  playFile(src, volume, maxSeconds = MAX_FILE_SECONDS) {
     if (volume <= 0)
       return;
     const ac = this.ctx();
@@ -2547,7 +2628,7 @@ class SoundBoard {
     const t = ac.currentTime;
     g.gain.setValueAtTime(level, t);
     g.connect(ac.destination);
-    const end = t + MAX_FILE_SECONDS;
+    const end = t + maxSeconds;
     const fadeOut = () => {
       g.gain.setValueAtTime(level, end - 0.6);
       g.gain.linearRampToValueAtTime(0.0001, end);
@@ -2557,7 +2638,7 @@ class SoundBoard {
       n.buffer = src.buffer;
       n.connect(g);
       n.start(t);
-      if (src.buffer.duration > MAX_FILE_SECONDS) {
+      if (src.buffer.duration > maxSeconds) {
         fadeOut();
         n.stop(end + 0.05);
       }
@@ -2580,7 +2661,7 @@ class SoundBoard {
       g.disconnect();
     };
     el.onended = stop;
-    setTimeout(stop, MAX_FILE_SECONDS * 1000 + 100);
+    setTimeout(stop, maxSeconds * 1000 + 100);
     el.play().catch(stop);
   }
   destroy() {
@@ -4384,7 +4465,65 @@ var T = {
   Whoosh: ["呼啸声", "呼嘯聲", "ヒュッという音", "Sifflement", "Sibilo"],
   Impact: ["撞击声", "撞擊聲", "衝撃音", "Impact", "Impatto"],
   Magic: ["魔法", "魔法", "魔法", "Magie", "Magia"],
-  "Fire crackle": ["火焰噼啪声", "火焰劈啪聲", "焚き火のパチパチ", "Crépitement du feu", "Crepitio del fuoco"]
+  "Fire crackle": ["火焰噼啪声", "火焰劈啪聲", "焚き火のパチパチ", "Crépitement du feu", "Crepitio del fuoco"],
+  "Favourite moments": ["收藏的瞬间", "收藏的瞬間", "お気に入りの瞬間", "Moments favoris", "Momenti preferiti"],
+  "Pin the latest message": ["收藏最新消息", "收藏最新訊息", "最新のメッセージをピン留め", "Épingler le dernier message", "Fissa l’ultimo messaggio"],
+  "Jump to it": ["跳转到此处", "跳轉到此處", "そこへ移動", "Y aller", "Vai lì"],
+  Message: ["消息", "訊息", "メッセージ", "Message", "Messaggio"],
+  You: ["你", "你", "あなた", "Vous", "Tu"],
+  "Pin this moment": ["收藏这一刻", "收藏這一刻", "この瞬間をピン留め", "Épingler ce moment", "Fissa questo momento"],
+  "Unpin this moment": ["取消收藏这一刻", "取消收藏這一刻", "この瞬間のピンを外す", "Désépingler ce moment", "Rimuovi questo momento"],
+  "Pin as a favourite moment": ["收藏为喜爱的瞬间", "收藏為喜愛的瞬間", "お気に入りの瞬間としてピン留め", "Épingler comme moment favori", "Fissa come momento preferito"],
+  "Remove from favourite moments": ["从收藏的瞬间中移除", "從收藏的瞬間中移除", "お気に入りの瞬間から外す", "Retirer des moments favoris", "Rimuovi dai momenti preferiti"],
+  "No pinned moments in this chat yet.": ["这个聊天里还没有收藏的瞬间。", "這個聊天裡還沒有收藏的瞬間。", "このチャットにはまだピン留めした瞬間がありません。", "Aucun moment épinglé dans cette discussion pour l’instant.", "Nessun momento fissato in questa chat per ora."],
+  "Open a chat to pin its moments.": ["打开一个聊天来收藏其中的瞬间。", "開啟一個聊天來收藏其中的瞬間。", "チャットを開いて瞬間をピン留めしましょう。", "Ouvrez une discussion pour épingler ses moments.", "Apri una chat per fissarne i momenti."],
+  "That message no longer exists, so its pin was removed.": ["该消息已不存在，已移除对应的收藏。", "該訊息已不存在，已移除對應的收藏。", "そのメッセージは存在しないため、ピンを削除しました。", "Ce message n’existe plus, son épingle a été retirée.", "Quel messaggio non esiste più, quindi il segnaposto è stato rimosso."],
+  "Save pins to Lumiverse memory": ["将收藏保存到 Lumiverse 记忆", "將收藏儲存到 Lumiverse 記憶", "ピンを Lumiverse のメモリに保存", "Enregistrer les épingles dans la mémoire de Lumiverse", "Salva i segnaposto nella memoria di Lumiverse"],
+  "Allow memory access": ["允许访问记忆", "允許存取記憶", "メモリへのアクセスを許可", "Autoriser l’accès à la mémoire", "Consenti l’accesso alla memoria"],
+  "Save this chat’s pins to memory": ["将此聊天的收藏保存到记忆", "將此聊天的收藏儲存到記憶", "このチャットのピンをメモリに保存", "Enregistrer les épingles de cette discussion en mémoire", "Salva in memoria i segnaposto di questa chat"],
+  "Saved to Lumiverse memory.": ["已保存到 Lumiverse 记忆。", "已儲存到 Lumiverse 記憶。", "Lumiverse のメモリに保存しました。", "Enregistré dans la mémoire de Lumiverse.", "Salvato nella memoria di Lumiverse."],
+  "Couldn’t save to Lumiverse memory.": ["无法保存到 Lumiverse 记忆。", "無法儲存到 Lumiverse 記憶。", "Lumiverse のメモリに保存できませんでした。", "Impossible d’enregistrer dans la mémoire de Lumiverse.", "Impossibile salvare nella memoria di Lumiverse."],
+  "Nothing to save: those pins have no speaker name.": ["没有可保存的内容：这些收藏没有发言者名称。", "沒有可儲存的內容：這些收藏沒有發言者名稱。", "保存するものがありません：これらのピンには発言者名がありません。", "Rien à enregistrer : ces épingles n’ont pas de nom d’interlocuteur.", "Niente da salvare: questi segnaposto non hanno il nome di chi parla."],
+  "Character intro": ["角色登场", "角色登場", "キャラクター紹介", "Entrée du personnage", "Ingresso del personaggio"],
+  "Name card when a chat opens": ["打开聊天时显示名牌", "開啟聊天時顯示名牌", "チャットを開くとき名前カードを表示", "Carte de nom à l’ouverture d’une discussion", "Cartellino col nome all’apertura di una chat"],
+  "Theme sound": ["主题音效", "主題音效", "テーマサウンド", "Son thème", "Suono tema"],
+  "Group chats: show who is speaking": ["群聊：显示谁在发言", "群聊：顯示誰在發言", "グループチャット：発言者を表示", "Discussions de groupe : montrer qui parle", "Chat di gruppo: mostra chi parla"],
+  "Preview intro": ["预览登场", "預覽登場", "紹介をプレビュー", "Aperçu de l’entrée", "Anteprima ingresso"],
+  "Preview speaker chip": ["预览发言标签", "預覽發言標籤", "発言者チップをプレビュー", "Aperçu de l’étiquette", "Anteprima etichetta"],
+  "A conversation with": ["对话对象", "對話對象", "会話の相手", "Une conversation avec", "Una conversazione con"],
+  "Your character": ["你的角色", "你的角色", "あなたのキャラクター", "Votre personnage", "Il tuo personaggio"],
+  "Theater mode": ["剧场模式", "劇場模式", "シアターモード", "Mode théâtre", "Modalità teatro"],
+  "Hide the interface and read": ["隐藏界面，专心阅读", "隱藏介面，專心閱讀", "インターフェースを隠して読む", "Masquer l’interface et lire", "Nascondi l’interfaccia e leggi"],
+  "Read in theater mode": ["用剧场模式阅读", "用劇場模式閱讀", "シアターモードで読む", "Lire en mode théâtre", "Leggi in modalità teatro"],
+  "Read from here in theater mode": ["从这里开始用剧场模式阅读", "從這裡開始用劇場模式閱讀", "ここからシアターモードで読む", "Lire à partir d’ici en mode théâtre", "Leggi da qui in modalità teatro"],
+  "Enter theater mode": ["进入剧场模式", "進入劇場模式", "シアターモードに入る", "Entrer en mode théâtre", "Entra in modalità teatro"],
+  "Text size": ["文字大小", "文字大小", "文字サイズ", "Taille du texte", "Dimensione del testo"],
+  "Scroll speed": ["滚动速度", "捲動速度", "スクロール速度", "Vitesse de défilement", "Velocità di scorrimento"],
+  "Start the gentle auto-scroll": ["启动轻柔自动滚动", "啟動輕柔自動捲動", "やさしい自動スクロールを開始", "Lancer le défilement automatique doux", "Avvia lo scorrimento automatico delicato"],
+  "Leave theater mode": ["退出剧场模式", "退出劇場模式", "シアターモードを終了", "Quitter le mode théâtre", "Esci dalla modalità teatro"],
+  "Pause the scroll": ["暂停滚动", "暫停捲動", "スクロールを一時停止", "Mettre le défilement en pause", "Metti in pausa lo scorrimento"],
+  "Start the scroll": ["开始滚动", "開始捲動", "スクロールを開始", "Lancer le défilement", "Avvia lo scorrimento"],
+  "Scroll slower": ["滚动慢一点", "捲動慢一點", "もっとゆっくり", "Défiler plus lentement", "Scorri più lentamente"],
+  "Scroll faster": ["滚动快一点", "捲動快一點", "もっと速く", "Défiler plus vite", "Scorri più velocemente"],
+  "Smaller text": ["文字调小", "文字調小", "文字を小さく", "Texte plus petit", "Testo più piccolo"],
+  "Larger text": ["文字调大", "文字調大", "文字を大きく", "Texte plus grand", "Testo più grande"],
+  "Show the reply box": ["显示回复框", "顯示回覆框", "返信欄を表示", "Afficher la zone de réponse", "Mostra la casella di risposta"],
+  "Hide the reply box": ["隐藏回复框", "隱藏回覆框", "返信欄を隠す", "Masquer la zone de réponse", "Nascondi la casella di risposta"],
+  "Tap the screen to show these controls": ["点按屏幕以显示这些控件", "點按螢幕以顯示這些控制項", "画面をタップするとコントロールが表示されます", "Touchez l’écran pour afficher ces commandes", "Tocca lo schermo per mostrare questi comandi"],
+  "Download PNG": ["下载 PNG", "下載 PNG", "PNG をダウンロード", "Télécharger le PNG", "Scarica PNG"],
+  "Copy image": ["复制图片", "複製圖片", "画像をコピー", "Copier l’image", "Copia immagine"],
+  "Text on the card": ["卡片上的文字", "卡片上的文字", "カードの文字", "Texte de la carte", "Testo della scheda"],
+  "Use selection": ["使用选中部分", "使用選取部分", "選択部分を使う", "Utiliser la sélection", "Usa la selezione"],
+  "Whole message": ["整条消息", "整則訊息", "メッセージ全体", "Message entier", "Messaggio intero"],
+  "Select part of the text and press “Use selection”, or edit it. The card follows as you go.": ["选中部分文字后点“使用选中部分”，或直接编辑。卡片会随之更新。", "選取部分文字後點「使用選取部分」，或直接編輯。卡片會隨之更新。", "文字の一部を選んで「選択部分を使う」を押すか、直接編集してください。カードはその都度更新されます。", "Sélectionnez une partie du texte puis « Utiliser la sélection », ou modifiez-le. La carte suit au fur et à mesure.", "Seleziona una parte del testo e premi «Usa la selezione», oppure modificalo. La scheda si aggiorna man mano."],
+  "Select some of the text first, then press “Use selection”.": ["请先选中一些文字，再点“使用选中部分”。", "請先選取一些文字，再點「使用選取部分」。", "先に文字を選んでから「選択部分を使う」を押してください。", "Sélectionnez d’abord du texte, puis « Utiliser la sélection ».", "Seleziona prima del testo, poi premi «Usa la selezione»."],
+  "That is more than fits, so the card ends with “…”. Pick a shorter part for the whole of it.": ["文字太多放不下，卡片会以“…”结尾。选一段更短的即可完整显示。", "文字太多放不下，卡片會以「…」結尾。選一段更短的即可完整顯示。", "収まりきらないため、カードは「…」で終わります。全文を載せるには短い部分を選んでください。", "C’est plus que ce qui tient : la carte se termine par « … ». Choisissez un passage plus court pour l’avoir en entier.", "È più di quanto ci stia, quindi la scheda finisce con «…». Scegli una parte più breve per averla intera."],
+  "Typewriter pacing": ["打字机节奏", "打字機節奏", "タイプライター表示", "Rythme machine à écrire", "Ritmo macchina da scrivere"],
+  "Typewriter reveal": ["打字机式显示", "打字機式顯示", "タイプライター風に表示", "Affichage machine à écrire", "Comparsa a macchina da scrivere"],
+  "Typing speed": ["打字速度", "打字速度", "タイピング速度", "Vitesse de frappe", "Velocità di battitura"],
+  "Key sounds": ["按键音", "按鍵音", "キー音", "Bruit des touches", "Suono dei tasti"],
+  "Preview typewriter": ["预览打字机效果", "預覽打字機效果", "タイプライターをプレビュー", "Aperçu machine à écrire", "Anteprima macchina da scrivere"],
+  "Typewriter key": ["打字机按键", "打字機按鍵", "タイプライターのキー", "Touche de machine à écrire", "Tasto della macchina da scrivere"]
 };
 var LOCALES = ["zh", "zh-TW", "ja", "fr", "it"];
 var DICT = Object.fromEntries(LOCALES.map((loc, i) => [loc, Object.fromEntries(Object.entries(T).map(([en, row]) => [en, row[i]]))]));
@@ -5124,12 +5263,35 @@ class AuraManager {
   latest() {
     const cards = document.querySelectorAll(`${CARD_SEL}:not([data-part="user"])`);
     for (let i = cards.length - 1;i >= 0; i--) {
-      const src = this.avatarOf(cards[i])?.getAttribute("src");
-      const a = src ? this.bySrc.get(src) : null;
-      if (a && typeof a === "object")
-        return { aura: a, messageId: cards[i].dataset.messageId ?? "" };
+      const found = this.of(cards[i]);
+      if (found)
+        return { ...found, messageId: cards[i].dataset.messageId ?? "" };
     }
     return null;
+  }
+  of(card) {
+    const src = this.avatarOf(card)?.getAttribute("src");
+    const a = src ? this.bySrc.get(src) : null;
+    return src && a && typeof a === "object" ? { aura: a, avatar: src } : null;
+  }
+  forSpeaker(name) {
+    const want = name.trim().toLowerCase();
+    if (!want)
+      return null;
+    const cards = document.querySelectorAll(`${CARD_SEL}:not([data-part="user"])`);
+    for (let i = cards.length - 1;i >= 0; i--) {
+      const label = cards[i].querySelector('[class*="_name_"]')?.textContent?.trim().toLowerCase();
+      if (label !== want)
+        continue;
+      const found = this.of(cards[i]);
+      if (found)
+        return found;
+    }
+    return null;
+  }
+  forStreaming() {
+    const card = document.querySelector(`${CARD_SEL}[data-part="streaming"]`);
+    return card ? this.of(card) : null;
   }
   forMessage(messageId) {
     const card = document.querySelector(`${CARD_SEL.replace("[data-message-id]", `[data-message-id="${cssString(messageId)}"]`)}`);
@@ -5139,6 +5301,879 @@ class AuraManager {
   }
   list() {
     return [...this.bySrc.values()].filter((a) => typeof a === "object");
+  }
+}
+
+// src/intro.ts
+var INTRO_MS = 2300;
+var GRACE_MS = 500;
+var INTRO_CSS = `
+.lf-intro, .lf-intro *, .lf-spk, .lf-spk * { margin: 0; padding: 0; box-sizing: border-box; text-align: center; line-height: 1.2; }
+.lf-intro { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none;
+  animation: lf-intro-life var(--lf-intro-ms, 2300ms) ease both; }
+.lf-intro-veil { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(6,6,12,.68), rgba(6,6,12,.34) 55%, rgba(6,6,12,0) 84%); }
+.lf-intro-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: min(86vw, 640px);
+  animation: lf-intro-rise var(--lf-intro-ms, 2300ms) cubic-bezier(.2,.7,.2,1) both; }
+.lf-intro-av { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; margin-bottom: 4px;
+  border: 2px solid var(--lf-intro-c); box-shadow: 0 0 34px color-mix(in srgb, var(--lf-intro-c) 70%, transparent); }
+.lf-intro-kicker { font-size: 12px; letter-spacing: .28em; text-transform: uppercase; color: rgba(255,255,255,.78); text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+.lf-intro-name { font-size: clamp(30px, 8vw, 56px); font-weight: 700; letter-spacing: .02em; color: var(--lf-intro-c); overflow-wrap: anywhere;
+  text-shadow: 0 0 28px color-mix(in srgb, var(--lf-intro-c) 75%, transparent), 0 2px 12px rgba(0,0,0,.55); }
+.lf-intro-rule { width: min(70vw, 260px); height: 2px; border-radius: 2px; transform-origin: center;
+  background: linear-gradient(90deg, transparent, var(--lf-intro-c), transparent); animation: lf-intro-rule var(--lf-intro-ms, 2300ms) ease both; }
+.lf-intro[data-motion="0"] .lf-intro-card, .lf-intro[data-motion="0"] .lf-intro-rule { animation: none; }
+@keyframes lf-intro-life { 0% { opacity: 0 } 18% { opacity: 1 } 78% { opacity: 1 } 100% { opacity: 0 } }
+@keyframes lf-intro-rise { 0% { transform: translateY(10px) scale(.95) } 22% { transform: none } 100% { transform: translateY(-4px) scale(1.02) } }
+@keyframes lf-intro-rule { 0%, 12% { transform: scaleX(0) } 38%, 100% { transform: scaleX(1) } }
+@media (pointer: coarse) { .lf-intro-veil { background: rgba(6,6,12,.62); } .lf-intro-av { width: 72px; height: 72px; } }
+
+/* Group chats: who is speaking */
+.lf-spk { position: absolute; left: 50%; bottom: 120px; width: 0; display: flex; justify-content: center; pointer-events: none; }
+.lf-spk-in { flex: none; display: flex; align-items: center; gap: 9px; padding: 7px 14px 7px 11px; border-radius: 999px; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: #fff; background: rgba(12,12,20,.82);
+  border: 1px solid color-mix(in srgb, var(--lf-spk-c) 60%, transparent); box-shadow: 0 0 22px color-mix(in srgb, var(--lf-spk-c) 38%, transparent);
+  animation: lf-spk-pop .3s cubic-bezier(.2,.7,.2,1) both; }
+.lf-spk-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--lf-spk-c); box-shadow: 0 0 10px var(--lf-spk-c); }
+.lf-spk-name { max-width: min(60vw, 260px); overflow: hidden; text-overflow: ellipsis; }
+.lf-spk-n { font-weight: 500; font-size: 11px; color: rgba(255,255,255,.6); font-variant-numeric: tabular-nums; }
+.lf-spk[data-motion="0"] .lf-spk-in { animation: none; }
+@keyframes lf-spk-pop { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+`;
+function hslToHex(h, s, l) {
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return "#" + [f(0), f(8), f(4)].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+}
+function hashColor(seed) {
+  let h = 2166136261;
+  for (let i = 0;i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return hslToHex((h >>> 0) % 360, 0.72, 0.64);
+}
+var SAFE_SRC = /^(https?:|data:image\/|blob:|\/)/i;
+
+class IntroCard {
+  root;
+  el = null;
+  timer;
+  stopInput = null;
+  constructor(root) {
+    this.root = root;
+  }
+  get showing() {
+    return !!this.el;
+  }
+  show(o) {
+    this.hide(true);
+    const el = document.createElement("div");
+    el.className = "lf-intro";
+    el.dataset.motion = o.motion ? "1" : "0";
+    el.style.setProperty("--lf-intro-c", o.color);
+    el.style.setProperty("--lf-intro-ms", `${INTRO_MS}ms`);
+    const a = o.area;
+    if (a && a.width > 160 && a.height > 160) {
+      el.style.right = el.style.bottom = "auto";
+      el.style.left = `${Math.round(a.left)}px`;
+      el.style.top = `${Math.round(a.top)}px`;
+      el.style.width = `${Math.round(a.width)}px`;
+      el.style.height = `${Math.round(a.height)}px`;
+    }
+    const veil = document.createElement("div");
+    veil.className = "lf-intro-veil";
+    const card = document.createElement("div");
+    card.className = "lf-intro-card";
+    if (o.avatar && SAFE_SRC.test(o.avatar)) {
+      const av = document.createElement("img");
+      av.className = "lf-intro-av";
+      av.alt = "";
+      av.decoding = "async";
+      av.src = o.avatar;
+      av.addEventListener("error", () => av.remove());
+      card.appendChild(av);
+    }
+    const kicker = document.createElement("div");
+    kicker.className = "lf-intro-kicker";
+    kicker.textContent = o.kicker;
+    const name = document.createElement("div");
+    name.className = "lf-intro-name";
+    name.textContent = o.name;
+    const rule = document.createElement("div");
+    rule.className = "lf-intro-rule";
+    card.append(kicker, name, rule);
+    el.append(veil, card);
+    this.root.appendChild(el);
+    this.el = el;
+    this.timer = setTimeout(() => this.hide(true), INTRO_MS + 120);
+    const shownAt = performance.now();
+    const early = () => {
+      if (performance.now() - shownAt > GRACE_MS)
+        this.hide(false);
+    };
+    document.addEventListener("pointerdown", early, { capture: true, passive: true });
+    document.addEventListener("keydown", early, { capture: true, passive: true });
+    this.stopInput = () => {
+      document.removeEventListener("pointerdown", early, { capture: true });
+      document.removeEventListener("keydown", early, { capture: true });
+    };
+  }
+  hide(instant) {
+    const el = this.el;
+    this.stopInput?.();
+    this.stopInput = null;
+    if (this.timer)
+      clearTimeout(this.timer);
+    this.timer = undefined;
+    if (!el)
+      return;
+    this.el = null;
+    if (instant) {
+      el.remove();
+      return;
+    }
+    const now = getComputedStyle(el).opacity;
+    el.style.animation = "none";
+    el.style.opacity = now;
+    el.offsetWidth;
+    el.style.transition = "opacity .25s ease";
+    el.style.opacity = "0";
+    setTimeout(() => el.remove(), 300);
+  }
+  destroy() {
+    this.hide(true);
+  }
+}
+
+class SpeakerChip {
+  root;
+  el = null;
+  fading = null;
+  fade;
+  constructor(root) {
+    this.root = root;
+  }
+  get showing() {
+    return !!this.el;
+  }
+  show(o) {
+    this.hide(true);
+    const wrap = document.createElement("div");
+    wrap.className = "lf-spk";
+    wrap.dataset.motion = o.motion ? "1" : "0";
+    wrap.style.left = `${Math.round(o.x)}px`;
+    wrap.style.bottom = `${Math.round(o.bottom)}px`;
+    wrap.style.setProperty("--lf-spk-c", o.color);
+    const chip = document.createElement("div");
+    chip.className = "lf-spk-in";
+    const dot = document.createElement("span");
+    dot.className = "lf-spk-dot";
+    const name = document.createElement("span");
+    name.className = "lf-spk-name";
+    name.textContent = o.name;
+    chip.append(dot, name);
+    if (o.total > 1) {
+      const n = document.createElement("span");
+      n.className = "lf-spk-n";
+      n.textContent = `${Math.min(o.turn, o.total)}/${o.total}`;
+      chip.appendChild(n);
+    }
+    wrap.appendChild(chip);
+    this.root.appendChild(wrap);
+    this.el = wrap;
+    this.place(o.x, o.bottom);
+  }
+  fit(x) {
+    const w = this.el?.firstElementChild?.getBoundingClientRect().width ?? 0;
+    const half = w / 2 + 8;
+    return Math.max(half, Math.min(window.innerWidth - half, x));
+  }
+  setColor(color) {
+    this.el?.style.setProperty("--lf-spk-c", color);
+  }
+  place(x, bottom) {
+    if (!this.el)
+      return;
+    this.el.style.left = `${Math.round(this.fit(x))}px`;
+    this.el.style.bottom = `${Math.round(bottom)}px`;
+  }
+  hide(instant) {
+    if (this.fade) {
+      clearTimeout(this.fade);
+      this.fade = undefined;
+      this.fading?.remove();
+      this.fading = null;
+    }
+    const el = this.el;
+    if (!el)
+      return;
+    this.el = null;
+    if (instant) {
+      el.remove();
+      return;
+    }
+    el.style.transition = "opacity .3s ease";
+    el.style.opacity = "0";
+    this.fading = el;
+    this.fade = setTimeout(() => {
+      el.remove();
+      if (this.fading === el)
+        this.fading = null;
+      this.fade = undefined;
+    }, 340);
+  }
+  destroy() {
+    this.hide(true);
+  }
+}
+
+// src/theater.ts
+var SPEED_LEVELS = [8, 14, 22, 32, 46, 64, 90, 130];
+var SCALE_MIN = 1;
+var SCALE_MAX = 2.2;
+var RESUME_MS = 2500;
+var BAR_MS = 3200;
+var R2 = ":root[data-lf-theater]";
+var CHROME = [
+  '[data-component="DesktopPwaTitlebar"]',
+  '[data-component="QuickToolbar"]',
+  '[data-component="ChatFindBar"]',
+  '[data-component="ScrollToBottom"]',
+  '[data-component="MessageSelectBar"]',
+  '[data-component="BubbleActions"]',
+  '[data-component="SwipeControls"]',
+  '[data-spindle-mount="chat_top_dock"]',
+  '[data-spindle-mount^="chat_header_"]',
+  '[data-spindle-mount="chat_bottom_dock"]',
+  '[data-spindle-mount="chat_composer_above"]',
+  '[data-spindle-mount="chat_sidebar_left"]',
+  '[data-spindle-mount="chat_sidebar_right"]',
+  '[data-spindle-mount="message_actions"]',
+  '[data-lumiverse-surface="chat-column"] > [class*="_noticeDock_"]',
+  '[data-lumiverse-surface="chat-body"] > [class*="_portraitSide_"]',
+  '[class*="_longMessageToggle_"]',
+  'div:has(> div > [data-spindle-mount="sidebar"])',
+  '[class*="_backdrop_"]:has(+ div > div > [data-spindle-mount="sidebar"])'
+];
+function theaterCss(scale) {
+  const s = Math.min(SCALE_MAX, Math.max(SCALE_MIN, scale));
+  return `
+${CHROME.map((c) => `${R2} ${c}`).join(`,
+`)} { display: none !important; }
+${R2}:not([data-lf-compose]) [data-component="InputArea"] { display: none !important; }
+${R2} [class*="_longMessageViewportConstrained_"] { max-height: none !important; overflow: visible !important; }
+${R2} [class*="_longMessageViewportOverflowing_"] { -webkit-mask-image: none !important; mask-image: none !important; }
+${R2} [data-component="MessageContent"] { font-size: calc(14px * var(--lumiverse-font-scale, 1) * ${s}) !important; line-height: 1.75 !important; }
+${R2} [data-component="MessageList"] { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
+`;
+}
+var THEATER_CSS = `
+.lf-th-root { position: fixed; inset: 0; z-index: 2147483001; pointer-events: none; }
+.lf-th, .lf-th * { margin: 0; padding: 0; box-sizing: border-box; line-height: 1.2; text-align: center; }
+.lf-th { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 0 12px; pointer-events: none; opacity: 0; transform: translateY(10px); visibility: hidden;
+  transition: opacity .3s ease, transform .3s ease, visibility 0s .3s; }
+.lf-th[data-show="1"] { opacity: 1; transform: none; visibility: visible; transition: opacity .3s ease, transform .3s ease; }
+.lf-th[data-compose="1"] { bottom: auto; top: calc(var(--app-interactive-safe-top, env(safe-area-inset-top, 0px)) + 12px); }
+.lf-th-hint { font-size: 12px; color: rgba(255,255,255,.82); background: rgba(12,12,20,.72); padding: 5px 12px; border-radius: 999px; max-width: 100%; }
+.lf-th-bar { pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 14px; padding: 6px; max-width: 100%;
+  border-radius: 18px; background: rgba(12,12,20,.88); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 6px 28px rgba(0,0,0,.45); }
+.lf-th-btn { width: 44px; height: 44px; border-radius: 12px; border: 0; background: transparent; color: #fff; display: inline-flex; align-items: center;
+  justify-content: center; cursor: pointer; font: inherit; -webkit-tap-highlight-color: transparent; }
+.lf-th-btn:hover { background: rgba(255,255,255,.12); }
+.lf-th-btn:focus-visible { outline: 2px solid var(--lf-c, #9370db); outline-offset: -2px; }
+.lf-th-btn[aria-pressed="true"] { background: rgba(255,255,255,.2); }
+.lf-th-btn:disabled { opacity: .35; cursor: default; }
+.lf-th-btn svg { width: 20px; height: 20px; }
+.lf-th-val { min-width: 30px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,.88); font-variant-numeric: tabular-nums; }
+.lf-th-grp { display: flex; align-items: center; gap: 2px; }
+@media (prefers-reduced-motion: reduce) { .lf-th, .lf-th[data-show="1"] { transition: none; transform: none; } }
+`;
+var svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+var THEATER_ICON = svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>');
+var ICON = {
+  exit: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>'),
+  pause: svg('<path d="M8 5v14M16 5v14" stroke-width="3"/>'),
+  slower: svg('<path d="M5 12h14"/>'),
+  faster: svg('<path d="M5 12h14M12 5v14"/>'),
+  smaller: svg('<path d="M4 18l5-12 5 12M6 14h6M17 9h4"/>'),
+  larger: svg('<path d="M3 19l6-14 6 14M5.5 14h7M18 7v6M15 10h6"/>'),
+  reply: svg('<path d="M4 5h16v11H9l-5 4z"/>')
+};
+var editable = (el) => {
+  const e = el;
+  return !!e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
+};
+
+class Theater {
+  h;
+  on_ = false;
+  playing = false;
+  bar = null;
+  raf = 0;
+  timer;
+  last = 0;
+  carry = 0;
+  lastInput = 0;
+  held = false;
+  hideTimer;
+  barHover = false;
+  pokedAt = 0;
+  stop = null;
+  ui = null;
+  constructor(h) {
+    this.h = h;
+  }
+  get on() {
+    return this.on_;
+  }
+  toggle(from) {
+    if (this.on_)
+      this.exit();
+    else
+      this.enter(from);
+  }
+  enter(from) {
+    const list = this.h.list();
+    if (this.on_ || !list)
+      return;
+    const atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 120;
+    this.on_ = true;
+    this.h.closeDrawer();
+    const root = document.documentElement;
+    root.setAttribute("data-lf-theater", "1");
+    this.paint();
+    this.buildBar();
+    this.playing = this.h.get().scroll && this.h.motion();
+    this.listen();
+    this.syncBar();
+    this.poke(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => this.startAt(from ?? null, atEnd)));
+    this.kick();
+    this.h.changed(true);
+  }
+  exit() {
+    if (!this.on_)
+      return;
+    this.on_ = false;
+    this.stop?.();
+    this.stop = null;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    clearTimeout(this.timer);
+    clearTimeout(this.hideTimer);
+    this.timer = this.hideTimer = undefined;
+    this.bar?.remove();
+    this.bar = null;
+    this.ui = null;
+    this.h.style.textContent = "";
+    const root = document.documentElement;
+    root.removeAttribute("data-lf-theater");
+    root.removeAttribute("data-lf-compose");
+    this.h.changed(false);
+  }
+  destroy() {
+    this.exit();
+  }
+  refresh() {
+    if (!this.on_)
+      return;
+    this.paint();
+    this.syncBar();
+  }
+  paint() {
+    this.h.style.textContent = theaterCss(this.h.get().scale);
+  }
+  startAt(from, atEnd) {
+    const list = this.h.list();
+    if (!this.on_ || !list)
+      return;
+    let target = from;
+    if (!target) {
+      const latest = this.h.latest();
+      if (atEnd && latest && latest.getBoundingClientRect().height > list.clientHeight * 0.5)
+        target = latest;
+    }
+    if (!target)
+      return;
+    const gap = target.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    list.scrollTop += gap - 16;
+    this.carry = 0;
+    this.lastInput = performance.now() - RESUME_MS + 600;
+  }
+  buildBar() {
+    const t = this.h.tr;
+    const bar = document.createElement("div");
+    bar.className = "lf-th";
+    bar.dataset.show = "0";
+    const hint = document.createElement("div");
+    hint.className = "lf-th-hint";
+    hint.textContent = matchMedia("(hover: hover)").matches ? t("Esc leaves · Space pauses the scroll · + and − change the text size") : t("Tap the screen to show these controls");
+    const row = document.createElement("div");
+    row.className = "lf-th-bar";
+    row.setAttribute("role", "toolbar");
+    row.setAttribute("aria-label", t("Theater mode"));
+    const btn = (icon, label, on) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "lf-th-btn";
+      b.innerHTML = icon;
+      b.title = t(label);
+      b.setAttribute("aria-label", t(label));
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        on();
+        this.poke(true);
+      });
+      return b;
+    };
+    const val = () => {
+      const v = document.createElement("span");
+      v.className = "lf-th-val";
+      return v;
+    };
+    const group = (...items) => {
+      const g = document.createElement("div");
+      g.className = "lf-th-grp";
+      g.append(...items);
+      return g;
+    };
+    const exit = btn(ICON.exit, "Leave theater mode", () => this.exit());
+    const play = btn(ICON.play, "Pause the scroll", () => this.togglePlay());
+    const slower = btn(ICON.slower, "Scroll slower", () => this.nudgeSpeed(-1));
+    const speed = val();
+    const faster = btn(ICON.faster, "Scroll faster", () => this.nudgeSpeed(1));
+    const smaller = btn(ICON.smaller, "Smaller text", () => this.nudgeScale(-0.1));
+    const scale = val();
+    const larger = btn(ICON.larger, "Larger text", () => this.nudgeScale(0.1));
+    const reply = btn(ICON.reply, "Show the reply box", () => this.toggleReply());
+    row.append(group(exit), group(play, slower, speed, faster), group(smaller, scale, larger), group(reply));
+    bar.append(hint, row);
+    row.addEventListener("pointerenter", () => this.barHover = true);
+    row.addEventListener("pointerleave", () => {
+      this.barHover = false;
+      this.poke(true);
+    });
+    row.addEventListener("focusin", () => this.poke(true));
+    this.h.root.appendChild(bar);
+    this.bar = bar;
+    this.ui = { play, speed, scale, reply, slower, faster, smaller, larger, hint };
+  }
+  syncBar() {
+    const u = this.ui;
+    if (!u)
+      return;
+    const t = this.h.tr;
+    const s = this.h.get();
+    const level = this.level(s.speed);
+    u.speed.textContent = String(level);
+    u.scale.textContent = `${Math.round(s.scale * 100)}%`;
+    u.slower.disabled = level <= 1;
+    u.faster.disabled = level >= SPEED_LEVELS.length;
+    u.smaller.disabled = s.scale <= SCALE_MIN + 0.001;
+    u.larger.disabled = s.scale >= SCALE_MAX - 0.001;
+    u.play.innerHTML = this.playing ? ICON.pause : ICON.play;
+    const pl = this.playing ? t("Pause the scroll") : t("Start the scroll");
+    u.play.title = pl;
+    u.play.setAttribute("aria-label", pl);
+    const composing = document.documentElement.hasAttribute("data-lf-compose");
+    u.reply.setAttribute("aria-pressed", String(composing));
+    const rl = t(composing ? "Hide the reply box" : "Show the reply box");
+    u.reply.title = rl;
+    u.reply.setAttribute("aria-label", rl);
+    if (this.bar)
+      this.bar.dataset.compose = composing ? "1" : "0";
+  }
+  level(speed) {
+    return Math.min(SPEED_LEVELS.length, Math.max(1, Math.round(speed)));
+  }
+  nudgeSpeed(by) {
+    this.h.set({ theaterSpeed: this.level(this.h.get().speed) + by });
+    this.syncBar();
+  }
+  nudgeScale(by) {
+    const next = Math.round((this.h.get().scale + by) * 100) / 100;
+    this.h.set({ theaterScale: Math.min(SCALE_MAX, Math.max(SCALE_MIN, next)) });
+    this.paint();
+    this.syncBar();
+  }
+  togglePlay() {
+    this.playing = !this.playing;
+    this.lastInput = 0;
+    this.syncBar();
+    if (this.playing)
+      this.kick();
+  }
+  toggleReply() {
+    const root = document.documentElement;
+    if (root.hasAttribute("data-lf-compose"))
+      root.removeAttribute("data-lf-compose");
+    else
+      root.setAttribute("data-lf-compose", "1");
+    this.syncBar();
+  }
+  poke(force = false) {
+    const bar = this.bar;
+    if (!bar)
+      return;
+    const now = performance.now();
+    if (!force && now - this.pokedAt < 300)
+      return;
+    this.pokedAt = now;
+    bar.dataset.show = "1";
+    this.armHide();
+  }
+  armHide() {
+    clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => {
+      const bar = this.bar;
+      if (!bar)
+        return;
+      if (this.barHover || bar.querySelector(":focus-visible"))
+        return this.armHide();
+      bar.dataset.show = "0";
+      if (this.ui)
+        this.ui.hint.style.display = "none";
+    }, BAR_MS);
+  }
+  listen() {
+    const input = () => this.lastInput = performance.now();
+    const down = () => {
+      this.held = true;
+      input();
+      this.poke();
+    };
+    const up = () => {
+      this.held = false;
+      input();
+    };
+    const key = (e) => {
+      input();
+      if (e.key === "Escape") {
+        this.exit();
+        return;
+      }
+      this.poke();
+      if (editable(e.target) || e.ctrlKey || e.metaKey || e.altKey)
+        return;
+      if (e.key === " " && !e.target?.closest?.('button, a, [role="button"]')) {
+        e.preventDefault();
+        this.togglePlay();
+      } else if (e.key === "+" || e.key === "=")
+        this.nudgeScale(0.1);
+      else if (e.key === "-" || e.key === "_")
+        this.nudgeScale(-0.1);
+    };
+    const move = () => this.poke();
+    const wheel = () => {
+      input();
+      this.poke();
+    };
+    const o = { capture: true, passive: true };
+    document.addEventListener("pointerdown", down, o);
+    document.addEventListener("pointerup", up, o);
+    document.addEventListener("pointercancel", up, o);
+    document.addEventListener("pointermove", move, o);
+    document.addEventListener("wheel", wheel, o);
+    document.addEventListener("touchmove", input, o);
+    document.addEventListener("keydown", key, { capture: true });
+    document.addEventListener("visibilitychange", this.kickSoon);
+    this.stop = () => {
+      document.removeEventListener("pointerdown", down, o);
+      document.removeEventListener("pointerup", up, o);
+      document.removeEventListener("pointercancel", up, o);
+      document.removeEventListener("pointermove", move, o);
+      document.removeEventListener("wheel", wheel, o);
+      document.removeEventListener("touchmove", input, o);
+      document.removeEventListener("keydown", key, { capture: true });
+      document.removeEventListener("visibilitychange", this.kickSoon);
+    };
+  }
+  kickSoon = () => this.kick();
+  kick() {
+    if (!this.on_ || this.raf)
+      return;
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    this.last = 0;
+    this.raf = requestAnimationFrame(this.tick);
+  }
+  wait(ms) {
+    this.last = 0;
+    if (this.timer)
+      clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      if (this.on_ && !this.raf)
+        this.tick(performance.now());
+    }, ms);
+  }
+  tick = (now) => {
+    this.raf = 0;
+    if (!this.on_)
+      return;
+    const list = this.h.list();
+    if (!list || !this.playing || document.hidden)
+      return;
+    if (this.held || performance.now() - this.lastInput < RESUME_MS)
+      return this.wait(250);
+    if (list.scrollHeight - list.scrollTop - list.clientHeight <= 2)
+      return this.wait(600);
+    if (!this.last) {
+      this.last = now;
+      this.raf = requestAnimationFrame(this.tick);
+      return;
+    }
+    const dt = Math.min(0.1, (now - this.last) / 1000);
+    this.last = now;
+    this.carry += SPEED_LEVELS[this.level(this.h.get().speed) - 1] * dt;
+    const px = Math.floor(this.carry);
+    if (px >= 1) {
+      this.carry -= px;
+      list.scrollTop += px;
+    }
+    this.raf = requestAnimationFrame(this.tick);
+  };
+}
+
+// src/typewriter.ts
+var TYPEWRITER_CSS = `
+::highlight(lf-typewriter) { color: transparent; text-shadow: none; text-decoration-color: transparent; }
+`;
+var NAME = "lf-typewriter";
+var MAX_BEHIND_S = 1.5;
+var FINISH_S = 0.6;
+var CATCH_UP_S = 0.5;
+var KEY_GAP_MS = 55;
+var registry = () => globalThis.CSS?.highlights ?? null;
+var HighlightClass = () => globalThis.Highlight ?? null;
+var typewriterSupported = () => !!registry() && !!HighlightClass();
+function measure(el) {
+  const nodes = [];
+  const lens = [];
+  let total = 0;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const t = walker.currentNode;
+    const p = t.parentElement;
+    if (!t.length || !p)
+      continue;
+    const closed = p.closest("details:not([open])");
+    if (closed && el.contains(closed) && !p.closest("summary"))
+      continue;
+    const code = p.closest("style, script");
+    if (code && el.contains(code))
+      continue;
+    nodes.push(t);
+    lens.push(t.length);
+    total += t.length;
+  }
+  return { nodes, lens, total };
+}
+
+class Typewriter {
+  h;
+  active = false;
+  finishing = false;
+  finishBy = 0;
+  id = null;
+  el = null;
+  shown = 0;
+  base = null;
+  raf = 0;
+  last = 0;
+  observer = null;
+  nextKeyAt = 0;
+  lastKey = 0;
+  demo = null;
+  safety;
+  constructor(h) {
+    this.h = h;
+  }
+  get supported() {
+    return typewriterSupported();
+  }
+  enabled() {
+    return this.supported && this.h.get().on && this.h.motion();
+  }
+  start(keepFrom) {
+    this.stop();
+    if (!this.enabled())
+      return;
+    this.active = true;
+    this.finishing = false;
+    this.id = keepFrom ?? null;
+    const prev = keepFrom ? this.h.content(keepFrom) : null;
+    this.base = prev ? measure(prev).total : null;
+    this.shown = 0;
+    this.nextKeyAt = 0;
+    const list = this.h.list();
+    if (list) {
+      this.observer = new MutationObserver(() => this.sync());
+      this.observer.observe(list, { childList: true, subtree: true, characterData: true });
+    }
+    this.armSafety();
+    this.sync();
+  }
+  end() {
+    if (!this.active)
+      return;
+    this.finishing = true;
+    this.finishBy = performance.now() + FINISH_S * 1000;
+    this.sync();
+    this.kick();
+  }
+  stop() {
+    this.active = false;
+    this.finishing = false;
+    this.observer?.disconnect();
+    this.observer = null;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    clearTimeout(this.safety);
+    this.safety = undefined;
+    this.el = null;
+    this.id = null;
+    this.demo = null;
+    registry()?.delete(NAME);
+  }
+  preview(el) {
+    this.stop();
+    if (!this.supported)
+      return;
+    this.active = true;
+    this.finishing = true;
+    this.demo = el;
+    this.shown = 0;
+    this.nextKeyAt = 0;
+    this.armSafety();
+    this.sync();
+    this.kick();
+  }
+  armSafety() {
+    clearTimeout(this.safety);
+    this.safety = setTimeout(() => this.stop(), 5 * 60000);
+  }
+  target() {
+    if (this.demo)
+      return this.demo.isConnected ? this.demo : null;
+    const el = this.h.content(this.id);
+    if (el) {
+      const card = el.closest("[data-message-id]");
+      if (card?.dataset.messageId)
+        this.id = card.dataset.messageId;
+    }
+    return el;
+  }
+  sync() {
+    if (!this.active)
+      return;
+    if (!this.demo && !this.enabled())
+      return this.stop();
+    const el = this.target();
+    if (!el) {
+      if (this.finishing)
+        this.stop();
+      return;
+    }
+    if (el !== this.el) {
+      this.el = el;
+      if (this.base !== null)
+        this.shown = Math.max(this.shown, this.base);
+    }
+    const m = measure(el);
+    if (this.shown > m.total)
+      this.shown = m.total;
+    this.paint(m);
+    if (m.total > this.shown)
+      this.kick();
+  }
+  paint(m) {
+    const reg = registry();
+    const H = HighlightClass();
+    if (!reg || !H)
+      return;
+    let at = Math.floor(this.shown);
+    if (at >= m.total || !m.nodes.length) {
+      reg.delete(NAME);
+      return;
+    }
+    let i = 0;
+    while (i < m.nodes.length && at >= m.lens[i]) {
+      at -= m.lens[i];
+      i++;
+    }
+    const last = m.nodes[m.nodes.length - 1];
+    const range = document.createRange();
+    range.setStart(m.nodes[i], at);
+    range.setEnd(last, last.length);
+    reg.set(NAME, new H(range));
+  }
+  kick() {
+    if (this.raf || !this.active)
+      return;
+    this.last = 0;
+    this.raf = requestAnimationFrame(this.tick);
+  }
+  tick = (now) => {
+    this.raf = 0;
+    if (!this.active)
+      return;
+    if (!this.demo && !this.enabled())
+      return this.stop();
+    const el = this.target();
+    if (!el)
+      return this.finishing ? this.stop() : undefined;
+    this.el = el;
+    const m = measure(el);
+    if (this.shown > m.total)
+      this.shown = m.total;
+    const backlog = m.total - this.shown;
+    if (backlog <= 0) {
+      this.paint(m);
+      if (this.finishing)
+        this.stop();
+      return;
+    }
+    if (!this.last) {
+      this.last = now;
+      this.raf = requestAnimationFrame(this.tick);
+      return;
+    }
+    const dt = Math.min(0.1, (now - this.last) / 1000);
+    this.last = now;
+    const cps = Math.max(5, this.h.get().cps);
+    let rate = cps;
+    const excess = backlog - cps * MAX_BEHIND_S;
+    if (excess > 0)
+      rate = cps + excess / CATCH_UP_S;
+    if (this.finishing && !this.demo)
+      rate = Math.max(rate, backlog / Math.max(0.05, (this.finishBy - now) / 1000));
+    const before = Math.floor(this.shown);
+    this.shown = Math.min(m.total, this.shown + rate * dt);
+    const after = Math.floor(this.shown);
+    if (after > before)
+      this.keys(m, after, now);
+    this.paint(m);
+    this.raf = requestAnimationFrame(this.tick);
+  };
+  keys(m, at, now) {
+    if (at < this.nextKeyAt || now - this.lastKey < KEY_GAP_MS)
+      return;
+    this.nextKeyAt = at + 2 + Math.floor(Math.random() * 3);
+    this.lastKey = now;
+    let i = 0;
+    let off = at - 1;
+    while (i < m.nodes.length && off >= m.lens[i]) {
+      off -= m.lens[i];
+      i++;
+    }
+    const ch = m.nodes[i]?.data[off] ?? "";
+    try {
+      this.h.key(/\s/.test(ch));
+    } catch {}
   }
 }
 
@@ -5288,6 +6323,124 @@ class ChoiceManager {
   }
 }
 
+// src/moments.ts
+var PIN_TEXT_MAX = 420;
+var PIN_MEMORY_MAX = 160;
+var PINS_PER_CHAT = 120;
+var CHATS = 60;
+var clampStr = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
+function excerpt(text, max = PIN_TEXT_MAX) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= max)
+    return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:.\-–—]+$/, "")}…`;
+}
+function pinOf(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const r = raw;
+  const id = clampStr(r.id, 200);
+  const text = excerpt(clampStr(r.text, PIN_TEXT_MAX * 2));
+  if (!id || !text)
+    return null;
+  const color = clampStr(r.color, 40);
+  return {
+    id,
+    i: typeof r.i === "number" && Number.isFinite(r.i) ? Math.max(0, Math.round(r.i)) : 0,
+    text,
+    whole: r.whole === true,
+    who: clampStr(r.who, 80),
+    user: r.user === true,
+    color: color || null,
+    t: typeof r.t === "number" && Number.isFinite(r.t) ? r.t : 0
+  };
+}
+function normalizePins(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object")
+    return out;
+  for (const [chat, list] of Object.entries(raw)) {
+    if (!chat || !Array.isArray(list))
+      continue;
+    const pins = [];
+    for (const item of list) {
+      const p = pinOf(item);
+      if (p && !pins.some((x) => x.id === p.id))
+        pins.push(p);
+    }
+    if (pins.length)
+      out[chat] = sortPins(pins).slice(-PINS_PER_CHAT);
+  }
+  return trimChats(out);
+}
+var sortPins = (list) => [...list].sort((a, b) => a.i - b.i || a.t - b.t);
+function trimChats(data) {
+  const chats = Object.keys(data);
+  if (chats.length <= CHATS)
+    return data;
+  const next = { ...data };
+  chats.sort((a, b) => Math.max(...next[a].map((p) => p.t)) - Math.max(...next[b].map((p) => p.t))).slice(0, chats.length - CHATS).forEach((c) => delete next[c]);
+  return next;
+}
+var isPinned = (data, chatId, id) => !!chatId && !!data[chatId]?.some((p) => p.id === id);
+function setPin(data, chatId, pin) {
+  const list = (data[chatId] ?? []).filter((p) => p.id !== pin.id);
+  list.push(pin);
+  return trimChats({ ...data, [chatId]: sortPins(list).slice(-PINS_PER_CHAT) });
+}
+function removePins(data, chatId, ids) {
+  let changed = false;
+  const next = {};
+  for (const [chat, list] of Object.entries(data)) {
+    if (chatId && chat !== chatId) {
+      next[chat] = list;
+      continue;
+    }
+    const kept = list.filter((p) => !ids.has(p.id));
+    if (kept.length !== list.length)
+      changed = true;
+    if (kept.length)
+      next[chat] = kept;
+  }
+  return changed ? next : data;
+}
+function starPoints(cx, cy, r) {
+  const pts = [];
+  for (let k = 0;k < 10; k++) {
+    const a = -Math.PI / 2 + k * Math.PI / 5;
+    const rad = k % 2 ? r * 0.46 : r;
+    pts.push(`${(cx + Math.cos(a) * rad).toFixed(2)},${(cy + Math.sin(a) * rad).toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+var STAR_SVG = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/></svg>';
+var PIN_CSS = `
+.lf-pin-btn svg { fill: none; transition: fill .15s ease, color .15s ease, transform .15s ease; }
+.lf-pin-btn[data-on="1"] { color: #f2b84b; }
+.lf-pin-btn[data-on="1"] svg { fill: currentColor; }
+.lf-pin-btn:active svg { transform: scale(.85); }
+.lf-pin-list { display: flex; flex-direction: column; gap: 8px; }
+.lf-pin { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px);
+  background: var(--lumiverse-fill); border: 1px solid var(--lumiverse-border); border-left: 3px solid var(--lf-pin-c, #f2b84b); }
+.lf-pin-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lf-pin-head > svg { flex: none; width: 13px; height: 13px; fill: #f2b84b; stroke: #f2b84b; stroke-width: 2; stroke-linejoin: round; }
+.lf-pin-who { flex: 1; min-width: 0; font-weight: 600; color: var(--lumiverse-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: calc(13px * var(--lumiverse-font-scale, 1)); }
+.lf-pin-n { flex: none; color: var(--lumiverse-text-dim); font-variant-numeric: tabular-nums; font-size: calc(11px * var(--lumiverse-font-scale, 1)); }
+.lf-pin-text { margin: 0; color: var(--lumiverse-text-muted); line-height: 1.45; font-size: calc(13px * var(--lumiverse-font-scale, 1));
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.lf-pin-text[data-whole="1"] { font-style: italic; }
+.lf-pin-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.lf-pin-acts .lf-btn { flex: 0 0 auto; padding: 5px 10px; font-size: calc(12px * var(--lumiverse-font-scale, 1)); }
+.lf-pin-empty { padding: 12px; text-align: center; border-radius: var(--lumiverse-radius, 8px); border: 1px dashed var(--lumiverse-border);
+  color: var(--lumiverse-text-dim); font-size: calc(12px * var(--lumiverse-font-scale, 1)); }
+.lf-beat-star { fill: #f2b84b; stroke: var(--lumiverse-bg, #000); stroke-width: 1; stroke-linejoin: round; cursor: pointer; transition: transform .15s ease;
+  transform-box: fill-box; transform-origin: center; }
+.lf-beat-star:hover { transform: scale(1.25); }
+`;
+
 // src/heartbeat.ts
 var MAX_POINTS = 240;
 var MAX_CHATS = 60;
@@ -5332,7 +6485,22 @@ function addPoint(data, chatId, p) {
   return next;
 }
 var NS = "http://www.w3.org/2000/svg";
-function renderHeartbeat(host, points, onPick) {
+function beatFor(points, pin) {
+  const exact = points.findIndex((p) => p.id === pin.id);
+  if (exact >= 0)
+    return exact;
+  let best = 0;
+  let gap = Infinity;
+  points.forEach((p, k) => {
+    const d = Math.abs(p.i - pin.i);
+    if (d < gap) {
+      gap = d;
+      best = k;
+    }
+  });
+  return best;
+}
+function renderHeartbeat(host, points, onPick, pins = [], onPickPin) {
   host.textContent = "";
   if (points.length < 2) {
     const p = document.createElement("p");
@@ -5393,6 +6561,21 @@ function renderHeartbeat(host, points, onPick) {
     c.addEventListener("click", () => onPick(p));
     svg.appendChild(c);
   });
+  const stacked = new Map;
+  const R = n > 80 ? 5 : 7;
+  for (const pin of pins) {
+    const k = beatFor(points, pin);
+    const level = stacked.get(k) ?? 0;
+    stacked.set(k, level + 1);
+    const star = document.createElementNS(NS, "polygon");
+    star.setAttribute("points", starPoints(x(k), y(points[k].v) - level * (R * 2 + 1), R));
+    star.setAttribute("class", "lf-beat-star");
+    const title = document.createElementNS(NS, "title");
+    title.textContent = `★ ${pin.who ? pin.who + ": " : ""}${pin.text.slice(0, 90)}`;
+    star.appendChild(title);
+    star.addEventListener("click", () => onPickPin?.(pin));
+    svg.appendChild(star);
+  }
   host.appendChild(svg);
 }
 var HEARTBEAT_CSS = `
@@ -5512,53 +6695,95 @@ var ACHIEVEMENT_CSS = `
 .lf-badge-card.lf-got b { color: var(--lumiverse-text); }
 `;
 
+// src/modal.ts
+function keepOpenWhileDragging(root) {
+  let pressedInside = false;
+  const down = (e) => {
+    pressedInside = root.contains(e.target);
+  };
+  const click = (e) => {
+    if (!pressedInside)
+      return;
+    pressedInside = false;
+    if (!root.contains(e.target))
+      e.stopPropagation();
+  };
+  window.addEventListener("pointerdown", down, true);
+  window.addEventListener("click", click, true);
+  return () => {
+    window.removeEventListener("pointerdown", down, true);
+    window.removeEventListener("click", click, true);
+  };
+}
+
 // src/momentcard.ts
-var W2 = 1080;
-var H2 = 1350;
+var W2 = 1600;
+var H2 = 1000;
+var CORNER = 40;
+var MARGIN = { x: 96, top: 80, bottom: 136 };
+var IMAGE_W = W2 + MARGIN.x * 2;
+var IMAGE_H = H2 + MARGIN.top + MARGIN.bottom;
+var images = new Map;
 function loadImage(src) {
-  return new Promise((resolve) => {
-    const img = new Image;
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
+  let p = images.get(src);
+  if (!p) {
+    p = new Promise((resolve) => {
+      const img = new Image;
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    images.set(src, p);
+    if (images.size > 8)
+      images.delete(images.keys().next().value);
+  }
+  return p;
 }
 function plainText(raw) {
   return raw.replace(/<flair[^>]*>[\s\S]*?<\/flair(?:-choice)?>/gi, "").replace(/<br\s*\/?>/gi, `
-`).replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/[*_~`#]+/g, "").replace(/\n{3,}/g, `
+`).replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/[*_~`#]+/g, "").replace(/[ \t]+\n/g, `
+`).replace(/\n{3,}/g, `
 
 `).trim();
 }
 function wrapLines(g, text, maxW, maxLines) {
   const out = [];
-  for (const para of text.split(`
-`)) {
-    const words = para.split(/\s+/).filter(Boolean);
-    let line = "";
-    for (const w of words) {
-      const test = line ? `${line} ${w}` : w;
-      if (g.measureText(test).width > maxW && line) {
-        out.push(line);
-        line = w;
-      } else
-        line = test;
-      if (out.length >= maxLines)
+  let cut = false;
+  const paras = text.split(`
+`);
+  outer:
+    for (let p = 0;p < paras.length; p++) {
+      const words = paras[p].split(/\s+/).filter(Boolean);
+      let line = "";
+      for (const w of words) {
+        const test = line ? `${line} ${w}` : w;
+        if (g.measureText(test).width > maxW && line) {
+          out.push(line);
+          line = w;
+          if (out.length >= maxLines) {
+            cut = true;
+            break outer;
+          }
+        } else
+          line = test;
+      }
+      if (out.length >= maxLines) {
+        cut = !!line || p < paras.length - 1;
         break;
+      }
+      out.push(line);
+      if (out.length >= maxLines && p < paras.length - 1) {
+        cut = paras.slice(p + 1).some((x) => x.trim());
+        break;
+      }
     }
-    if (out.length >= maxLines)
-      break;
-    out.push(line);
-  }
-  if (out.length > maxLines)
-    out.length = maxLines;
-  const joined = out.join(" ");
-  if (joined.length < text.replace(/\s+/g, " ").length && out.length) {
+  if (cut && out.length) {
     let last = out[out.length - 1];
     while (last && g.measureText(`${last}…`).width > maxW)
       last = last.slice(0, -1);
     out[out.length - 1] = `${last.trimEnd()}…`;
   }
-  return out;
+  return { lines: out, cut };
 }
 function roundRect(g, x, y, w, h, r) {
   g.beginPath();
@@ -5569,7 +6794,41 @@ function roundRect(g, x, y, w, h, r) {
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
 }
+var SERIF = 'Georgia, "Times New Roman", serif';
+var SANS = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 async function renderMomentCard(m) {
+  const card = await drawCard(m);
+  const out = document.createElement("canvas");
+  out.width = IMAGE_W;
+  out.height = IMAGE_H;
+  const g = out.getContext("2d");
+  const { x, top: y } = MARGIN;
+  for (const [blur, dy, alpha] of [[90, 34, 0.5], [24, 8, 0.32]]) {
+    g.save();
+    g.shadowColor = `rgba(0,0,0,${alpha})`;
+    g.shadowBlur = blur;
+    g.shadowOffsetY = dy;
+    roundRect(g, x, y, W2, H2, CORNER);
+    g.fillStyle = "#000";
+    g.fill();
+    g.restore();
+  }
+  g.save();
+  roundRect(g, x, y, W2, H2, CORNER);
+  g.clip();
+  g.drawImage(card.canvas, x, y);
+  g.restore();
+  roundRect(g, x + 1.5, y + 1.5, W2 - 3, H2 - 3, CORNER - 1.5);
+  g.lineWidth = 3;
+  const edge = g.createLinearGradient(x, y, x + W2, y + H2);
+  edge.addColorStop(0, m.color);
+  edge.addColorStop(0.5, "rgba(255,255,255,0.18)");
+  edge.addColorStop(1, m.color);
+  g.strokeStyle = edge;
+  g.stroke();
+  return { canvas: out, cut: card.cut };
+}
+async function drawCard(m) {
   const c = document.createElement("canvas");
   c.width = W2;
   c.height = H2;
@@ -5582,8 +6841,8 @@ async function renderMomentCard(m) {
   g.fillRect(0, 0, W2, H2);
   if (avatar) {
     g.save();
-    g.globalAlpha = 0.35;
-    g.filter = "blur(48px) saturate(1.3)";
+    g.globalAlpha = 0.32;
+    g.filter = "blur(56px) saturate(1.3)";
     const s = Math.max(W2 / avatar.width, H2 / avatar.height) * 1.2;
     g.drawImage(avatar, (W2 - avatar.width * s) / 2, (H2 - avatar.height * s) / 2, avatar.width * s, avatar.height * s);
     g.restore();
@@ -5597,27 +6856,15 @@ async function renderMomentCard(m) {
     g.fillRect(0, 0, W2, H2);
     g.globalAlpha = 1;
   };
-  glow(W2 * 0.15, H2 * 0.1, 620, 0.45);
-  glow(W2 * 0.9, H2 * 0.95, 700, 0.35);
+  glow(W2 * 0.12, H2 * 0.2, 640, 0.45);
+  glow(W2 * 0.92, H2 * 0.95, 760, 0.32);
   g.fillStyle = "rgba(8,6,14,0.45)";
   g.fillRect(0, 0, W2, H2);
-  const px = 80, py = 300, pw = W2 - 160, ph = H2 - 420;
-  g.save();
-  g.shadowColor = m.color;
-  g.shadowBlur = 60;
-  roundRect(g, px, py, pw, ph, 48);
-  g.fillStyle = "rgba(20,16,32,0.72)";
-  g.fill();
-  g.restore();
-  roundRect(g, px, py, pw, ph, 48);
-  g.lineWidth = 3;
-  const edge = g.createLinearGradient(px, py, px + pw, py + ph);
-  edge.addColorStop(0, m.color);
-  edge.addColorStop(0.5, "rgba(255,255,255,0.15)");
-  edge.addColorStop(1, m.color);
-  g.strokeStyle = edge;
-  g.stroke();
-  const ax = W2 / 2, ay = py, ar = 120;
+  g.fillStyle = "rgba(20,16,32,0.5)";
+  g.fillRect(0, 0, W2, H2);
+  const px = 20, py = 20, pw = W2 - 40, ph = H2 - 40;
+  const colW = 460;
+  const ax = px + colW / 2, ay = py + ph * 0.42, ar = 150;
   g.save();
   g.shadowColor = m.color;
   g.shadowBlur = 50;
@@ -5637,7 +6884,7 @@ async function renderMomentCard(m) {
     g.fillStyle = "#2a2140";
     g.fillRect(ax - ar, ay - ar, ar * 2, ar * 2);
     g.fillStyle = "#fff";
-    g.font = "700 110px system-ui, sans-serif";
+    g.font = `700 130px ${SANS}`;
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText((m.name[0] ?? "✦").toUpperCase(), ax, ay + 6);
@@ -5646,49 +6893,104 @@ async function renderMomentCard(m) {
   g.textAlign = "center";
   g.textBaseline = "alphabetic";
   g.fillStyle = "#fff";
-  g.font = '700 56px system-ui, -apple-system, "Segoe UI", sans-serif';
-  g.fillText(m.name, W2 / 2, py + ar + 90, pw - 80);
-  g.font = 'italic 400 120px Georgia, "Times New Roman", serif';
-  g.fillStyle = m.color;
-  g.globalAlpha = 0.55;
-  g.fillText("“", px + 80, py + ar + 200);
-  g.globalAlpha = 1;
-  const body = plainText(m.text) || "…";
-  const size = body.length > 420 ? 34 : body.length > 220 ? 40 : 46;
-  g.font = `400 ${size}px Georgia, "Times New Roman", serif`;
-  g.fillStyle = "rgba(255,255,255,0.92)";
-  const top = py + ar + 170;
-  const lineH = size * 1.42;
-  const maxLines = Math.floor((py + ph - 90 - top) / lineH);
-  const lines = wrapLines(g, body, pw - 160, maxLines);
-  lines.forEach((l, k) => g.fillText(l, W2 / 2, top + k * lineH + size));
-  g.font = "500 26px system-ui, sans-serif";
+  g.font = `700 54px ${SANS}`;
+  g.fillText(m.name, ax, ay + ar + 92, colW - 60);
+  g.font = `500 26px ${SANS}`;
   g.fillStyle = "rgba(255,255,255,0.55)";
-  g.fillText(m.date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }), W2 / 2, py + ph - 44);
-  g.font = "600 28px system-ui, sans-serif";
+  g.fillText(m.date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }), ax, ay + ar + 140, colW - 60);
+  const dx = px + colW;
+  const dv = g.createLinearGradient(0, py + 80, 0, py + ph - 80);
+  dv.addColorStop(0, "transparent");
+  dv.addColorStop(0.5, m.color);
+  dv.addColorStop(1, "transparent");
+  g.globalAlpha = 0.5;
+  g.fillStyle = dv;
+  g.fillRect(dx, py + 80, 2, ph - 160);
+  g.globalAlpha = 1;
+  const qx = dx + 90, qw = px + pw - 80 - qx;
+  const qTop = py + 120, qBottom = py + ph - 110;
+  const body = plainText(m.text) || "…";
+  let fit = { lines: [], cut: true };
+  let size = 28;
+  for (const s of [56, 50, 45, 40, 36, 32, 28]) {
+    g.font = `400 ${s}px ${SERIF}`;
+    const r = wrapLines(g, body, qw, Math.floor((qBottom - qTop) / (s * 1.45)));
+    fit = r;
+    size = s;
+    if (!r.cut)
+      break;
+  }
+  const lineH = size * 1.45;
+  const blockH = fit.lines.length * lineH;
+  const y0 = qTop + Math.max(0, (qBottom - qTop - blockH) / 2);
+  g.font = `italic 400 140px ${SERIF}`;
   g.fillStyle = m.color;
-  g.fillText("✦ made with Lumi Flair", W2 / 2, H2 - 48);
-  return c;
+  g.globalAlpha = 0.5;
+  g.textAlign = "left";
+  g.fillText("“", qx - 70, y0 + 70);
+  g.globalAlpha = 1;
+  g.font = `400 ${size}px ${SERIF}`;
+  g.fillStyle = "rgba(255,255,255,0.93)";
+  fit.lines.forEach((l, k) => g.fillText(l, qx, y0 + k * lineH + size));
+  g.textAlign = "right";
+  g.font = `600 26px ${SANS}`;
+  g.fillStyle = m.color;
+  g.fillText("✦ made with Lumi Flair", px + pw - 50, py + ph - 40);
+  return { canvas: c, cut: fit.cut };
 }
-async function showMomentCard(ctx, m, onCreated) {
-  const canvas = await renderMomentCard(m);
-  const url = canvas.toDataURL("image/png");
+async function showMomentCard(ctx, m, onCreated, start) {
+  const whole = plainText(m.text);
+  let text = start?.trim() || whole;
+  let current = await renderMomentCard({ ...m, text });
   onCreated?.();
-  const modal = ctx.ui.showModal({ title: "Moment Card", width: 460, maxHeight: 760 });
+  const modal = ctx.ui.showModal({ title: tr("Moment Card"), width: 760, maxHeight: 900 });
   const root = modal.root;
+  const unguard = keepOpenWhileDragging(root);
   root.innerHTML = "";
   const wrap = document.createElement("div");
   wrap.className = "lf-moment";
   const img = document.createElement("img");
-  img.src = url;
-  img.alt = `Moment card: ${m.name}`;
+  img.src = current.canvas.toDataURL("image/png");
+  img.alt = `${tr("Moment Card")}: ${m.name}`;
+  const label = document.createElement("div");
+  label.className = "lf-moment-label";
+  label.textContent = tr("Text on the card");
+  const slot = document.createElement("div");
+  slot.className = "lf-moment-text";
+  const note = document.createElement("p");
+  note.className = "lf-moment-note";
+  let timer;
+  let drawn = 0;
+  const redraw = (next) => {
+    text = next;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const n = ++drawn;
+      const r = await renderMomentCard({ ...m, text: text.trim() || whole });
+      if (n !== drawn)
+        return;
+      current = r;
+      img.src = r.canvas.toDataURL("image/png");
+      paintNote();
+    }, 220);
+  };
+  const ta = ctx.components.mountTextArea(slot, { value: text, rows: 5, ariaLabel: tr("Text on the card"), onChange: redraw });
+  const field = () => slot.querySelector("textarea");
+  const paintNote = () => {
+    note.textContent = current.cut ? tr("That is more than fits, so the card ends with “…”. Pick a shorter part for the whole of it.") : tr("Select part of the text and press “Use selection”, or edit it. The card follows as you go.");
+    note.dataset.cut = current.cut ? "1" : "0";
+  };
+  paintNote();
+  const pick = document.createElement("div");
+  pick.className = "lf-btns";
   const btns = document.createElement("div");
   btns.className = "lf-btns";
-  const mk = (label, primary, fn) => {
+  const mk = (parent, label, primary, fn) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = primary ? "lf-btn lf-primary" : "lf-btn";
-    b.textContent = label;
+    b.textContent = tr(label);
+    b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", async () => {
       try {
         await fn();
@@ -5696,35 +6998,65 @@ async function showMomentCard(ctx, m, onCreated) {
         console.warn("[Lumi Flair] moment card action failed", err);
       }
     });
-    btns.appendChild(b);
+    parent.appendChild(b);
     return b;
   };
-  mk("Download PNG", true, () => {
+  mk(pick, "Use selection", false, () => {
+    const f = field();
+    if (!f || f.selectionStart === f.selectionEnd) {
+      note.textContent = tr("Select some of the text first, then press “Use selection”.");
+      return;
+    }
+    const part = f.value.slice(f.selectionStart, f.selectionEnd).trim();
+    if (!part)
+      return;
+    ta.update({ value: part });
+    redraw(part);
+  });
+  mk(pick, "Whole message", false, () => {
+    ta.update({ value: whole });
+    redraw(whole);
+  });
+  mk(btns, "Download PNG", true, () => {
     const a = document.createElement("a");
-    a.href = url;
+    a.href = current.canvas.toDataURL("image/png");
     a.download = `${m.name.replace(/[^\w-]+/g, "_") || "moment"}-lumi-flair.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
   });
-  const copyBtn = mk("Copy image", false, async () => {
-    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+  const copyBtn = mk(btns, "Copy image", false, async () => {
+    const blob = await new Promise((r) => current.canvas.toBlob(r, "image/png"));
     if (!blob || !("ClipboardItem" in window))
       throw new Error("Clipboard image copy not supported");
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-    copyBtn.textContent = "Copied ✓";
-    setTimeout(() => copyBtn.textContent = "Copy image", 1800);
+    copyBtn.textContent = tr("Copied ✓");
+    setTimeout(() => copyBtn.textContent = tr("Copy image"), 1800);
   });
-  wrap.append(img, btns);
+  modal.onDismiss(() => {
+    unguard();
+    clearTimeout(timer);
+    ta.destroy();
+  });
+  wrap.append(img, label, slot, pick, note, btns);
   root.appendChild(wrap);
 }
 var MOMENT_CSS = `
-.lf-moment { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 8px; }
-.lf-moment img { width: 100%; height: auto; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.lf-moment { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; color: var(--lumiverse-text); }
+/* The image already has its rounded corners and shadow (it is saved that way), so the preview shows it as it is. */
+.lf-moment img { display: block; width: 100%; height: auto; }
+.lf-moment-label { margin-top: 4px; font-size: calc(13px * var(--lumiverse-font-scale, 1)); font-weight: 500; color: var(--lumiverse-text-muted); }
+.lf-moment-text > * { width: 100%; }
+.lf-moment-note { margin: 0; font-size: calc(11px * var(--lumiverse-font-scale, 1)); line-height: 1.45; color: var(--lumiverse-text-dim); }
+.lf-moment-note[data-cut="1"] { color: var(--lumiverse-warning, #e2a03f); }
 .lf-moment-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 6px;
   background: transparent; color: var(--lumiverse-text-dim); cursor: pointer; }
 .lf-moment-btn:hover { color: var(--lumiverse-text); background: var(--lumiverse-fill-subtle); }
 .lf-moment-btn svg { width: 15px; height: 15px; }
+/* In the host's action pill: sit in its row (the host wraps extension buttons in a plain block div), at its size. */
+[data-spindle-extension-root]:has(> .lf-moment-btn) { display: contents; }
+[data-component="BubbleActions"] .lf-moment-btn { width: 26px; height: 26px; flex: none; }
+[data-component="BubbleActions"] .lf-moment-btn svg { width: 13px; height: 13px; }
 `;
 
 // src/packs.ts
@@ -6190,8 +7522,12 @@ var WELCOME_CSS = `
 `;
 function showWelcome(ctx, a) {
   const modal = ctx.ui.showModal({ title: tr("Welcome to Lumi Flair"), width: 560, maxHeight: 760 });
-  modal.onDismiss(() => a.done());
   const root = modal.root;
+  const unguard = keepOpenWhileDragging(root);
+  modal.onDismiss(() => {
+    unguard();
+    a.done();
+  });
   root.innerHTML = "";
   const w = document.createElement("div");
   w.className = "lf-welcome";
@@ -6273,7 +7609,7 @@ function showWelcome(ctx, a) {
 }
 
 // src/panel.ts
-var ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/><path d="M5 16l.6 1.4 1.4.6-1.4.6L5 20l-.6-1.4L3 18l1.4-.6z"/></svg>`;
+var ICON2 = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/><path d="M5 16l.6 1.4 1.4.6-1.4.6L5 20l-.6-1.4L3 18l1.4-.6z"/></svg>`;
 var FS = (px) => `calc(${px}px * var(--lumiverse-font-scale, 1))`;
 var PANEL_CSS = `
 .lf-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; color: var(--lumiverse-text); font-size: ${FS(13)}; }
@@ -6363,6 +7699,7 @@ var PANEL_CSS = `
 .lf-aura-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .lf-aura-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
 .lf-beat-host { padding: 6px 2px 0; }
+.lf-tw-demo { padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px); background: var(--lumiverse-fill); color: var(--lumiverse-text); font-size: calc(14px * var(--lumiverse-font-scale, 1)); line-height: 1.6; }
 .lf-fx-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 4px; }
 .lf-fx-count { font-size: calc(11px * var(--lumiverse-font-scale, 1)); color: var(--lumiverse-text-dim); font-variant-numeric: tabular-nums; }
 .lf-fx-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
@@ -6407,31 +7744,32 @@ var PANEL_CSS = `
 .lf-snd-msg[data-kind="error"] { color: var(--lumiverse-danger, #e5484d); }
 .lf-fx-demo { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px); background: var(--lumiverse-fill); }
 `;
-var svg = (body, fill = false) => `<svg viewBox="0 0 24 24" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'}>${body}</svg>`;
+var svg2 = (body, fill = false) => `<svg viewBox="0 0 24 24" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'}>${body}</svg>`;
 var I = {
-  play: svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>', true),
-  spark: svg('<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>'),
-  reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
-  sliders: svg('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
-  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
-  send: svg('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>'),
-  glow: svg('<rect x="4" y="5" width="16" height="14" rx="3"/><path d="M2 9V7M22 9V7M2 17v-2M22 17v-2"/>'),
-  palette: svg('<path d="M12 22a10 10 0 1 1 10-10c0 2.5-2 3-3.5 3H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 13 22z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10.5" r="1"/>'),
-  cloud: svg('<path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 1 0 6 17h11.5z"/>'),
-  text: svg('<path d="M4 7V5h16v2M9 19h6M12 5v14"/>'),
-  party: svg('<path d="M3 21l5-14 9 9z"/><path d="M14 3l1 2M19 6l2-1M17 10l3 1M11 5l.5-2"/>'),
-  sound: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
-  music: svg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
-  upload: svg('<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 9l5-5 5 5M12 4v12"/>'),
-  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>', true),
-  trash: svg('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
-  share: svg('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v13"/>'),
-  copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
-  chev: svg('<path d="m9 6 6 6-6 6"/>'),
-  film: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
-  heart: svg('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
-  trophy: svg('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
-  camera: svg('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>')
+  play: svg2('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>', true),
+  spark: svg2('<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>'),
+  reset: svg2('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
+  sliders: svg2('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
+  user: svg2('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  send: svg2('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>'),
+  glow: svg2('<rect x="4" y="5" width="16" height="14" rx="3"/><path d="M2 9V7M22 9V7M2 17v-2M22 17v-2"/>'),
+  palette: svg2('<path d="M12 22a10 10 0 1 1 10-10c0 2.5-2 3-3.5 3H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 13 22z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10.5" r="1"/>'),
+  cloud: svg2('<path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 1 0 6 17h11.5z"/>'),
+  text: svg2('<path d="M4 7V5h16v2M9 19h6M12 5v14"/>'),
+  party: svg2('<path d="M3 21l5-14 9 9z"/><path d="M14 3l1 2M19 6l2-1M17 10l3 1M11 5l.5-2"/>'),
+  sound: svg2('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
+  music: svg2('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+  upload: svg2('<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 9l5-5 5 5M12 4v12"/>'),
+  stop: svg2('<rect x="6" y="6" width="12" height="12" rx="2"/>', true),
+  trash: svg2('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
+  share: svg2('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v13"/>'),
+  copy: svg2('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+  chev: svg2('<path d="m9 6 6 6-6 6"/>'),
+  film: svg2('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
+  heart: svg2('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
+  trophy: svg2('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
+  camera: svg2('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>'),
+  star: svg2('<polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/>')
 };
 var SLOT_LABEL = {
   always: { label: "Always play (replaces scene sounds)", group: "Ambience" },
@@ -6453,6 +7791,7 @@ var SLOT_LABEL = {
   "ui:fanfare": { label: "Milestone celebration", group: "Interface" },
   "ui:achievement": { label: "Achievement unlocked", group: "Interface" },
   "ui:sparkle": { label: "Screen effect / keyword", group: "Interface" },
+  "ui:key": { label: "Typewriter key", group: "Interface" },
   ...Object.fromEntries(SFX_CUES.map((c) => [`sfx:${c.name}`, { label: c.label, group: "Sound effects" }]))
 };
 var fmtDuration = (sec) => {
@@ -6500,7 +7839,7 @@ function mountPanel(ctx, store, actions) {
     headerTitle: "Flair",
     description: "Send effects, mood glow, ambient scenes, text effects and more",
     keywords: ["animation", "glow", "effects", "theme", "hover", "particles", "mood", "ambient", "weather", "sound"],
-    iconSvg: ICON
+    iconSvg: ICON2
   });
   const handles = [];
   const syncers = [];
@@ -6902,6 +8241,7 @@ function mountPanel(ctx, store, actions) {
   function openSaveDialog() {
     const modal = ctx.ui.showModal({ title: tr("Save my look as a pack"), width: 380 });
     const root = modal.root;
+    modal.onDismiss(keepOpenWhileDragging(root));
     root.textContent = "";
     const form = document.createElement("form");
     form.className = "lf-save-form";
@@ -6977,6 +8317,43 @@ function mountPanel(ctx, store, actions) {
   };
   syncProfileButtons();
   syncers.push(syncProfileButtons);
+  const intro = section("intro", "Character intro", I.film);
+  toggle(intro.body, "Name card when a chat opens", "intro");
+  hint(intro.body, "Opening a chat plays a short name card in the character’s aura colour, every time you open one. Click or tap to skip it.");
+  const introSounds = actions.sounds;
+  const introSoundOptions = () => [
+    { value: "", label: tr("None") },
+    ...introSounds.list().map((m) => ({ value: m.id, label: m.name, sublabel: `${fmtDuration(m.duration)} · ${fmtSize(m.size)}` }))
+  ];
+  const introSoundValue = (id) => id && introSounds.has(id) ? id : "";
+  const introSoundSel = ctx.components.mountSelect(row(intro.body, "Theme sound", "fill"), {
+    value: introSoundValue(s0.introSound),
+    options: introSoundOptions(),
+    ariaLabel: tr("Theme sound"),
+    searchThreshold: 99,
+    onChange: (v) => store.update({ introSound: v })
+  });
+  handles.push(introSoundSel);
+  syncers.push((s) => {
+    const v = introSoundValue(s.introSound);
+    if (introSoundSel.getValue() !== v)
+      introSoundSel.update({ value: v });
+  });
+  const offIntroSounds = introSounds.onChange(() => introSoundSel.update({ options: introSoundOptions(), value: introSoundValue(store.get().introSound) }));
+  handles.push({ destroy: offIntroSounds });
+  hint(intro.body, "A short file from <b>Your sounds</b> to play with the card (up to 8 seconds). It needs <b>Interface sounds</b> on. With a separate look for a character (Character profile above) it belongs to them alone; without one it plays for every character.");
+  toggle(intro.body, "Group chats: show who is speaking", "introGroup");
+  hint(intro.body, "A small chip names whoever is talking, in the colour of their avatar, and the other messages dim a little until they have finished.");
+  const introBtns = buttons(intro.body);
+  button(introBtns, "Preview intro", actions.previewIntro, "primary", I.play);
+  button(introBtns, "Preview speaker chip", actions.previewSpeaker, "secondary", I.play);
+  const theaterSec = section("theater", "Theater mode", I.film);
+  hint(theaterSec.body, "One click hides the interface and leaves the story full-screen, with larger type and a gentle auto-scroll. The atmosphere, lighting and soundscape carry on. You can also start it from the <b>Theater mode</b> item in the input bar’s Extras menu, from the corner-brackets button under any message (it starts reading from that message), or with the command <code>Flair: Toggle theater mode</code>.");
+  button(buttons(theaterSec.body), "Enter theater mode", () => actions.enterTheater(), "primary", I.film);
+  slider(theaterSec.body, "Text size", "theaterScale", 1, 2.2, 0.05, { suffix: "×" });
+  slider(theaterSec.body, "Scroll speed", "theaterSpeed", 1, 8, 1, {});
+  toggle(theaterSec.body, "Start the gentle auto-scroll", "theaterScroll");
+  hint(theaterSec.body, "The scroll waits while you scroll or touch the screen and carries on a moment later; it stops at the end of the chat. With “reduce motion” on, it starts paused. Inside theater mode: <b>Esc</b> leaves, <b>Space</b> pauses, <b>+</b> and <b>−</b> change the text size; on a phone, tap the screen to bring the controls back. The reply box button lets you answer without leaving.");
   const send = section("send", "When you send", I.send, true);
   select(send.body, "Screen effect", "sendEffect", [
     { value: "sparkle", label: "Sparkle burst", sublabel: "Stars fan out from the composer" },
@@ -7157,6 +8534,21 @@ function mountPanel(ctx, store, actions) {
   toggle(dirSec.body, "Lightning in storms", "lightning");
   toggle(dirSec.body, "Camera shake on shouts", "cameraShake");
   button(buttons(dirSec.body), "Preview lightning", actions.previewLightning, "secondary", I.spark);
+  const tw = section("typewriter", "Typewriter pacing", I.text);
+  toggle(tw.body, "Typewriter reveal", "typewriter");
+  hint(tw.body, "Replies appear at a steady pace instead of in bursts, as if typed. It never falls more than a moment behind what has arrived, and when the reply ends the rest comes out quickly. Off when “reduce motion” is on.");
+  slider(tw.body, "Typing speed", "typewriterCps", 10, 120, 5, { suffix: " /s" });
+  toggle(tw.body, "Key sounds", "typewriterSound");
+  hint(tw.body, "Soft key clicks while it types, a little lower and duller when the character is sad, brighter when happy. They need <b>Interface sounds</b> on (Sound). To use your own, pick a file for <b>Typewriter key</b> under Your sounds.");
+  const twDemo = document.createElement("div");
+  twDemo.className = "lf-tw-demo";
+  twDemo.textContent = tr("The lamp flickered once, then steadied. “You came back,” she said, and for a moment neither of them knew what to do with the quiet.");
+  tw.body.appendChild(twDemo);
+  const twPreview = button(buttons(tw.body), "Preview typewriter", () => actions.previewTypewriter(twDemo), "primary", I.play);
+  if (!actions.typewriterSupported()) {
+    twPreview.el.disabled = true;
+    hint(tw.body, "<b>This browser can’t do it</b> (it needs Chrome or Edge 105+, Safari 17.2+ or Firefox 140+).");
+  }
   const tfx = section("textfx", "Text & AI effects", I.text);
   toggle(tfx.body, "Animated text effects", "textEffects");
   const FX_LABEL = {
@@ -7278,25 +8670,96 @@ function mountPanel(ctx, store, actions) {
   legend.className = "lf-beat-legend";
   legend.innerHTML = `<span>${tr("↑ joyful")}</span><span>${tr("↓ dark")}</span>`;
   beat.body.append(beatHost, legend);
-  const beatInfo = hint(beat.body, "The emotional arc of this chat, from the character’s expressions, the AI’s mood directions and the tone of each reply. Click a point to jump to it.");
+  const BEAT_HINT = "The emotional arc of this chat, from the character’s expressions, the AI’s mood directions and the tone of each reply. Click a point to jump to it. A ★ marks a pinned moment.";
+  const beatInfo = hint(beat.body, BEAT_HINT);
+  const jumpNote = (res, gone) => {
+    if (res === "missing")
+      beatInfo.textContent = tr(gone);
+    else if (res === "notfound")
+      beatInfo.textContent = tr("Couldn’t reach that message just now — try again in a moment.");
+    else if (res === "unavailable")
+      beatInfo.textContent = tr("Open the chat to jump to its messages.");
+    else
+      beatInfo.textContent = tr(BEAT_HINT);
+  };
   let beatKey = "";
   statusSyncers.push((st) => {
-    const key = `${st.chatId}|${st.beats.length}|${st.beats.at(-1)?.v ?? ""}|${st.beats.at(-1)?.label ?? ""}`;
+    const key = `${st.chatId}|${st.beats.length}|${st.beats.at(-1)?.v ?? ""}|${st.beats.at(-1)?.label ?? ""}|${st.pins.map((p) => p.id).join(",")}`;
     if (key === beatKey)
       return;
     beatKey = key;
     beat.badge.textContent = st.beats.length ? String(st.beats.length) : "";
-    renderHeartbeat(beatHost, st.beats, async (pt) => {
-      const res = await actions.jumpTo(pt);
-      if (res === "missing")
-        beatInfo.textContent = tr("That message no longer exists, so its point was removed.");
-      else if (res === "notfound")
-        beatInfo.textContent = tr("Couldn’t reach that message just now — try again in a moment.");
-      else if (res === "unavailable")
-        beatInfo.textContent = tr("Open the chat to jump to its messages.");
-      else
-        beatInfo.textContent = tr("The emotional arc of this chat, from the character’s expressions, the AI’s mood directions and the tone of each reply. Click a point to jump to it.");
-    });
+    renderHeartbeat(beatHost, st.beats, async (pt) => jumpNote(await actions.jumpTo(pt), "That message no longer exists, so its point was removed."), st.pins, async (pin) => jumpNote(await actions.jumpToPin(pin), "That message no longer exists, so its pin was removed."));
+  });
+  const fav = section("favourites", "Favourite moments", I.star);
+  const favList = document.createElement("div");
+  favList.className = "lf-pin-list";
+  fav.body.appendChild(favList);
+  const favInfo = hint(fav.body, "Tap the ★ under a message to pin it. Select some text first to pin just that line. Pinned moments show as stars on the story heartbeat above.");
+  button(buttons(fav.body), "Pin the latest message", () => actions.pinLatest(), "secondary", I.star);
+  toggle(fav.body, "Save pins to Lumiverse memory", "pinMemory", async (next) => !next || actions.status().memoriesPermission || await actions.requestMemoriesPermission());
+  hint(fav.body, "Adds each new pin to Lumiverse’s memory as a short fact about whoever said it, so the AI can recall it. It works through your Memory Cortex (which must be on) and Lumiverse’s own memory budget, so Flair adds no tokens of its own. Lumiverse can only add facts, so unpinning doesn’t take one back out.");
+  const memGrant = button(buttons(fav.body), "Allow memory access", async () => {
+    if (await actions.requestMemoriesPermission())
+      store.update({ pinMemory: true });
+  }, "secondary", I.star);
+  button(buttons(fav.body), "Save this chat’s pins to memory", () => actions.savePinsToMemory(), "secondary", I.share);
+  const memNote = hint(fav.body, "");
+  statusSyncers.push((st) => {
+    memGrant.el.style.display = store.get().pinMemory && !st.memoriesPermission ? "" : "none";
+    memNote.textContent = st.memoryNote ?? "";
+    memNote.style.display = st.memoryNote ? "" : "none";
+  });
+  syncers.push(() => memGrant.el.style.display = store.get().pinMemory && !actions.status().memoriesPermission ? "" : "none");
+  let favKey = null;
+  statusSyncers.push((st) => {
+    const key = `${st.chatId}|${st.pins.map((p) => `${p.id}:${p.t}`).join(",")}`;
+    if (key === favKey)
+      return;
+    favKey = key;
+    fav.badge.textContent = st.pins.length ? String(st.pins.length) : "";
+    favList.textContent = "";
+    if (!st.pins.length) {
+      const e = document.createElement("div");
+      e.className = "lf-pin-empty";
+      e.textContent = tr(st.chatId ? "No pinned moments in this chat yet." : "Open a chat to pin its moments.");
+      favList.appendChild(e);
+      return;
+    }
+    for (const pin of st.pins) {
+      const card = document.createElement("div");
+      card.className = "lf-pin";
+      if (pin.color)
+        card.style.setProperty("--lf-pin-c", pin.color);
+      const head = document.createElement("div");
+      head.className = "lf-pin-head";
+      head.innerHTML = STAR_SVG;
+      const who = document.createElement("span");
+      who.className = "lf-pin-who";
+      who.textContent = pin.who || tr(pin.user ? "You" : "Message");
+      const n = document.createElement("span");
+      n.className = "lf-pin-n";
+      n.textContent = pin.t ? new Date(pin.t).toLocaleDateString() : "";
+      head.append(who, n);
+      const text = document.createElement("p");
+      text.className = "lf-pin-text";
+      text.dataset.whole = pin.whole ? "1" : "0";
+      text.textContent = pin.whole ? pin.text : `“${pin.text}”`;
+      const acts = document.createElement("div");
+      acts.className = "lf-pin-acts";
+      button(acts, "Jump to it", async () => {
+        const res = await actions.jumpToPin(pin);
+        if (res === "missing")
+          favInfo.textContent = tr("That message no longer exists, so its pin was removed.");
+        else if (res === "notfound")
+          favInfo.textContent = tr("Couldn’t reach that message just now — try again in a moment.");
+        else if (res === "unavailable")
+          favInfo.textContent = tr("Open the chat to jump to its messages.");
+      }, "ghost", I.chev);
+      button(acts, "Remove", () => actions.unpin(pin.id), "ghost", I.trash);
+      card.append(head, text, acts);
+      favList.appendChild(card);
+    }
   });
   const party = section("celebrate", "Celebrations", I.party);
   toggle(party.body, "Message milestones", "milestones");
@@ -7700,7 +9163,7 @@ var NAVIGATE_CSS = `
 @keyframes lf-indet { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
 @media (prefers-reduced-motion: reduce) { .lf-veil-ico, .lf-veil-bar.lf-indet i { animation: none; } .lf-veil { transition: none; } }
 `;
-var ICON2 = `<svg class="lf-veil-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>`;
+var ICON3 = `<svg class="lf-veil-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>`;
 var frame = () => new Promise((r) => requestAnimationFrame(() => r()));
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -7912,7 +9375,7 @@ class StoryNavigator {
     Object.assign(v.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
     const card = document.createElement("div");
     card.className = "lf-veil-card";
-    card.innerHTML = ICON2;
+    card.innerHTML = ICON3;
     const b = document.createElement("b");
     b.textContent = tr("Rewinding the story…");
     const bar = document.createElement("div");
@@ -7945,7 +9408,7 @@ class StoryNavigator {
 }
 
 // src/uitheme.ts
-function hslToHex(h, s, l) {
+function hslToHex2(h, s, l) {
   s /= 100;
   l /= 100;
   const k = (n) => (n + h / 30) % 12;
@@ -7959,11 +9422,11 @@ function themeFromColor(hex) {
   const tint = s < 12 ? 0 : 1;
   return {
     accent: hex,
-    secondary: hslToHex((h + 40) % 360, sat * 0.8, 62),
-    bgDark: hslToHex(h, 26 * tint, 9),
-    bgLight: hslToHex(h, 34 * tint, 96),
-    speech: hslToHex(h, Math.min(90, sat + 10), 74),
-    thoughts: hslToHex((h + 28) % 360, 38 * tint, 72)
+    secondary: hslToHex2((h + 40) % 360, sat * 0.8, 62),
+    bgDark: hslToHex2(h, 26 * tint, 9),
+    bgLight: hslToHex2(h, 34 * tint, 96),
+    speech: hslToHex2(h, Math.min(90, sat + 10), 74),
+    thoughts: hslToHex2((h + 28) % 360, 38 * tint, 72)
   };
 }
 function resolveUiTheme(s, charAura, moodColor) {
@@ -7993,7 +9456,7 @@ function themeKey(spec) {
 }
 
 // src/persist.ts
-var VAULT_NAMES = ["settings", "achievements", "heartbeat"];
+var VAULT_NAMES = ["settings", "achievements", "heartbeat", "moments"];
 var LOCAL_PREFIX = "lumi_flair:vault:";
 var FILE_TIMEOUT = 3000;
 function envelope(raw) {
@@ -8319,6 +9782,7 @@ function setup(ctx) {
   bindCustomPacks(() => store.getBase().customPacks);
   const beats = createJsonStore(vault, "heartbeat", {});
   const badges = createJsonStore(vault, "achievements", normalizeAchievements(null));
+  const pins = createJsonStore(vault, "moments", {});
   const disposers = [];
   let disposed = false;
   const on = (event, fn) => disposers.push(ctx.events.on(event, fn));
@@ -8331,6 +9795,8 @@ function setup(ctx) {
     tintPermission: false,
     injectPermission: false,
     panelsPermission: false,
+    memoriesPermission: false,
+    memoryNote: null,
     room: 14,
     saver: false,
     lastPrefsKey: "",
@@ -8351,7 +9817,8 @@ function setup(ctx) {
   };
   const director = new DirectorState;
   const statusListeners = new Set;
-  disposers.push(ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join(`
+  const pinListeners = new Set;
+  disposers.push(ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join(`
 `)));
   let removeMainCss = null;
   disposers.push(() => removeMainCss?.());
@@ -8372,7 +9839,11 @@ function setup(ctx) {
   const colorStyle = ctx.dom.createElement("style");
   const composerStyle = ctx.dom.createElement("style");
   const auraStyle = ctx.dom.createElement("style");
-  overlayWrap.append(colorStyle, composerStyle, auraStyle);
+  const theaterStyle = ctx.dom.createElement("style");
+  overlayWrap.append(colorStyle, composerStyle, auraStyle, theaterStyle);
+  const theaterWrap = ctx.dom.inject("body", '<div class="lf-th-root"></div>');
+  const introCard = new IntroCard(overlay);
+  const speaker = new SpeakerChip(overlay);
   const fx = new FxCanvas(fxEl);
   const ambient = new AmbientCanvas(ambientEl);
   const sound = new SoundBoard;
@@ -8447,6 +9918,11 @@ function setup(ctx) {
     lib.destroy();
     cine.destroy();
     choices.clear();
+    introCard.destroy();
+    speaker.destroy();
+    theater.destroy();
+    typewriter.stop();
+    ctx.dom.uninject(theaterWrap);
     ctx.dom.uninject(overlayWrap);
   });
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -8473,6 +9949,7 @@ function setup(ctx) {
     const n = parseInt(hex.slice(1), 16);
     return { r: n >> 16 & 255, g: n >> 8 & 255, b: n & 255 };
   }
+  const hexOf = (c) => "#" + [c.r, c.g, c.b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
   function sendOrigin() {
     const input = document.querySelector('[data-component="InputArea"]');
     if (input) {
@@ -8818,11 +10295,14 @@ function setup(ctx) {
       tintPermission: state.tintPermission,
       injectPermission: state.injectPermission,
       panelsPermission: state.panelsPermission,
+      memoriesPermission: state.memoriesPermission,
+      memoryNote: state.memoryNote,
       directed: dir ? [dir.scene, dir.light, dir.mood].filter(Boolean).join(" · ") : null,
       light: resolveLight(),
       saver: state.saver || perf.saving,
       auraColors: auras.list().map((a) => a.color),
       beats: state.chatId ? beats.get()[state.chatId] ?? [] : [],
+      pins: state.chatId ? pins.get()[state.chatId] ?? [] : [],
       unlocked: badges.get().unlocked,
       soundscape: scape.state,
       uiThemeLabel: state.themeLabel,
@@ -8833,6 +10313,8 @@ function setup(ctx) {
     };
   }
   function notifyStatus() {
+    for (const fn of pinListeners)
+      fn();
     const st = status();
     for (const fn of statusListeners) {
       try {
@@ -8841,6 +10323,216 @@ function setup(ctx) {
         console.error("[Lumi Flair] status listener failed", err);
       }
     }
+  }
+  function closeHostDrawer() {
+    try {
+      if (!ctx.ui.events?.getDrawerState?.().open)
+        return;
+    } catch {
+      return;
+    }
+    const tab = document.querySelector('[data-spindle-mount="sidebar"]')?.parentElement?.parentElement?.firstElementChild;
+    if (tab instanceof HTMLButtonElement)
+      tab.click();
+  }
+  const theater = new Theater({
+    root: theaterWrap.querySelector(".lf-th-root"),
+    style: theaterStyle,
+    get: () => {
+      const s = store.get();
+      return { scale: s.theaterScale, speed: s.theaterSpeed, scroll: s.theaterScroll };
+    },
+    set: (patch) => store.update(patch),
+    motion: motionAllowed,
+    list: () => document.querySelector('[data-component="MessageList"]'),
+    latest: () => {
+      const id = ctx.messages.getLatestMessageId();
+      return id ? cardFor(id) : null;
+    },
+    closeDrawer: closeHostDrawer,
+    tr,
+    changed: () => notifyStatus()
+  });
+  let keySrc = null;
+  function typeKey(space) {
+    const s = store.get();
+    if (!s.enabled || !s.sound || !s.typewriterSound || document.hidden)
+      return;
+    const away = scape.backgrounded;
+    if (away === "mute")
+      return;
+    const volume = s.soundVolume * 0.8 * (away === "dim" ? s.soundUnfocusedLevel : 1);
+    const semis = moodPitch(currentMood()?.label ?? null);
+    const id = customFor("ui:key");
+    const ac = sound.context();
+    if (id && ac && keySrc?.id !== id) {
+      lib.source(id, ac).then((src) => {
+        if (src)
+          keySrc = { id, src };
+      }).catch(() => {});
+    }
+    sound.key(volume, semis, space, id && keySrc?.id === id ? keySrc.src : undefined);
+  }
+  const typewriter = new Typewriter({
+    get: () => {
+      const s = store.get();
+      return { on: s.enabled && s.typewriter, cps: s.typewriterCps };
+    },
+    motion: motionAllowed,
+    content: (id) => [...document.querySelectorAll(`${CARD2}[data-part="streaming"] [data-component="MessageContent"]`)].at(-1) ?? (id ? cardFor(id)?.querySelector('[data-component="MessageContent"]') ?? null : null),
+    list: () => document.querySelector('[data-component="MessageList"]'),
+    key: typeKey
+  });
+  let introRun = 0;
+  const isGroupChat = () => !!document.querySelector('[data-component="MessageList"][data-group-chat]');
+  async function playIntroSound(id) {
+    const s = store.get();
+    if (!s.enabled || !s.sound || !lib.has(id) || document.hidden)
+      return;
+    const away = scape.backgrounded;
+    if (away === "mute")
+      return;
+    const ac = sound.context();
+    if (!ac)
+      return;
+    if (ac.state === "suspended")
+      await Promise.race([ac.resume().catch(() => {}), new Promise((r) => setTimeout(r, 400))]);
+    if (disposed || ac.state !== "running")
+      return;
+    const src = await lib.source(id, ac).catch(() => null);
+    if (src && !disposed)
+      sound.playFile(src, s.soundVolume * (away === "dim" ? s.soundUnfocusedLevel : 1), 8);
+  }
+  function showIntro(name, color, avatar) {
+    const view = document.querySelector('[data-component="ChatView"]')?.getBoundingClientRect();
+    const left = Math.max(0, view?.left ?? 0);
+    const top = Math.max(0, view?.top ?? 0);
+    const area = view ? { left, top, width: Math.min(window.innerWidth, view.right) - left, height: Math.min(window.innerHeight, view.bottom) - top } : null;
+    introCard.show({ name, color, avatar, kicker: tr("A conversation with"), motion: motionAllowed(), area });
+    const id = store.get().introSound;
+    if (id)
+      playIntroSound(id);
+  }
+  function startIntro(chatId) {
+    const run = ++introRun;
+    const t0 = performance.now();
+    const attempt = () => {
+      if (disposed || run !== introRun || state.chatId !== chatId)
+        return;
+      const s = store.get();
+      if (!s.enabled || !s.intro || !s.welcomed)
+        return;
+      const waited = performance.now() - t0;
+      const retry = () => {
+        if (waited < 3200)
+          setTimeout(attempt, 150);
+      };
+      if (!document.querySelector('[data-component="MessageList"]'))
+        return retry();
+      if (isGroupChat())
+        return;
+      const name = state.characterName;
+      if (!name)
+        return retry();
+      const found = auras.enabled ? auras.latest() : null;
+      if (!found && auras.enabled && waited < 1800)
+        return retry();
+      showIntro(name, found?.aura.color ?? state.charAura ?? hexOf(charColor()), found?.avatar ?? null);
+    };
+    setTimeout(attempt, 450);
+  }
+  function previewIntro() {
+    const found = auras.enabled ? auras.latest() : null;
+    showIntro(state.characterName || tr("Your character"), found?.aura.color ?? state.charAura ?? hexOf(charColor()), found?.avatar ?? null);
+  }
+  const speakerColors = new Map;
+  const SPOT_KEY = "groupspot";
+  let speakerRun = 0;
+  let speakerGen = "";
+  let spotOn = false;
+  let speakerTurns = 0;
+  let speakerTimer;
+  let speakerHide;
+  function chipPlace() {
+    const list = document.querySelector('[data-component="MessageList"]')?.getBoundingClientRect();
+    const input = document.querySelector('[data-component="InputArea"]')?.getBoundingClientRect();
+    return {
+      x: list && list.width > 0 ? list.left + list.width / 2 : window.innerWidth / 2,
+      bottom: input && input.height > 0 ? window.innerHeight - input.top + 12 : 110
+    };
+  }
+  const spotlightRule = (dim) => `:root [data-component="MessageList"][data-group-chat] ${CARD2}:not([data-part="streaming"]) { opacity: ${dim ? ".7" : "1"}; transition: opacity .3s ease; }`;
+  function speakerStart(p) {
+    const s = store.get();
+    const name = (p.characterName ?? "").trim();
+    if (disposed || !s.enabled || !s.introGroup || !name || !isActiveChat(p.chatId) || !isGroupChat())
+      return;
+    const gen = p.generationId ?? "";
+    const total = p.total && p.total > 1 ? p.total : 0;
+    if (gen && gen === speakerGen && speaker.showing && (!total || total === speakerTurns))
+      return;
+    speakerGen = gen;
+    speakerTurns = total;
+    const run = ++speakerRun;
+    const id = p.characterId || name;
+    const known = speakerColors.get(id);
+    speaker.show({ name, color: known ?? hashColor(id), turn: (p.turn ?? 0) + 1, total, motion: motionAllowed(), ...chipPlace() });
+    spotOn = true;
+    tempRule(SPOT_KEY, spotlightRule(true), 120000);
+    clearTimeout(speakerHide);
+    speakerHide = setTimeout(speakerFinish, 120000);
+    if (known || !auras.enabled)
+      return;
+    const t0 = performance.now();
+    const poll = () => {
+      if (disposed || run !== speakerRun)
+        return;
+      auras.scan();
+      const waited = performance.now() - t0;
+      const hit = auras.forSpeaker(name) ?? (waited > 250 ? auras.forStreaming() : null);
+      if (hit) {
+        speakerColors.set(id, hit.aura.color);
+        speaker.setColor(hit.aura.color);
+        return;
+      }
+      if (waited < 2400)
+        speakerTimer = setTimeout(poll, 150);
+    };
+    clearTimeout(speakerTimer);
+    poll();
+  }
+  function speakerFinish() {
+    speakerRun++;
+    speakerGen = "";
+    speaker.hide(false);
+    if (spotOn) {
+      spotOn = false;
+      tempRule(SPOT_KEY, spotlightRule(false), 450);
+    }
+  }
+  function speakerEnd(delay = 700) {
+    if (!speaker.showing)
+      return;
+    clearTimeout(speakerHide);
+    speakerHide = setTimeout(speakerFinish, delay);
+  }
+  function speakerReset() {
+    clearTimeout(speakerHide);
+    clearTimeout(speakerTimer);
+    speakerFinish();
+    speaker.hide(true);
+  }
+  disposers.push(() => {
+    clearTimeout(speakerHide);
+    clearTimeout(speakerTimer);
+  });
+  function previewSpeaker() {
+    const name = state.characterName || tr("Your character");
+    const found = auras.enabled ? auras.latest() : null;
+    const color = found?.aura.color ?? state.charAura ?? hashColor(name);
+    speaker.show({ name, color, turn: 1, total: 3, motion: motionAllowed(), ...chipPlace() });
+    clearTimeout(speakerHide);
+    speakerHide = setTimeout(() => speaker.hide(false), 2600);
   }
   let nameRequest = 0;
   function checkActive() {
@@ -8851,8 +10543,15 @@ function setup(ctx) {
     const chatChanged = chatId !== state.chatId;
     state.chatId = chatId;
     state.characterId = characterId;
-    if (chatChanged)
+    if (chatChanged) {
       choices.clear();
+      speakerReset();
+      typewriter.stop();
+      introRun++;
+      introCard.hide(false);
+      if (chatId)
+        startIntro(chatId);
+    }
     if (charChanged) {
       state.characterName = null;
       const req = ++nameRequest;
@@ -8868,6 +10567,7 @@ function setup(ctx) {
     }
     store.setActiveCharacter(characterId);
     if (!chatId) {
+      theater.exit();
       applyAmbient();
       applyCinematic();
       setTimeout(() => {
@@ -8888,6 +10588,10 @@ function setup(ctx) {
     measureRoom();
     auras.scan();
     refreshCharAura();
+    if (speaker.showing) {
+      const at = chipPlace();
+      speaker.place(at.x, at.bottom);
+    }
     const view = document.querySelector('[data-component="ChatView"]');
     if (view !== ambientChatView || ambientHost && !ambientHost.isConnected) {
       applyAmbient();
@@ -8900,6 +10604,13 @@ function setup(ctx) {
     const gone = new Set([...p.messageIds ?? [], ...p.messageId ? [p.messageId] : []]);
     if (!gone.size)
       return;
+    pins.whenLoaded(() => {
+      const next = removePins(pins.get(), p.chatId, gone);
+      if (next === pins.get())
+        return;
+      pins.set(next);
+      notifyStatus();
+    });
     beats.whenLoaded(() => {
       const all = beats.get();
       let changed = false;
@@ -9213,7 +10924,16 @@ function setup(ctx) {
     else
       choices.clear();
     startComposer(p?.generationId ?? "unknown");
+    if (p)
+      speakerStart(p);
+    typewriter.start(p?.generationType === "continue" ? p.targetMessageId ?? null : null);
   });
+  on("GROUP_TURN_STARTED", (raw) => {
+    const p = raw;
+    if (p?.chatId)
+      speakerStart({ ...p, turn: p.turnIndex, total: p.totalExpected });
+  });
+  on("GROUP_ROUND_COMPLETE", () => speakerEnd(300));
   on("STREAM_TOKEN_RECEIVED", (raw) => {
     const g = state.generating;
     if (!g)
@@ -9222,9 +10942,19 @@ function setup(ctx) {
     if (!p?.generationId || g.id === "unknown" || p.generationId === g.id)
       g.tokens++;
   });
-  on("GENERATION_STOPPED", () => stopComposer());
+  on("GENERATION_STOPPED", () => {
+    stopComposer();
+    speakerEnd(200);
+    typewriter.end();
+  });
   on("GENERATION_ENDED", (raw) => {
     const p = raw;
+    if (!p?.generationId || !speakerGen || p.generationId === speakerGen)
+      speakerEnd();
+    if (!p?.error && p?.generationType !== "impersonate")
+      typewriter.end();
+    else
+      typewriter.stop();
     if (!state.generating || !p?.generationId || state.generating.id === p.generationId || state.generating.id === "unknown") {
       stopComposer();
     }
@@ -9328,7 +11058,7 @@ function setup(ctx) {
   };
   document.addEventListener("pointerdown", onTap, { capture: true, passive: true });
   disposers.push(() => document.removeEventListener("pointerdown", onTap, { capture: true }));
-  async function makeMoment(messageId) {
+  async function makeMoment(messageId, picked = null) {
     if (!messageId)
       return;
     const card = cardFor(messageId);
@@ -9342,12 +11072,98 @@ function setup(ctx) {
       }
     } catch {}
     if (!text && card)
-      text = card.innerText;
+      text = (card.querySelector('[data-component="MessageContent"]') ?? card).innerText;
     if (!name)
-      name = state.characterName ?? "Lumiverse";
+      name = (card?.querySelector('[class*="_name_"]')?.textContent ?? "").trim() || (state.characterName ?? "Lumiverse");
     const avatarSrc = card?.querySelector("img[src]")?.getAttribute("src") ?? null;
     const aura = auras.forMessage(messageId);
-    await showMomentCard(ctx, { name, text: plainText(text), avatarSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date }, () => unlock(["shutterbug"]));
+    await showMomentCard(ctx, { name, text: plainText(text), avatarSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date }, () => unlock(["shutterbug"]), picked);
+  }
+  function selectedIn(messageId) {
+    const raw = selectionIn(messageId);
+    const t = raw ? excerpt(raw) : "";
+    return t.length > 1 ? t : null;
+  }
+  function selectionIn(messageId) {
+    const sel = window.getSelection();
+    const card = cardFor(messageId);
+    if (!sel || sel.isCollapsed || !card || !card.contains(sel.anchorNode) || !card.contains(sel.focusNode))
+      return null;
+    const t = sel.toString().trim();
+    return t.length > 1 ? t : null;
+  }
+  function pinMessage(messageId, picked = null) {
+    const chatId = state.chatId ?? ctx.getActiveChat()?.chatId ?? null;
+    if (!messageId || !chatId)
+      return;
+    const line = picked ?? selectedIn(messageId);
+    const card = cardFor(messageId);
+    const user = card?.getAttribute("data-part") === "user";
+    const body = card?.querySelector('[data-component="MessageContent"]') ?? card;
+    const text = line ?? excerpt(body?.innerText ?? "");
+    const name = card?.querySelector('[class*="_name_"]')?.textContent?.trim();
+    const ids = ctx.messages.listMessageIds();
+    const at = ids.indexOf(messageId);
+    const aura = auras.forMessage(messageId);
+    pins.whenLoaded(() => {
+      const all = pins.get();
+      if (isPinned(all, chatId, messageId) && !line) {
+        pins.set(removePins(all, chatId, new Set([messageId])));
+      } else {
+        if (!text)
+          return;
+        const pin = {
+          id: messageId,
+          i: at < 0 ? ids.length : at,
+          text,
+          whole: !line,
+          who: name || (user ? "" : state.characterName ?? ""),
+          user,
+          color: aura?.color ?? null,
+          t: Date.now()
+        };
+        pins.set(setPin(all, chatId, pin));
+        if (store.get().pinMemory && state.memoriesPermission)
+          remember(chatId, [pin]);
+      }
+      notifyStatus();
+    });
+  }
+  const memoryWaits = new Map;
+  let memoryReq = 0;
+  function sendPinsToMemory(chatId, list) {
+    const items = list.filter((p) => p.who).map((p) => ({ who: p.who, text: excerpt(p.text, PIN_MEMORY_MAX) }));
+    if (!items.length)
+      return Promise.resolve({ ok: true, saved: 0, reason: "unnamed" });
+    const req = ++memoryReq;
+    return new Promise((resolve) => {
+      const done = (r) => {
+        clearTimeout(timer);
+        memoryWaits.delete(req);
+        resolve(r);
+      };
+      const timer = setTimeout(() => done({ ok: false, saved: 0, reason: "no answer" }), 15000);
+      memoryWaits.set(req, done);
+      ctx.sendToBackend({ type: "pin_memory", req, chatId, items });
+    });
+  }
+  async function remember(chatId, list) {
+    const r = await sendPinsToMemory(chatId, list);
+    if (!r.ok)
+      console.warn("[Lumi Flair] Saving pins to memory failed:", r.reason);
+    state.memoryNote = !r.ok ? tr("Couldn’t save to Lumiverse memory.") : r.saved ? tr("Saved to Lumiverse memory.") : list.length ? tr("Nothing to save: those pins have no speaker name.") : null;
+    notifyStatus();
+  }
+  disposers.push(() => memoryWaits.clear());
+  async function jumpToPin(pin) {
+    const res = await storyNav.jump(pin.id);
+    if (res === "missing" && state.chatId) {
+      pins.whenLoaded(() => {
+        pins.set(removePins(pins.get(), state.chatId ?? undefined, new Set([pin.id])));
+        notifyStatus();
+      });
+    }
+    return res;
   }
   try {
     const ui = ctx.ui;
@@ -9358,18 +11174,58 @@ function setup(ctx) {
         const id = /^message:(.+):actions$/.exec(rctx.scope)?.[1];
         if (!id)
           return;
+        const star = document.createElement("button");
+        star.type = "button";
+        star.className = "lf-moment-btn lf-pin-btn";
+        star.innerHTML = STAR_SVG;
+        let picked = null;
+        const syncStar = () => {
+          const on = isPinned(pins.get(), state.chatId, id);
+          if (star.dataset.on === (on ? "1" : "0"))
+            return;
+          star.dataset.on = on ? "1" : "0";
+          star.setAttribute("aria-pressed", String(on));
+          star.title = tr(on ? "Unpin this moment" : "Pin this moment");
+          star.setAttribute("aria-label", tr(on ? "Remove from favourite moments" : "Pin as a favourite moment"));
+        };
+        star.addEventListener("pointerdown", () => picked = selectedIn(id));
+        star.addEventListener("click", (e) => {
+          e.stopPropagation();
+          pinMessage(id, picked);
+          picked = null;
+        });
+        syncStar();
+        pinListeners.add(syncStar);
         const b = document.createElement("button");
         b.type = "button";
         b.className = "lf-moment-btn";
         b.title = tr("Moment Card");
         b.setAttribute("aria-label", tr("Make a Moment Card"));
         b.innerHTML = CAM;
+        let shot = null;
+        b.addEventListener("pointerdown", () => shot = selectionIn(id));
         b.addEventListener("click", (e) => {
           e.stopPropagation();
-          makeMoment(id);
+          makeMoment(id, shot ?? selectionIn(id));
+          shot = null;
         });
-        root.appendChild(b);
-        return () => b.remove();
+        const th = document.createElement("button");
+        th.type = "button";
+        th.className = "lf-moment-btn";
+        th.title = tr("Read in theater mode");
+        th.setAttribute("aria-label", tr("Read from here in theater mode"));
+        th.innerHTML = THEATER_ICON;
+        th.addEventListener("click", (e) => {
+          e.stopPropagation();
+          theater.enter(cardFor(id));
+        });
+        root.append(star, b, th);
+        return () => {
+          pinListeners.delete(syncStar);
+          star.remove();
+          b.remove();
+          th.remove();
+        };
       }
     });
     if (off)
@@ -9413,6 +11269,8 @@ function setup(ctx) {
     const tr2 = raw;
     if (tr2?.type === "theme_result" && !tr2.ok)
       console.warn("[Lumi Flair] Lumiverse theme matching unavailable:", tr2.reason);
+    if (msg?.type === "pin_memory_result")
+      memoryWaits.get(msg.req)?.(msg);
     if (msg?.type === "tint_result" && !msg.ok) {
       console.warn("[Lumi Flair] Mood UI tint unavailable:", msg.reason);
     }
@@ -9455,6 +11313,12 @@ function setup(ctx) {
       }
       case "moment":
         return void makeMoment(ctx.messages.getLatestMessageId());
+      case "pin":
+        return pinMessage(ctx.messages.getLatestMessageId());
+      case "intro":
+        return previewIntro();
+      case "theater":
+        return theater.toggle();
       case "welcome":
         return openWelcome();
       case "open":
@@ -9469,9 +11333,12 @@ function setup(ctx) {
     disposers.push(inputActions.spotlight.onClick(() => runCommand("spotlight")));
     inputActions.flair = ctx.ui.registerInputBarAction({ id: "flair", label: tr("Flair effects"), subtitle: tr("On"), iconSvg: FLAIR_ICON });
     disposers.push(inputActions.flair.onClick(() => runCommand("toggle")));
+    inputActions.theater = ctx.ui.registerInputBarAction({ id: "theater", label: tr("Theater mode"), subtitle: tr("Hide the interface and read"), iconSvg: THEATER_ICON });
+    disposers.push(inputActions.theater.onClick(() => runCommand("theater")));
     disposers.push(() => {
       inputActions.spotlight?.destroy();
       inputActions.flair?.destroy();
+      inputActions.theater?.destroy();
     });
   } catch (err) {
     console.warn("[Lumi Flair] Input bar actions unavailable", err);
@@ -9481,11 +11348,12 @@ function setup(ctx) {
     inputActions.spotlight?.setSubtitle(s.spotlight ? tr("On — other messages dim on hover") : tr("Off"));
     inputActions.flair?.setSubtitle(s.enabled ? tr("On") : tr("Off"));
   }
-  const hasPerm = (perm) => perm === "interceptor" ? state.injectPermission : perm === "app_manipulation" ? state.tintPermission : state.panelsPermission;
+  const hasPerm = (perm) => perm === "interceptor" ? state.injectPermission : perm === "app_manipulation" ? state.tintPermission : perm === "memories" ? state.memoriesPermission : state.panelsPermission;
   function adoptGranted(granted) {
     state.tintPermission = granted.includes("app_manipulation");
     state.injectPermission = granted.includes("interceptor");
     state.panelsPermission = granted.includes("ui_panels");
+    state.memoriesPermission = granted.includes("memories");
   }
   async function requestPermission(perm, reason) {
     try {
@@ -9499,6 +11367,7 @@ function setup(ctx) {
   }
   const requestInject = () => requestPermission("interceptor", tr("Lumi Flair adds a short note to each prompt so the AI uses text effects, directs scenes and offers choices."));
   const requestTint = () => requestPermission("app_manipulation", tr("Lumi Flair restyles Lumiverse’s colours to match your Flair Pack, the speaking character or their mood. Your saved theme is never changed — switching it off restores it."));
+  const requestMemories = () => requestPermission("memories", tr("Lumi Flair adds the moments you pin to Lumiverse’s memory as short facts about whoever said them, so the AI can remember them. It only ever adds, and only while this is switched on in Flair."));
   const requestPanels = () => requestPermission("ui_panels", tr("Lumi Flair shows a small floating volume control for the ambient soundscape. You can drag it anywhere and turn it off in Flair’s Sound settings."));
   let preview = null;
   function stopPreview() {
@@ -9598,6 +11467,7 @@ function setup(ctx) {
     store.flush();
     beats.flush();
     badges.flush();
+    pins.flush();
   };
   const onHide = () => document.visibilityState === "hidden" && flushAll();
   window.addEventListener("pagehide", flushAll);
@@ -9616,6 +11486,11 @@ function setup(ctx) {
     }
     if (saved.heartbeat && save)
       beats.set(beats.get());
+    if (saved.moments) {
+      pins.hydrate(normalizePins(saved.moments));
+      if (save)
+        pins.set(pins.get());
+    }
     if (saved.settings)
       store.adopt(saved.settings, save);
     notifyStatus();
@@ -9628,12 +11503,14 @@ function setup(ctx) {
     store.hydrate(saved.settings);
     beats.hydrate(saved.heartbeat);
     badges.hydrate(normalizeAchievements(saved.achievements));
+    pins.hydrate(normalizePins(saved.moments));
   }).then(() => {
     if (disposed)
       return;
     checkActive();
     applyAll();
     store.subscribe(() => applyAll());
+    store.subscribe(() => theater.refresh());
     panel = mountPanel(ctx, store, {
       previewSend: () => fireSendEffect(true),
       previewHover: () => {
@@ -9683,6 +11560,30 @@ function setup(ctx) {
         });
       },
       momentLatest: () => makeMoment(ctx.messages.getLatestMessageId()),
+      pinLatest: () => pinMessage(ctx.messages.getLatestMessageId()),
+      previewIntro,
+      previewSpeaker,
+      enterTheater: () => theater.enter(),
+      previewTypewriter: (el) => typewriter.preview(el),
+      typewriterSupported: () => typewriter.supported,
+      unpin: (id) => {
+        const chatId = state.chatId;
+        if (!chatId)
+          return;
+        pins.whenLoaded(() => {
+          pins.set(removePins(pins.get(), chatId, new Set([id])));
+          notifyStatus();
+        });
+      },
+      jumpToPin,
+      savePinsToMemory: async () => {
+        if (!state.memoriesPermission && !await requestMemories())
+          return;
+        const chatId = state.chatId;
+        if (chatId)
+          await remember(chatId, pins.get()[chatId] ?? []);
+      },
+      requestMemoriesPermission: requestMemories,
       jumpTo: async (p) => {
         const res = await storyNav.jump(p.id);
         if (res === "missing" && state.chatId) {
@@ -9698,7 +11599,7 @@ function setup(ctx) {
       openWelcome,
       backupSettings: () => {
         flushAll();
-        downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get() }, ctx.manifest?.version ?? "");
+        downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get(), moments: pins.get() }, ctx.manifest?.version ?? "");
       },
       restoreSettings: async () => {
         const saved = await pickBackup(ctx);

@@ -7,6 +7,8 @@ import { SFX_CUES } from './sfx-cues'
 import { allPacks, packById } from './packs'
 import { ACHIEVEMENTS } from './achievements'
 import { renderHeartbeat, type BeatPoint } from './heartbeat'
+import { STAR_SVG, type Pin } from './moments'
+import { keepOpenWhileDragging } from './modal'
 
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/><path d="M5 16l.6 1.4 1.4.6-1.4.6L5 20l-.6-1.4L3 18l1.4-.6z"/></svg>`
 
@@ -105,6 +107,7 @@ export const PANEL_CSS = `
 .lf-aura-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .lf-aura-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
 .lf-beat-host { padding: 6px 2px 0; }
+.lf-tw-demo { padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px); background: var(--lumiverse-fill); color: var(--lumiverse-text); font-size: calc(14px * var(--lumiverse-font-scale, 1)); line-height: 1.6; }
 .lf-fx-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 4px; }
 .lf-fx-count { font-size: calc(11px * var(--lumiverse-font-scale, 1)); color: var(--lumiverse-text-dim); font-variant-numeric: tabular-nums; }
 .lf-fx-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
@@ -177,6 +180,7 @@ const I = {
   heart: svg('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
   trophy: svg('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
   camera: svg('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>'),
+  star: svg('<polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/>'),
 }
 
 /** Live status the panel displays but does not own. */
@@ -191,11 +195,16 @@ export interface PanelStatus {
   tintPermission: boolean
   injectPermission: boolean
   panelsPermission: boolean
+  memoriesPermission: boolean
+  /** What the last save of pins to Lumiverse's memory did (null: nothing to say). */
+  memoryNote: string | null
   directed: string | null
   light: string
   saver: boolean
   auraColors: string[]
   beats: BeatPoint[]
+  /** Pinned moments in the current chat. */
+  pins: Pin[]
   unlocked: Record<string, number>
   soundscape: 'off' | 'playing' | 'waiting'
   soundscapeKey: string
@@ -225,6 +234,21 @@ export interface PanelActions {
   savePack(name: string): void
   deletePack(id: string): void
   momentLatest(): Promise<void> | void
+  /** Play the name card now, and show the group-chat speaker chip for a moment (so both can be seen without a group chat). */
+  previewIntro(): void
+  previewSpeaker(): void
+  /** Close the drawer's interface and read in theater mode. */
+  enterTheater(): void
+  /** Type out the text of this element (the panel's sample) at the chosen pace, with the key sounds. */
+  previewTypewriter(el: HTMLElement): void
+  typewriterSupported(): boolean
+  /** Pin the latest message as a favourite moment (or take it off again). */
+  pinLatest(): void
+  unpin(id: string): void
+  jumpToPin(p: Pin): Promise<'ok' | 'missing' | 'notfound' | 'cancelled' | 'unavailable'>
+  /** Add this chat's pins to Lumiverse's memory now (asks for the permission first if needed). */
+  savePinsToMemory(): Promise<void>
+  requestMemoriesPermission(): Promise<boolean>
   jumpTo(p: BeatPoint): Promise<'ok' | 'missing' | 'notfound' | 'cancelled' | 'unavailable'>
   openWelcome(): void
   backupSettings(): void
@@ -271,6 +295,7 @@ export const SLOT_LABEL: Record<string, { label: string; group: string }> = {
   'ui:fanfare': { label: 'Milestone celebration', group: 'Interface' },
   'ui:achievement': { label: 'Achievement unlocked', group: 'Interface' },
   'ui:sparkle': { label: 'Screen effect / keyword', group: 'Interface' },
+  'ui:key': { label: 'Typewriter key', group: 'Interface' },
   ...Object.fromEntries(SFX_CUES.map((c) => [`sfx:${c.name}`, { label: c.label, group: 'Sound effects' }])),
 }
 
@@ -763,6 +788,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   function openSaveDialog() {
     const modal = ctx.ui.showModal({ title: tr('Save my look as a pack'), width: 380 })
     const root = modal.root
+    modal.onDismiss(keepOpenWhileDragging(root)) // selecting the name and letting go outside must not close it
     root.textContent = ''
     const form = document.createElement('form')
     form.className = 'lf-save-form'
@@ -837,6 +863,48 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   }
   syncProfileButtons()
   syncers.push(syncProfileButtons)
+
+  // ── Character intro ──
+  const intro = section('intro', 'Character intro', I.film)
+  toggle(intro.body, 'Name card when a chat opens', 'intro')
+  hint(intro.body, 'Opening a chat plays a short name card in the character’s aura colour, every time you open one. Click or tap to skip it.')
+  const introSounds = actions.sounds
+  const introSoundOptions = () => [
+    { value: '', label: tr('None') },
+    ...introSounds.list().map((m) => ({ value: m.id, label: m.name, sublabel: `${fmtDuration(m.duration)} · ${fmtSize(m.size)}` })),
+  ]
+  const introSoundValue = (id: string) => (id && introSounds.has(id) ? id : '')
+  const introSoundSel = ctx.components.mountSelect(row(intro.body, 'Theme sound', 'fill'), {
+    value: introSoundValue(s0.introSound),
+    options: introSoundOptions(),
+    ariaLabel: tr('Theme sound'),
+    searchThreshold: 99,
+    onChange: (v) => store.update({ introSound: v }),
+  })
+  handles.push(introSoundSel)
+  syncers.push((s) => {
+    const v = introSoundValue(s.introSound)
+    if (introSoundSel.getValue() !== v) introSoundSel.update({ value: v })
+  })
+  const offIntroSounds = introSounds.onChange(() =>
+    introSoundSel.update({ options: introSoundOptions(), value: introSoundValue(store.get().introSound) }),
+  )
+  handles.push({ destroy: offIntroSounds })
+  hint(intro.body, 'A short file from <b>Your sounds</b> to play with the card (up to 8 seconds). It needs <b>Interface sounds</b> on. With a separate look for a character (Character profile above) it belongs to them alone; without one it plays for every character.')
+  toggle(intro.body, 'Group chats: show who is speaking', 'introGroup')
+  hint(intro.body, 'A small chip names whoever is talking, in the colour of their avatar, and the other messages dim a little until they have finished.')
+  const introBtns = buttons(intro.body)
+  button(introBtns, 'Preview intro', actions.previewIntro, 'primary', I.play)
+  button(introBtns, 'Preview speaker chip', actions.previewSpeaker, 'secondary', I.play)
+
+  // ── Theater mode ──
+  const theaterSec = section('theater', 'Theater mode', I.film)
+  hint(theaterSec.body, 'One click hides the interface and leaves the story full-screen, with larger type and a gentle auto-scroll. The atmosphere, lighting and soundscape carry on. You can also start it from the <b>Theater mode</b> item in the input bar’s Extras menu, from the corner-brackets button under any message (it starts reading from that message), or with the command <code>Flair: Toggle theater mode</code>.')
+  button(buttons(theaterSec.body), 'Enter theater mode', () => actions.enterTheater(), 'primary', I.film)
+  slider(theaterSec.body, 'Text size', 'theaterScale', 1, 2.2, 0.05, { suffix: '×' })
+  slider(theaterSec.body, 'Scroll speed', 'theaterSpeed', 1, 8, 1, {})
+  toggle(theaterSec.body, 'Start the gentle auto-scroll', 'theaterScroll')
+  hint(theaterSec.body, 'The scroll waits while you scroll or touch the screen and carries on a moment later; it stops at the end of the chat. With “reduce motion” on, it starts paused. Inside theater mode: <b>Esc</b> leaves, <b>Space</b> pauses, <b>+</b> and <b>−</b> change the text size; on a phone, tap the screen to bring the controls back. The reply box button lets you answer without leaving.')
 
   // ── Send ──
   const send = section('send', 'When you send', I.send, true)
@@ -1021,6 +1089,23 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   toggle(dirSec.body, 'Camera shake on shouts', 'cameraShake')
   button(buttons(dirSec.body), 'Preview lightning', actions.previewLightning, 'secondary', I.spark)
 
+  // ── Typewriter pacing ──
+  const tw = section('typewriter', 'Typewriter pacing', I.text)
+  toggle(tw.body, 'Typewriter reveal', 'typewriter')
+  hint(tw.body, 'Replies appear at a steady pace instead of in bursts, as if typed. It never falls more than a moment behind what has arrived, and when the reply ends the rest comes out quickly. Off when “reduce motion” is on.')
+  slider(tw.body, 'Typing speed', 'typewriterCps', 10, 120, 5, { suffix: ' /s' })
+  toggle(tw.body, 'Key sounds', 'typewriterSound')
+  hint(tw.body, 'Soft key clicks while it types, a little lower and duller when the character is sad, brighter when happy. They need <b>Interface sounds</b> on (Sound). To use your own, pick a file for <b>Typewriter key</b> under Your sounds.')
+  const twDemo = document.createElement('div')
+  twDemo.className = 'lf-tw-demo'
+  twDemo.textContent = tr('The lamp flickered once, then steadied. “You came back,” she said, and for a moment neither of them knew what to do with the quiet.')
+  tw.body.appendChild(twDemo)
+  const twPreview = button(buttons(tw.body), 'Preview typewriter', () => actions.previewTypewriter(twDemo), 'primary', I.play)
+  if (!actions.typewriterSupported()) {
+    twPreview.el.disabled = true
+    hint(tw.body, '<b>This browser can’t do it</b> (it needs Chrome or Edge 105+, Safari 17.2+ or Firefox 140+).')
+  }
+
   // ── Text & AI effects ──
   const tfx = section('textfx', 'Text & AI effects', I.text)
   toggle(tfx.body, 'Animated text effects', 'textEffects')
@@ -1141,20 +1226,96 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   legend.className = 'lf-beat-legend'
   legend.innerHTML = `<span>${tr('↑ joyful')}</span><span>${tr('↓ dark')}</span>`
   beat.body.append(beatHost, legend)
-  const beatInfo = hint(beat.body, 'The emotional arc of this chat, from the character’s expressions, the AI’s mood directions and the tone of each reply. Click a point to jump to it.')
+  const BEAT_HINT = 'The emotional arc of this chat, from the character’s expressions, the AI’s mood directions and the tone of each reply. Click a point to jump to it. A ★ marks a pinned moment.'
+  const beatInfo = hint(beat.body, BEAT_HINT)
+  /** Say what happened after a jump, in the hint under the chart. */
+  const jumpNote = (res: 'ok' | 'missing' | 'notfound' | 'cancelled' | 'unavailable', gone: string) => {
+    if (res === 'missing') beatInfo.textContent = tr(gone)
+    else if (res === 'notfound') beatInfo.textContent = tr('Couldn’t reach that message just now — try again in a moment.')
+    else if (res === 'unavailable') beatInfo.textContent = tr('Open the chat to jump to its messages.')
+    else beatInfo.textContent = tr(BEAT_HINT)
+  }
   let beatKey = ''
   statusSyncers.push((st) => {
-    const key = `${st.chatId}|${st.beats.length}|${st.beats.at(-1)?.v ?? ''}|${st.beats.at(-1)?.label ?? ''}`
+    const key = `${st.chatId}|${st.beats.length}|${st.beats.at(-1)?.v ?? ''}|${st.beats.at(-1)?.label ?? ''}|${st.pins.map((p) => p.id).join(',')}`
     if (key === beatKey) return
     beatKey = key
     beat.badge.textContent = st.beats.length ? String(st.beats.length) : ''
-    renderHeartbeat(beatHost, st.beats, async (pt) => {
-      const res = await actions.jumpTo(pt)
-      if (res === 'missing') beatInfo.textContent = tr('That message no longer exists, so its point was removed.')
-      else if (res === 'notfound') beatInfo.textContent = tr('Couldn’t reach that message just now — try again in a moment.')
-      else if (res === 'unavailable') beatInfo.textContent = tr('Open the chat to jump to its messages.')
-      else beatInfo.textContent = tr('The emotional arc of this chat, from the character’s expressions, the AI’s mood directions and the tone of each reply. Click a point to jump to it.')
-    })
+    renderHeartbeat(
+      beatHost,
+      st.beats,
+      async (pt) => jumpNote(await actions.jumpTo(pt), 'That message no longer exists, so its point was removed.'),
+      st.pins,
+      async (pin) => jumpNote(await actions.jumpToPin(pin), 'That message no longer exists, so its pin was removed.'),
+    )
+  })
+
+  // ── Favourite moments ──
+  const fav = section('favourites', 'Favourite moments', I.star)
+  const favList = document.createElement('div')
+  favList.className = 'lf-pin-list'
+  fav.body.appendChild(favList)
+  const favInfo = hint(fav.body, 'Tap the ★ under a message to pin it. Select some text first to pin just that line. Pinned moments show as stars on the story heartbeat above.')
+  button(buttons(fav.body), 'Pin the latest message', () => actions.pinLatest(), 'secondary', I.star)
+  toggle(fav.body, 'Save pins to Lumiverse memory', 'pinMemory', async (next) =>
+    !next || actions.status().memoriesPermission || (await actions.requestMemoriesPermission()),
+  )
+  hint(fav.body, 'Adds each new pin to Lumiverse’s memory as a short fact about whoever said it, so the AI can recall it. It works through your Memory Cortex (which must be on) and Lumiverse’s own memory budget, so Flair adds no tokens of its own. Lumiverse can only add facts, so unpinning doesn’t take one back out.')
+  const memGrant = button(buttons(fav.body), 'Allow memory access', async () => {
+    if (await actions.requestMemoriesPermission()) store.update({ pinMemory: true })
+  }, 'secondary', I.star)
+  button(buttons(fav.body), 'Save this chat’s pins to memory', () => actions.savePinsToMemory(), 'secondary', I.share)
+  const memNote = hint(fav.body, '')
+  statusSyncers.push((st) => {
+    memGrant.el.style.display = store.get().pinMemory && !st.memoriesPermission ? '' : 'none'
+    memNote.textContent = st.memoryNote ?? ''
+    memNote.style.display = st.memoryNote ? '' : 'none'
+  })
+  syncers.push(() => (memGrant.el.style.display = store.get().pinMemory && !actions.status().memoriesPermission ? '' : 'none'))
+  let favKey: string | null = null // null: nothing drawn yet, so the empty note shows even before the first pin
+  statusSyncers.push((st) => {
+    const key = `${st.chatId}|${st.pins.map((p) => `${p.id}:${p.t}`).join(',')}`
+    if (key === favKey) return
+    favKey = key
+    fav.badge.textContent = st.pins.length ? String(st.pins.length) : ''
+    favList.textContent = ''
+    if (!st.pins.length) {
+      const e = document.createElement('div')
+      e.className = 'lf-pin-empty'
+      e.textContent = tr(st.chatId ? 'No pinned moments in this chat yet.' : 'Open a chat to pin its moments.')
+      favList.appendChild(e)
+      return
+    }
+    for (const pin of st.pins) {
+      const card = document.createElement('div')
+      card.className = 'lf-pin'
+      if (pin.color) card.style.setProperty('--lf-pin-c', pin.color)
+      const head = document.createElement('div')
+      head.className = 'lf-pin-head'
+      head.innerHTML = STAR_SVG
+      const who = document.createElement('span')
+      who.className = 'lf-pin-who'
+      who.textContent = pin.who || tr(pin.user ? 'You' : 'Message')
+      const n = document.createElement('span')
+      n.className = 'lf-pin-n'
+      n.textContent = pin.t ? new Date(pin.t).toLocaleDateString() : ''
+      head.append(who, n)
+      const text = document.createElement('p')
+      text.className = 'lf-pin-text'
+      text.dataset.whole = pin.whole ? '1' : '0'
+      text.textContent = pin.whole ? pin.text : `“${pin.text}”`
+      const acts = document.createElement('div')
+      acts.className = 'lf-pin-acts'
+      button(acts, 'Jump to it', async () => {
+        const res = await actions.jumpToPin(pin)
+        if (res === 'missing') favInfo.textContent = tr('That message no longer exists, so its pin was removed.')
+        else if (res === 'notfound') favInfo.textContent = tr('Couldn’t reach that message just now — try again in a moment.')
+        else if (res === 'unavailable') favInfo.textContent = tr('Open the chat to jump to its messages.')
+      }, 'ghost', I.chev)
+      button(acts, 'Remove', () => actions.unpin(pin.id), 'ghost', I.trash)
+      card.append(head, text, acts)
+      favList.appendChild(card)
+    }
   })
 
   // ── Celebrations ──

@@ -5,6 +5,7 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 import { allPacks } from './packs'
 import { tr } from './i18n'
+import { keepOpenWhileDragging } from './modal'
 
 export interface WelcomeActions {
   applyPack(id: string): void
@@ -47,8 +48,12 @@ export const WELCOME_CSS = `
 
 export function showWelcome(ctx: SpindleFrontendContext, a: WelcomeActions) {
   const modal = ctx.ui.showModal({ title: tr('Welcome to Lumi Flair'), width: 560, maxHeight: 760 })
-  modal.onDismiss(() => a.done())
   const root = modal.root
+  const unguard = keepOpenWhileDragging(root)
+  modal.onDismiss(() => {
+    unguard()
+    a.done()
+  })
   root.innerHTML = ''
   const w = document.createElement('div')
   w.className = 'lf-welcome'

@@ -17,7 +17,7 @@
  */
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 
-export const VAULT_NAMES = ['settings', 'achievements', 'heartbeat'] as const
+export const VAULT_NAMES = ['settings', 'achievements', 'heartbeat', 'moments'] as const
 export type VaultName = (typeof VAULT_NAMES)[number]
 
 interface Envelope<T = unknown> {

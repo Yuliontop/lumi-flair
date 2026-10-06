@@ -4,7 +4,10 @@
  * Scene Director mood when available, otherwise from a small sentiment
  * lexicon over the reply text. Rendered as an SVG line in the Flair tab;
  * clicking a point scrolls to that message when it is on screen.
+ * Pinned moments show as stars on the line.
  */
+
+import { starPoints, type Pin } from './moments'
 
 export interface BeatPoint {
   id: string // message id
@@ -66,8 +69,36 @@ export function addPoint(data: HeartbeatData, chatId: string, p: BeatPoint): Hea
 
 const NS = 'http://www.w3.org/2000/svg'
 
-/** Render the arc into `host`. `onPick` receives the message id of a clicked point. */
-export function renderHeartbeat(host: HTMLElement, points: BeatPoint[], onPick: (p: BeatPoint) => void) {
+/**
+ * Where a pin sits on the arc: the point of its own message, else (a message of yours, or one from
+ * before the heartbeat) the point nearest to it in the chat.
+ */
+export function beatFor(points: BeatPoint[], pin: Pin): number {
+  const exact = points.findIndex((p) => p.id === pin.id)
+  if (exact >= 0) return exact
+  let best = 0
+  let gap = Infinity
+  points.forEach((p, k) => {
+    const d = Math.abs(p.i - pin.i)
+    if (d < gap) {
+      gap = d
+      best = k
+    }
+  })
+  return best
+}
+
+/**
+ * Render the arc into `host`. `onPick` receives the point that was clicked; `onPickPin` the pin
+ * whose star was.
+ */
+export function renderHeartbeat(
+  host: HTMLElement,
+  points: BeatPoint[],
+  onPick: (p: BeatPoint) => void,
+  pins: readonly Pin[] = [],
+  onPickPin?: (p: Pin) => void,
+) {
   host.textContent = ''
   if (points.length < 2) {
     const p = document.createElement('p')
@@ -133,6 +164,23 @@ export function renderHeartbeat(host: HTMLElement, points: BeatPoint[], onPick: 
     c.addEventListener('click', () => onPick(p))
     svg.appendChild(c)
   })
+
+  // Stars for pinned moments, on top of the dots. Two pins on one point stack upwards.
+  const stacked = new Map<number, number>()
+  const R = n > 80 ? 5 : 7
+  for (const pin of pins) {
+    const k = beatFor(points, pin)
+    const level = stacked.get(k) ?? 0
+    stacked.set(k, level + 1)
+    const star = document.createElementNS(NS, 'polygon')
+    star.setAttribute('points', starPoints(x(k), y(points[k].v) - level * (R * 2 + 1), R))
+    star.setAttribute('class', 'lf-beat-star')
+    const title = document.createElementNS(NS, 'title')
+    title.textContent = `★ ${pin.who ? pin.who + ': ' : ''}${pin.text.slice(0, 90)}`
+    star.appendChild(title)
+    star.addEventListener('click', () => onPickPin?.(pin))
+    svg.appendChild(star)
+  }
   host.appendChild(svg)
 }
 

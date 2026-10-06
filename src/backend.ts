@@ -130,6 +130,9 @@ spindle.commands.register([
   { id: 'soundscape', label: 'Flair: Toggle soundscapes', description: 'Rain, fire, wind and night ambience that follow the scene', keywords: ['ambience', 'soundscape', 'rain', 'audio'], scope: 'global' },
   { id: 'next-pack', label: 'Flair: Next Flair Pack', description: 'Cycle Classic, Cozy Fantasy, Cyberpunk, Horror, Sakura, Deep Space, Noir', keywords: ['pack', 'theme', 'look', 'preset'], scope: 'global' },
   { id: 'moment', label: 'Flair: Moment Card of latest reply', description: 'Turn the latest message into a share-ready image', keywords: ['share', 'image', 'card', 'screenshot'], scope: 'chat' },
+  { id: 'pin', label: 'Flair: Pin the latest message as a favourite moment', description: 'Add the latest message to your favourite moments, or take it off again', keywords: ['favourite', 'favorite', 'bookmark', 'star', 'save', 'pin'], scope: 'chat' },
+  { id: 'theater', label: 'Flair: Toggle theater mode', description: 'Hide the interface and read the story full-screen, with larger type and a gentle auto-scroll', keywords: ['theater', 'theatre', 'reading', 'fullscreen', 'focus', 'zen', 'immersive'], scope: 'chat' },
+  { id: 'intro', label: 'Flair: Play the character intro', description: 'Show the name card that plays when a chat opens', keywords: ['intro', 'entrance', 'name', 'card', 'character'], scope: 'chat' },
   { id: 'welcome', label: 'Flair: Show welcome', description: 'Pick a Flair Pack and optional extras', keywords: ['setup', 'onboarding', 'welcome'], scope: 'global' },
 ])
 
@@ -146,8 +149,8 @@ type PrefsMessage = { type: 'prefs' } & Partial<Prefs>
 
 // ── Config files: per-user, outside the extension folder ──
 // data/users/<userId>/extensions/lumi_flair/<name>.json — survives reinstalls.
-const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat'])
-const VERSION = '1.3.1'
+const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat', 'moments'])
+const VERSION = '1.4.11'
 
 async function vaultLoad(req: number, names: unknown, userId: string) {
   const files: Record<string, unknown> = {}
@@ -299,9 +302,50 @@ function queueTheme(userId: string, spec: ThemeSpec | null) {
   })()
 }
 
+// ── Pinned moments → Lumiverse memory (optional `memories` permission) ──
+// Each pin becomes a short fact on the entity of whoever said it, which is how Lumiverse's own memory
+// reaches the AI (the Memory Cortex's entity snapshot, when the user has it on). The API can only add
+// facts, never remove them, and it skips a fact it already has, so sending a pin twice is harmless.
+const MEMORY_BATCH = 60
+const MEMORY_TEXT = 200
+const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').slice(0, max).trim() : '')
+
+async function pinsToMemory(raw: { req?: unknown; chatId?: unknown; items?: unknown }, userId: string) {
+  const req = typeof raw.req === 'number' ? raw.req : 0
+  const reply = (ok: boolean, saved: number, reason?: string) => spindle.sendToFrontend({ type: 'pin_memory_result', req, ok, saved, reason }, userId)
+  const chatId = clean(raw.chatId, 200)
+  if (!chatId) return reply(false, 0, 'no chat')
+  if (!spindle.permissions.has('memories')) return reply(false, 0, 'memories not granted')
+  const byName = new Map<string, string[]>()
+  for (const item of (Array.isArray(raw.items) ? raw.items : []).slice(0, MEMORY_BATCH)) {
+    const it = item as { who?: unknown; text?: unknown }
+    const who = clean(it?.who, 80)
+    const text = clean(it?.text, MEMORY_TEXT)
+    if (!who || !text) continue
+    const facts = byName.get(who) ?? []
+    facts.push(`${who} said this, and the reader pinned it as a favourite moment: “${text}”`)
+    byName.set(who, facts)
+  }
+  let saved = 0
+  try {
+    for (const [who, facts] of byName) {
+      // Use the entity Lumiverse already has for them; make one only if there is none yet.
+      let entity = await spindle.memories.entities.findByName(chatId, who, userId)
+      if (!entity) entity = await spindle.memories.entities.upsert(chatId, { name: who, type: 'character', confidence: 1 }, { userId })
+      await spindle.memories.entities.addFacts(entity.id, facts, userId)
+      saved += facts.length
+    }
+    reply(true, saved)
+  } catch (err) {
+    spindle.log.warn(`[Lumi Flair] could not save pins to memory: ${String(err)}`)
+    reply(false, saved, String((err as Error)?.message ?? err).slice(0, 200))
+  }
+}
+
 spindle.onFrontendMessage(async (raw, userId) => {
   const tm = raw as { type?: string; spec?: unknown }
   if (tm?.type === 'ui_theme') return queueTheme(userId, tm.spec ? cleanSpec(tm.spec) : null)
+  if (tm?.type === 'pin_memory') return void (await pinsToMemory(raw as { req?: unknown; chatId?: unknown; items?: unknown }, userId))
   const vm = raw as { type?: string; req?: number; names?: unknown; name?: unknown; data?: unknown }
   if (vm?.type === 'vault_load' && typeof vm.req === 'number') return void (await vaultLoad(vm.req, vm.names, userId))
   if (vm?.type === 'vault_save') return vaultSave(vm.name, vm.data, userId)

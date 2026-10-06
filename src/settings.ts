@@ -38,7 +38,7 @@ export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'come
 export const SCENES: readonly Scene[] = ['off', 'snow', 'rain', 'embers', 'fireflies', 'petals', 'stars']
 export const LIGHTS: readonly Light[] = ['none', 'dawn', 'day', 'dusk', 'night', 'candle', 'storm', 'neon']
 /** Interface sounds that can be replaced with the user's own files. */
-export const UI_SOUNDS = ['send', 'receive', 'fanfare', 'achievement', 'sparkle'] as const
+export const UI_SOUNDS = ['send', 'receive', 'fanfare', 'achievement', 'sparkle', 'key'] as const
 /** Every place a custom sound file can be assigned. */
 export const SOUND_SLOTS: readonly string[] = [
   'always',
@@ -125,6 +125,30 @@ export interface FlairSettings {
   soundWidgetPos: { x: number; y: number } | null
   /** The floating volume control as a small button (true) or the full pill (false). null: a button on touch screens, the pill elsewhere. */
   soundWidgetCollapsed: boolean | null
+  // v1.4 — pinned moments
+  /** Also save each pin to Lumiverse's memory (a short fact on the speaker). Needs the `memories` permission. */
+  pinMemory: boolean
+  // v1.4 — typewriter pacing
+  /** Reveal a streaming reply at a steady pace instead of in bursts. */
+  typewriter: boolean
+  /** Characters a second (10 – 120). */
+  typewriterCps: number
+  /** Soft key sounds while it types (needs interface sounds on). */
+  typewriterSound: boolean
+  // v1.4 — theater mode
+  /** Text size in theater mode, as a multiple of the normal chat text (1 – 2.2). */
+  theaterScale: number
+  /** Auto-scroll speed level, 1 – 8. */
+  theaterSpeed: number
+  /** Start the gentle auto-scroll when theater mode opens (never when motion is reduced). */
+  theaterScroll: boolean
+  // v1.4 — character intro
+  /** Opening a chat plays a short name card in the character's aura colour. */
+  intro: boolean
+  /** Group chats: a chip names whoever is speaking, in their own colour, and the other messages dim while they talk. */
+  introGroup: boolean
+  /** Library sound played with the name card ('' = none). Part of a character's profile when they have one. */
+  introSound: string
   soundUnfocused: SoundUnfocused
   soundUnfocusedLevel: number // 0.05 – 0.8, share of the volume kept when dimmed
   /** slot (see SOUND_SLOTS) → id of a file in this browser's sound library */
@@ -182,6 +206,7 @@ export const LOOK_KEYS = [
   'swipeTransition',
   'lightDefault',
   'textFxOff',
+  'introSound',
 ] as const satisfies readonly (keyof FlairSettings)[]
 
 export type LookKey = (typeof LOOK_KEYS)[number]
@@ -251,6 +276,16 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   soundWidget: false,
   soundWidgetPos: null,
   soundWidgetCollapsed: null,
+  pinMemory: false,
+  typewriter: false,
+  typewriterCps: 40,
+  typewriterSound: true,
+  theaterScale: 1.35,
+  theaterSpeed: 3,
+  theaterScroll: true,
+  intro: true,
+  introGroup: true,
+  introSound: '',
   soundUnfocused: 'keep',
   soundUnfocusedLevel: 0.3,
   customSounds: {},
@@ -286,11 +321,14 @@ function pick<T extends string>(v: unknown, allowed: readonly T[], fallback: T):
   return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback
 }
 
+/** A file in the sound library (see soundlib.ts newId). */
+const SOUND_ID = /^snd_[a-z0-9]{4,40}$/
+
 function soundSlots(v: unknown): Record<string, string> {
   const out: Record<string, string> = {}
   if (!v || typeof v !== 'object') return out
   for (const [k, id] of Object.entries(v as Record<string, unknown>)) {
-    if (SOUND_SLOTS.includes(k) && typeof id === 'string' && /^snd_[a-z0-9]{4,40}$/.test(id)) out[k] = id
+    if (SOUND_SLOTS.includes(k) && typeof id === 'string' && SOUND_ID.test(id)) out[k] = id
   }
   return out
 }
@@ -403,6 +441,16 @@ export function normalize(raw: unknown): FlairSettings {
     soundWidget: bool(r.soundWidget, d.soundWidget),
     soundWidgetPos: point(r.soundWidgetPos),
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === 'boolean' ? r.soundWidgetCollapsed : null,
+    pinMemory: bool(r.pinMemory, d.pinMemory),
+    typewriter: bool(r.typewriter, d.typewriter),
+    typewriterCps: Math.round(clamp(r.typewriterCps, 10, 120, d.typewriterCps)),
+    typewriterSound: bool(r.typewriterSound, d.typewriterSound),
+    theaterScale: clamp(r.theaterScale, 1, 2.2, d.theaterScale),
+    theaterSpeed: Math.round(clamp(r.theaterSpeed, 1, 8, d.theaterSpeed)),
+    theaterScroll: bool(r.theaterScroll, d.theaterScroll),
+    intro: bool(r.intro, d.intro),
+    introGroup: bool(r.introGroup, d.introGroup),
+    introSound: typeof r.introSound === 'string' && SOUND_ID.test(r.introSound) ? r.introSound : '',
     soundUnfocused: pick(r.soundUnfocused, ['keep', 'dim', 'mute'], d.soundUnfocused),
     soundUnfocusedLevel: clamp(r.soundUnfocusedLevel, 0.05, 0.8, d.soundUnfocusedLevel),
     customSounds: soundSlots(r.customSounds),

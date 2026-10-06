@@ -26,7 +26,7 @@ The tests print what they observe rather than asserting it. **Read the output.**
 
 1. **Bump the version on every change you want Ash to test.** Lumiverse caches the frontend bundle by `identifier:version`, so a reused version silently serves old code.
    - The version lives in three places: `spindle.json`, `package.json` and `VERSION` in `src/backend.ts`.
-   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1. Public is 1.3.1 (the "v1.3" release, tag `v1.3.1`). For the next work, use fresh versions such as 1.3.2, 1.3.3 and so on, and bump each time Ash tests (the public release can still take whichever number Ash picks).
+   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1, 1.4.0, 1.4.1, 1.4.2, 1.4.3, 1.4.4, 1.4.5, 1.4.6, 1.4.7, 1.4.8, 1.4.9, 1.4.10, 1.4.11. Public is 1.4.11 (the "v1.4" release, tag `v1.4.11`; v1.3 was 1.3.1). Next work uses fresh versions: 1.4.12 or 1.5.0 next, bumping each time Ash tests (the public release can still take whichever number Ash picks).
    - After installing, Ash presses **Ctrl+Shift+R**.
 2. **`dist/` is committed.** Lumiverse installs straight from GitHub without building. Always rebuild before committing.
 3. **Backend install scanner.** `dist/backend.js` must not contain the following (check with grep before every release):
@@ -53,7 +53,7 @@ The tests print what they observe rather than asserting it. **Read the output.**
     - In Skia, one ellipse per path beats one huge batched path, and an offscreen-canvas composite cost about 8 ms per frame.
     - Battery saver (`perf.ts`) must be able to tone effects down.
 11. **Features that spend the user's tokens or credits** (extra LLM calls, image generation) must be opt-in and say so in the UI.
-12. **Permissions are optional and live.** Declared: `interceptor`, `app_manipulation` and `ui_panels`.
+12. **Permissions are optional and live.** Declared: `interceptor`, `app_manipulation`, `ui_panels` and `memories`.
     - Request a permission only when the user turns on the feature that needs it (`ctx.permissions.request`).
     - Degrade gracefully when it's missing.
     - The frontend has no permission-change event, so re-check with `getGranted()`.
