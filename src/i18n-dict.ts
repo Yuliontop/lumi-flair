@@ -389,6 +389,13 @@ const T: Record<string, Row> = {
   'Petal Storm ✦': ['花瓣风暴 ✦', '花瓣風暴 ✦', '花吹雪 ✦', 'Tempête de pétales ✦', 'Tempesta di petali ✦'],
   'Overkill: blossoms burst from the button and a gale sweeps them across the screen': ['极致特效：花瓣从按钮迸出，狂风将它们卷过整个屏幕', '極致特效：花瓣從按鈕迸出，狂風將它們捲過整個螢幕', '派手モード：ボタンから花びらが舞い上がり、突風が画面いっぱいに吹き抜ける', 'Démesuré : des pétales jaillissent du bouton et une rafale les emporte sur tout l’écran', 'Esagerato: i petali esplodono dal pulsante e una raffica li spazza su tutto lo schermo'],
 
+  // Cursor trail
+  'Trail length': ['拖尾长度', '拖尾長度', '軌跡の長さ', 'Longueur de la traînée', 'Lunghezza della scia'],
+  'Cursor trail': ['光标拖尾', '游標拖尾', 'カーソルの軌跡', 'Traînée du curseur', 'Scia del cursore'],
+  'Black Hole': ['黑洞', '黑洞', 'ブラックホール', 'Trou noir', 'Buco nero'],
+  'Petal Storm': ['花瓣风暴', '花瓣風暴', '花吹雪', 'Tempête de pétales', 'Tempesta di petali'],
+  'The trail follows your mouse pointer, so it doesn’t show on a touch screen.': ['拖尾跟随鼠标指针，因此在触摸屏上不会显示。', '拖尾跟隨滑鼠指標，因此在觸控螢幕上不會顯示。', '軌跡はマウスポインターを追うため、タッチ画面では表示されません。', 'La traînée suit le pointeur de la souris : elle n’apparaît pas sur un écran tactile.', 'La scia segue il puntatore del mouse, quindi non appare su un touch screen.'],
+
   // Splash send effect
   'Splash': ['水花', '水花', 'スプラッシュ', 'Éclaboussure', 'Spruzzo'],
   'A hose-like gush of clear water bursts out and breaks into spray': ['一股如水管般的清水喷涌而出，散成水雾', '一股如水管般的清水噴湧而出，散成水霧', 'ホースのような澄んだ水が勢いよく噴き出し、しぶきになって散る', 'Un jet d’eau claire jaillit comme d’un tuyau et se brise en embruns', 'Un getto d’acqua limpida sgorga come da un tubo e si rompe in spruzzi'],

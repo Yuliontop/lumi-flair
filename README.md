@@ -33,6 +33,7 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | Feature | What it does |
 |---|---|
 | **Send effects** | Sparkle, ripple, comet, confetti or **Creamy** (a whale-spout of white cream that erupts and rains back down), **Splash** (a hose-like gush of clear water that tears into big clumps and thins into spray, rippling where it lands) from the send button. For an overkill experience: **Black Hole ✦** (a singularity swallows the screen, collapses to a white dot and detonates) and **Petal Storm ✦** (a full-screen gale of blossoms). Your message pops in, and the AI's reply blooms when it finishes |
+| **Cursor trail** | A trail follows your mouse around Lumiverse, themed on the send effects: **Splash**, **Creamy**, **Petal Storm**, **Black Hole**, **Comet** or **Confetti**, in your theme colour. A slider sets how long it lingers. Mouse only, off by default |
 | **Hover glow** | A soft glow, neon edge or a light that runs around the message border, plus a breathing aura while the AI writes. On touch screens, **Tap glow** does the same |
 | **Mood-reactive glow** | The glow follows the character's expression: red for anger, gold for joy, blue for sadness, and so on. The colours are yours to edit |
 | **Character auras** | Each character's messages take a signature colour sampled from their avatar, which is great in group chats |
@@ -178,6 +179,10 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.5.0 (release v1.5):** Cursor trails.
+  - **Cursor trail:** a trail follows your mouse pointer anywhere in Lumiverse, in six themes taken from the send effects: Splash (water droplets that splash and fall), Creamy (drips of cream), Petal Storm (sakura petals drifting off on the wind), Black Hole (motes that spiral into where the pointer just was), Comet (a glowing tail of sparks) and Confetti (tiny paper pieces). It takes your theme colour. Set it under **When you send → Cursor trail**; off by default.
+  - **Trail length:** a slider right below it (0.25–2×) sets how long the trail lingers.
+  - Mouse only (a touch screen has no pointer to follow). It respects reduced motion, never flickers (safe with No flashing), draws fewer particles in battery saver, and does no work while the mouse is still.
 - **1.4.12:** Moment Card portraits fit properly.
   - The round portrait is always fully covered, whatever the picture's shape (pictures that weren't tall enough used to leave a gap at the top).
   - For the open character's messages it uses their square avatar crop when they have one (the image Lumiverse shows in round avatar spots), so a full-scene avatar isn't squeezed into the circle. The full picture still makes the blurred background.

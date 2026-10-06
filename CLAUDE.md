@@ -19,15 +19,18 @@ Read `docs/DEVELOPMENT.md` before changing code, and `docs/ROADMAP.md` for what'
 | All tests | `python dev/run.py` (needs `pip install playwright pillow` and `python -m playwright install chromium`) |
 | One test or tool | `python dev/run.py test_custom_sounds.py` · `python dev/run.py effect_frames.py blackhole` · `python dev/run.py bench.py splash` |
 | Audio fixtures (once) | `python dev/make_fixtures.py` |
+| Copy into Ash's local install | `python dev/deploy_local.py` (a full `python dev/run.py` that passes does this itself) |
 
 The tests print what they observe rather than asserting it. **Read the output.** `dev/run.py` only flags crashes and non-empty `errors [...]` lines. `dev/README.md` lists what each test covers.
 
 ## Rules that bite (each one learned the hard way)
 
-1. **Bump the version on every change you want Ash to test.** Lumiverse caches the frontend bundle by `identifier:version`, so a reused version silently serves old code.
+1. **Versions.** Lumiverse now keys the frontend bundle cache on the bundle's size and mtime (`getFrontendBundleCacheKey` in Lumiverse's `src/spindle/manager.service.ts`), so a rebuilt bundle is picked up under the same version. Older hosts cached by `identifier:version`.
+   - **Ash's naming:** work toward a release stays on that release's version (all of v1.5 work is 1.5.0); don't bump to 1.5.1 etc. for each test round unless Ash asks.
    - The version lives in three places: `spindle.json`, `package.json` and `VERSION` in `src/backend.ts`.
-   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1, 1.4.0, 1.4.1, 1.4.2, 1.4.3, 1.4.4, 1.4.5, 1.4.6, 1.4.7, 1.4.8, 1.4.9, 1.4.10, 1.4.11, 1.4.12. Public is 1.4.12 (tag `v1.4.12`, a fix on top of the "v1.4" release, 1.4.11; v1.3 was 1.3.1). Next work uses fresh versions: 1.4.13 or 1.5.0 next, bumping each time Ash tests (the public release can still take whichever number Ash picks).
+   - Versions installed so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1, 1.4.0, 1.4.1, 1.4.2, 1.4.3, 1.4.4, 1.4.5, 1.4.6, 1.4.7, 1.4.8, 1.4.9, 1.4.10, 1.4.11, 1.4.12, 1.5.0. Public is 1.5.0 (tag `v1.5.0`, the "v1.5" release: cursor trail). v1.4 was 1.4.11 plus the 1.4.12 fix; v1.3 was 1.3.1. Tags are `vX.Y.Z`; release titles say "vX.Y".
    - After installing, Ash presses **Ctrl+Shift+R**.
+   - **Deploy automatically.** When a feature or fix is done (built, tests green), run `python dev/deploy_local.py` without being asked; a full passing `python dev/run.py` already does. Ash tests from that folder and doesn't want to copy by hand.
 2. **`dist/` is committed.** Lumiverse installs straight from GitHub without building. Always rebuild before committing.
 3. **Backend install scanner.** `dist/backend.js` must not contain the following (check with grep before every release):
    - `eval(`, `Function(` / `new Function(`

@@ -107,6 +107,7 @@ function cueName(raw) {
 // src/settings.ts
 var MAX_CUSTOM_PACKS = 24;
 var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
+var CURSOR_TRAILS = ["splash", "creamy", "petalstorm", "blackhole", "comet", "confetti", "none"];
 var BURST_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm"];
 var SCENES = ["off", "snow", "rain", "embers", "fireflies", "petals", "stars"];
 var LIGHTS = ["none", "dawn", "day", "dusk", "night", "candle", "storm", "neon"];
@@ -163,6 +164,8 @@ var DEFAULT_SETTINGS = {
   respectReducedMotion: true,
   sendEffect: "sparkle",
   sendIntensity: 1,
+  cursorTrail: "none",
+  trailLength: 1,
   userEntrance: "pop",
   characterEntrance: "bloom",
   hoverStyle: "trace",
@@ -321,6 +324,8 @@ function normalize(raw) {
     respectReducedMotion: bool(r.respectReducedMotion, d.respectReducedMotion),
     sendEffect: pick(r.sendEffect, SEND_EFFECTS, d.sendEffect),
     sendIntensity: clamp(r.sendIntensity, 0.25, 2, d.sendIntensity),
+    cursorTrail: pick(r.cursorTrail, CURSOR_TRAILS, d.cursorTrail),
+    trailLength: clamp(r.trailLength, 0.25, 2, d.trailLength),
     userEntrance: pick(r.userEntrance, ["pop", "rise", "none"], d.userEntrance),
     characterEntrance: pick(r.characterEntrance, ["bloom", "none"], d.characterEntrance),
     hoverStyle: pick(r.hoverStyle, ["glow", "trace", "neon", "none"], d.hoverStyle),
@@ -964,6 +969,9 @@ class FxCanvas {
   get width() {
     return this.rect.width;
   }
+  get idle() {
+    return !this.raf;
+  }
   spawn(list) {
     this.particles.push(...list);
     if (!this.raf) {
@@ -1014,6 +1022,13 @@ class FxCanvas {
       return stepHole(p, p.hole, dt);
     if (p.kind === "petal" && p.petal)
       return stepPetal(p, p.petal, dt);
+    if (p.kind === "mote" && p.to) {
+      const r = (p.maxR ?? 0) * Math.pow(1 - p.age / p.life, 1.5);
+      const a = p.rot + p.vr * p.age;
+      p.x = p.to.x + Math.cos(a) * r;
+      p.y = p.to.y + Math.sin(a) * r;
+      return;
+    }
     if (p.kind === "head" && p.from && p.to) {
       const t = easeOutCubic(Math.min(1, p.age / p.life));
       const bow = Math.sin(t * Math.PI) * p.vx;
@@ -1035,7 +1050,8 @@ class FxCanvas {
     const t = p.age / p.life;
     const fade = t < 0.15 ? t / 0.15 : 1 - Math.max(0, (t - 0.55) / 0.45);
     switch (p.kind) {
-      case "dot": {
+      case "dot":
+      case "mote": {
         g.globalCompositeOperation = "lighter";
         g.globalAlpha = fade;
         g.fillStyle = p.color;
@@ -2168,6 +2184,59 @@ function playSendEffect(fx, effect, originClient, color, intensity, opts = {}) {
       fx.spawn(petalStorm(o, color, k, fx));
       break;
   }
+}
+var WATER = ["rgb(150, 210, 255)", "rgb(100, 180, 250)", "#e2f5ff"];
+function playTrail(fx, trail, client, v, color, saver, length = 1) {
+  if (trail === "none")
+    return;
+  if (fx.idle)
+    fx.prepare();
+  const o = fx.local(client);
+  const n = saver ? 1 : 2;
+  const out = [];
+  for (let i = 0;i < n; i++) {
+    const x = o.x + rand(-3, 3), y = o.y + rand(-3, 3);
+    switch (trail) {
+      case "splash":
+        out.push(base({ kind: "dot", x, y, vx: -v.x * 0.1 + rand(-50, 50), vy: rand(-140, -30), gravity: 900, drag: 0.5, life: rand(0.4, 0.7), size: rand(2, 3.4), color: WATER[i % WATER.length] }));
+        break;
+      case "creamy":
+        out.push(base({ kind: "dot", x, y, vx: rand(-15, 15), vy: rand(0, 40), gravity: 520, drag: 0.3, life: rand(0.6, 0.9), size: rand(2.5, 4.5), color: Math.random() < 0.7 ? "#fffaf0" : rgba(lighten(color, 0.82), 1) }));
+        break;
+      case "comet":
+        out.push(base({ kind: "dot", x, y, vx: -v.x * 0.15 + rand(-20, 20), vy: -v.y * 0.15 + rand(-20, 20), gravity: 60, drag: 0.3, life: rand(0.45, 0.75), size: rand(1.8, 3.4), color: i ? "rgba(255, 255, 255, 0.95)" : rgba(lighten(color, 0.2), 1) }));
+        break;
+      case "confetti": {
+        const pal = paletteFrom(color);
+        out.push(base({ kind: "rect", x, y, vx: rand(-80, 80), vy: rand(-160, -60), gravity: 700, drag: 0.4, life: rand(0.9, 1.3), size: rand(2, 3.5), rot: rand(0, Math.PI * 2), vr: rand(-10, 10), color: pal[Math.floor(Math.random() * pal.length)] }));
+        break;
+      }
+      case "petalstorm":
+        out.push(base({
+          kind: "petal",
+          x,
+          y,
+          vx: rand(-40, 40),
+          vy: rand(-30, 10),
+          gravity: 40,
+          life: rand(1.2, 1.8),
+          size: rand(4, 7),
+          rot: rand(0, Math.PI * 2),
+          vr: rand(-4, 4),
+          color: Math.random() < 0.2 ? rgba(lighten(color, 0.55), 1) : SAKURA[Math.floor(Math.random() * SAKURA.length)],
+          petal: { tvx: rand(-140, -60), tvy: rand(20, 60), windK: 1.5, ramp: 0.4, freq: rand(3, 6), amp: rand(30, 60), phase: rand(0, 6.3), flip: rand(0, 6.3), color2: "rgba(255, 120, 165, 1)" }
+        }));
+        break;
+      case "blackhole": {
+        const pal = paletteFrom(color);
+        out.push(base({ kind: "mote", x, y, to: { ...o }, maxR: rand(14, 28), rot: rand(0, Math.PI * 2), vr: rand(5, 8), life: rand(0.5, 0.8), size: rand(1.6, 3), color: Math.random() < 0.35 ? rgba(lighten(color, 0.75), 1) : pal[i % pal.length] }));
+        break;
+      }
+    }
+  }
+  for (const p of out)
+    p.life *= length;
+  fx.spawn(out);
 }
 
 // src/ambient.ts
@@ -4399,6 +4468,11 @@ var T = {
   "Overkill: a singularity swallows everything, collapses to a white dot, then detonates": ["极致特效：奇点吞噬一切，坍缩成一个白点，然后爆炸", "極致特效：奇點吞噬一切，坍縮成一個白點，然後爆炸", "派手モード：特異点がすべてを飲み込み、白い点に縮んでから爆発する", "Démesuré : une singularité avale tout, s’effondre en un point blanc, puis explose", "Esagerato: una singolarità inghiotte tutto, collassa in un punto bianco, poi esplode"],
   "Petal Storm ✦": ["花瓣风暴 ✦", "花瓣風暴 ✦", "花吹雪 ✦", "Tempête de pétales ✦", "Tempesta di petali ✦"],
   "Overkill: blossoms burst from the button and a gale sweeps them across the screen": ["极致特效：花瓣从按钮迸出，狂风将它们卷过整个屏幕", "極致特效：花瓣從按鈕迸出，狂風將它們捲過整個螢幕", "派手モード：ボタンから花びらが舞い上がり、突風が画面いっぱいに吹き抜ける", "Démesuré : des pétales jaillissent du bouton et une rafale les emporte sur tout l’écran", "Esagerato: i petali esplodono dal pulsante e una raffica li spazza su tutto lo schermo"],
+  "Trail length": ["拖尾长度", "拖尾長度", "軌跡の長さ", "Longueur de la traînée", "Lunghezza della scia"],
+  "Cursor trail": ["光标拖尾", "游標拖尾", "カーソルの軌跡", "Traînée du curseur", "Scia del cursore"],
+  "Black Hole": ["黑洞", "黑洞", "ブラックホール", "Trou noir", "Buco nero"],
+  "Petal Storm": ["花瓣风暴", "花瓣風暴", "花吹雪", "Tempête de pétales", "Tempesta di petali"],
+  "The trail follows your mouse pointer, so it doesn’t show on a touch screen.": ["拖尾跟随鼠标指针，因此在触摸屏上不会显示。", "拖尾跟隨滑鼠指標，因此在觸控螢幕上不會顯示。", "軌跡はマウスポインターを追うため、タッチ画面では表示されません。", "La traînée suit le pointeur de la souris : elle n’apparaît pas sur un écran tactile.", "La scia segue il puntatore del mouse, quindi non appare su un touch screen."],
   Splash: ["水花", "水花", "スプラッシュ", "Éclaboussure", "Spruzzo"],
   "A hose-like gush of clear water bursts out and breaks into spray": ["一股如水管般的清水喷涌而出，散成水雾", "一股如水管般的清水噴湧而出，散成水霧", "ホースのような澄んだ水が勢いよく噴き出し、しぶきになって散る", "Un jet d’eau claire jaillit comme d’un tuyau et se brise en embruns", "Un getto d’acqua limpida sgorga come da un tubo e si rompe in spruzzi"],
   "Floating volume widget": ["悬浮音量小组件", "懸浮音量小工具", "フローティング音量ウィジェット", "Widget de volume flottant", "Widget volume fluttuante"],
@@ -8369,6 +8443,17 @@ function mountPanel(ctx, store, actions) {
     { value: "none", label: "None" }
   ]);
   slider(send.body, "Intensity", "sendIntensity", 0.25, 2, 0.05, { suffix: "×" });
+  select(send.body, "Cursor trail", "cursorTrail", [
+    { value: "none", label: "None" },
+    { value: "splash", label: "Splash" },
+    { value: "creamy", label: "Creamy" },
+    { value: "petalstorm", label: "Petal Storm" },
+    { value: "blackhole", label: "Black Hole" },
+    { value: "comet", label: "Comet" },
+    { value: "confetti", label: "Confetti" }
+  ]);
+  slider(send.body, "Trail length", "trailLength", 0.25, 2, 0.05, { suffix: "×" });
+  hint(send.body, "The trail follows your mouse pointer, so it doesn’t show on a touch screen.");
   select(send.body, "Your new message", "userEntrance", [
     { value: "pop", label: "Pop + glow flash" },
     { value: "rise", label: "Rise in" },
@@ -11060,6 +11145,24 @@ function setup(ctx) {
   };
   document.addEventListener("pointerdown", onTap, { capture: true, passive: true });
   disposers.push(() => document.removeEventListener("pointerdown", onTap, { capture: true }));
+  let trail = { t: 0, x: 0, y: 0 };
+  let trailColor = { at: -1e9, rgb: { r: 0, g: 0, b: 0 } };
+  const onTrail = (e) => {
+    const s = store.get();
+    if (e.pointerType !== "mouse" || !s.enabled || s.cursorTrail === "none" || !motionAllowed())
+      return;
+    const dt = e.timeStamp - trail.t;
+    const dx = e.clientX - trail.x, dy = e.clientY - trail.y;
+    if (dt < 16 || dx * dx + dy * dy < 16)
+      return;
+    const v = dt < 120 ? { x: dx / dt * 1000, y: dy / dt * 1000 } : { x: 0, y: 0 };
+    trail = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+    if (e.timeStamp - trailColor.at > 1000)
+      trailColor = { at: e.timeStamp, rgb: accentColor() };
+    playTrail(fx, s.cursorTrail, { x: e.clientX, y: e.clientY }, v, trailColor.rgb, state.saver, s.trailLength);
+  };
+  document.addEventListener("pointermove", onTrail, { capture: true, passive: true });
+  disposers.push(() => document.removeEventListener("pointermove", onTrail, { capture: true }));
   async function portraitFor(card, avatarSrc) {
     if (!card || !avatarSrc || card.dataset.part === "user" || !state.characterId || isGroupChat())
       return null;

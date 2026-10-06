@@ -8,6 +8,7 @@ Needs the mock server running:  python -m http.server 8765 -d dev/mock
 (override the address with LF_BASE=http://host:port)
 """
 import os, re, subprocess, sys
+sys.stdout.reconfigure(encoding='utf-8')  # the tests print arrows; cp1252 can't when the output goes to a file
 
 DEV = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(DEV, 'out')
@@ -42,4 +43,8 @@ for job in jobs:
     if bad:
         failed.append(name)
 print('\n' + ('All passed.' if not failed else f'FAILED: {", ".join(failed)}'))
+# A full run that passed goes straight into the local Lumiverse install.
+if not failed and len(sys.argv) == 1:
+    from deploy_local import deploy
+    deploy()
 sys.exit(1 if failed else 0)

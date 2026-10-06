@@ -920,6 +920,17 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     { value: 'none', label: 'None' },
   ])
   slider(send.body, 'Intensity', 'sendIntensity', 0.25, 2, 0.05, { suffix: '×' })
+  select(send.body, 'Cursor trail', 'cursorTrail', [
+    { value: 'none', label: 'None' },
+    { value: 'splash', label: 'Splash' },
+    { value: 'creamy', label: 'Creamy' },
+    { value: 'petalstorm', label: 'Petal Storm' },
+    { value: 'blackhole', label: 'Black Hole' },
+    { value: 'comet', label: 'Comet' },
+    { value: 'confetti', label: 'Confetti' },
+  ])
+  slider(send.body, 'Trail length', 'trailLength', 0.25, 2, 0.05, { suffix: '×' })
+  hint(send.body, 'The trail follows your mouse pointer, so it doesn’t show on a touch screen.')
   select(send.body, 'Your new message', 'userEntrance', [
     { value: 'pop', label: 'Pop + glow flash' },
     { value: 'rise', label: 'Rise in' },

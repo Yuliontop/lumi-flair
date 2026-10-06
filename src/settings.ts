@@ -3,6 +3,8 @@ import { SFX_CUES } from './sfx-cues'
 
 export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'splash' | 'blackhole' | 'petalstorm' | 'none'
 export type BurstEffect = Exclude<SendEffect, 'none'>
+/** A trail behind the mouse pointer, themed on a send effect. */
+export type CursorTrail = 'splash' | 'creamy' | 'petalstorm' | 'blackhole' | 'comet' | 'confetti' | 'none'
 export type UserEntrance = 'pop' | 'rise' | 'none'
 export type CharacterEntrance = 'bloom' | 'none'
 export type HoverStyle = 'glow' | 'trace' | 'neon' | 'none'
@@ -34,6 +36,7 @@ export type TextFxFrequency = 'every' | 'often' | 'sparing'
 export type Light = 'none' | 'dawn' | 'day' | 'dusk' | 'night' | 'candle' | 'storm' | 'neon'
 
 export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm', 'none']
+export const CURSOR_TRAILS: readonly CursorTrail[] = ['splash', 'creamy', 'petalstorm', 'blackhole', 'comet', 'confetti', 'none']
 export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm']
 export const SCENES: readonly Scene[] = ['off', 'snow', 'rain', 'embers', 'fireflies', 'petals', 'stars']
 export const LIGHTS: readonly Light[] = ['none', 'dawn', 'day', 'dusk', 'night', 'candle', 'storm', 'neon']
@@ -55,6 +58,8 @@ export interface FlairSettings {
   // Send / entrances
   sendEffect: SendEffect
   sendIntensity: number // 0.25 – 2
+  cursorTrail: CursorTrail
+  trailLength: number // 0.25 – 2, how long trail particles live
   userEntrance: UserEntrance
   characterEntrance: CharacterEntrance
 
@@ -235,6 +240,8 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   respectReducedMotion: true,
   sendEffect: 'sparkle',
   sendIntensity: 1,
+  cursorTrail: 'none',
+  trailLength: 1,
   userEntrance: 'pop',
   characterEntrance: 'bloom',
   hoverStyle: 'trace',
@@ -398,6 +405,8 @@ export function normalize(raw: unknown): FlairSettings {
     respectReducedMotion: bool(r.respectReducedMotion, d.respectReducedMotion),
     sendEffect: pick(r.sendEffect, SEND_EFFECTS, d.sendEffect),
     sendIntensity: clamp(r.sendIntensity, 0.25, 2, d.sendIntensity),
+    cursorTrail: pick(r.cursorTrail, CURSOR_TRAILS, d.cursorTrail),
+    trailLength: clamp(r.trailLength, 0.25, 2, d.trailLength),
     userEntrance: pick(r.userEntrance, ['pop', 'rise', 'none'], d.userEntrance),
     characterEntrance: pick(r.characterEntrance, ['bloom', 'none'], d.characterEntrance),
     hoverStyle: pick(r.hoverStyle, ['glow', 'trace', 'neon', 'none'], d.hoverStyle),

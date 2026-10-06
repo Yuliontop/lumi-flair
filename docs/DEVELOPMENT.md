@@ -21,7 +21,7 @@ The frontend talks to the backend with `ctx.sendToBackend` / `ctx.onBackendMessa
 | `settings.ts` | `FlairSettings`, defaults, `normalize()` (every stored field is validated), the store with per-character profiles, `SOUND_SLOTS` |
 | `persist.ts` | Auto-save vault: Lumiverse account settings (`flair:*` keys), a backend file, and a browser fallback. Backup and restore. It refuses to save before `loadAll()` has read every layer |
 | `panel.ts` | The "Flair" drawer tab, built from `ctx.components.*` |
-| `effects.ts` | Canvas particle engine (`FxCanvas`) and every send-effect recipe: sparkle, ripple, comet, confetti, creamy, splash, black hole, petal storm |
+| `effects.ts` | Canvas particle engine (`FxCanvas`) and every send-effect recipe: sparkle, ripple, comet, confetti, creamy, splash, black hole, petal storm. Also `playTrail`, the cursor trail's small per-move recipes |
 | `cinematic.ts` | Light tint, rays, vignette, grain, lightning, camera shake, the black-hole chat warp. The rays are a small image painted once per chat-area shape (`raysImage`), not a masked, filtered conic gradient; see "Phones" below |
 | `ambient.ts` | Scene particles (snow, rain, embers, fireflies, petals, stars) |
 | `soundscape.ts` | Procedural WebAudio beds per scene and light, the user's files layered in, the self-healing watchdog, background dim/mute |
@@ -112,9 +112,9 @@ The mock is not the real app. It has already missed one real-host problem: globa
 
 Ash tests through **Extensions → Import Local**, which uses a non-git copy at `<Lumiverse>/data/extensions/lumi_flair/repo/`.
 
-1. Bump the version.
-2. Build.
-3. Copy `dist/`, `src/`, `README.md` and `package.json` there, plus `spindle.json` with `"dev_mode": true` added.
+1. Build (the version stays the release's, e.g. 1.5.0 for all v1.5 work).
+2. Test.
+3. Run `python dev/deploy_local.py`: it copies `dist/`, `src/`, `README.md` and `package.json` there, plus `spindle.json` with `"dev_mode": true` added, and says when the version is unchanged (fine: Lumiverse keys its bundle cache on the file, not the version). A full `python dev/run.py` that passes runs it for you.
 4. Ash clicks **Update**, toggles the extension off and on, and presses **Ctrl+Shift+R**.
 
 Alternatively, point Import Local at this checkout directly. Then remember never to commit `dev_mode`.
@@ -139,6 +139,11 @@ Alternatively, point Import Local at this checkout directly. Then remember never
   - Floating volume widget (`ui_panels`).
   - Background dim/mute.
   - Splash (hose gush; `stepWater` / `drawWater`, single-Path2D rendering).
+- **v1.5 (released as 1.5.0, tag `v1.5.0`):** cursor trail.
+  - `cursorTrail` (`'none'` by default) and `trailLength` (0.25-2, multiplies each puff's life). A capture-phase `pointermove` listener in `frontend.ts` (mouse only, ≥16 ms and ≥4 px apart) calls `playTrail`, which spawns 1-2 small particles (1 in battery saver) on the send-effect canvas, so the trail adds no layer and no loop of its own: `FxCanvas` stops its frame loop when the last particle dies. The accent colour is read at most once a second (`getComputedStyle` forces a style pass).
+  - Themes reuse the send effects' particle kinds and palettes, scaled down. Black Hole adds one kind, `mote`, which spirals into a fixed point. No `star` particles: their twinkle is a flicker under No flashing.
+  - `test_cursor_trail.py`: every theme draws while moving and leaves the canvas cleared; the length slider changes how long it lingers; nothing for touch, trail off or reduced motion.
+  - Tooling in the same release: `dev/deploy_local.py` copies the build into Ash's Import Local folder, and a passing full `dev/run.py` calls it.
 - **v1.4 (released as 1.4.11, tag `v1.4.11`):** pinned moments first (1.4.0), then the character intro (1.4.2, 1.4.3), theater mode (1.4.4), QoL fixes (1.4.5-1.4.9) and typewriter pacing (1.4.10) (see ROADMAP).
   - Pinned moments (1.4.0, 1.4.1): a star in each message's action pill (and `Flair: Pin the latest message…`, and a panel button) pins the message, or the selected line if one is selected; stars on the heartbeat; the reel in the panel (jump, remove). Stored per chat in the new `moments` vault file (`VAULT_NAMES` and the backend's `VAULT_FILES`). Optional "Save pins to Lumiverse memory" (`pinMemory`, `memories` permission, backend `pinsToMemory`): see "Lumiverse's memory API" below. Ash chose this over a Flair prompt note because the sound effects already add tokens.
   - Typewriter pacing (1.4.10), `src/typewriter.ts`.

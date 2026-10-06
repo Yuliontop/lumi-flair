@@ -13,7 +13,7 @@ import {
   type Scene,
 } from './settings'
 import { buildCss, colorVarsCss, composerActiveCss, entranceRule, tapGlowRule, type CardAnimation } from './styles'
-import { FxCanvas, HOLE_TIMING, parseComputedColor, playBanner, playSendEffect, viewportCenter, type Point, type RGB } from './effects'
+import { FxCanvas, HOLE_TIMING, parseComputedColor, playBanner, playSendEffect, playTrail, viewportCenter, type Point, type RGB } from './effects'
 import { AmbientCanvas, sceneFromEntries } from './ambient'
 import { SoundBoard, type Chime } from './sound'
 import { SfxBoard } from './sfx'
@@ -1481,6 +1481,25 @@ export function setup(ctx: SpindleFrontendContext) {
   }
   document.addEventListener('pointerdown', onTap, { capture: true, passive: true })
   disposers.push(() => document.removeEventListener('pointerdown', onTap, { capture: true }))
+
+  // ── Cursor trail (mouse only: a touch screen has no cursor) ──
+  let trail = { t: 0, x: 0, y: 0 }
+  let trailColor = { at: -1e9, rgb: { r: 0, g: 0, b: 0 } }
+  const onTrail = (e: PointerEvent) => {
+    const s = store.get()
+    if (e.pointerType !== 'mouse' || !s.enabled || s.cursorTrail === 'none' || !motionAllowed()) return
+    const dt = e.timeStamp - trail.t
+    const dx = e.clientX - trail.x, dy = e.clientY - trail.y
+    // At most ~60 puffs a second, and only while the pointer actually moves.
+    if (dt < 16 || dx * dx + dy * dy < 16) return
+    const v = dt < 120 ? { x: (dx / dt) * 1000, y: (dy / dt) * 1000 } : { x: 0, y: 0 }
+    trail = { t: e.timeStamp, x: e.clientX, y: e.clientY }
+    // Reading the colour forces a style pass, so take it once a second, not on every move.
+    if (e.timeStamp - trailColor.at > 1000) trailColor = { at: e.timeStamp, rgb: accentColor() }
+    playTrail(fx, s.cursorTrail, { x: e.clientX, y: e.clientY }, v, trailColor.rgb, state.saver, s.trailLength)
+  }
+  document.addEventListener('pointermove', onTrail, { capture: true, passive: true })
+  disposers.push(() => document.removeEventListener('pointermove', onTrail, { capture: true }))
 
   // ── Moment Cards ──
   /**

@@ -6,7 +6,7 @@
  * rendered rect. That keeps effects lined up with the composer no matter what
  * Lumiverse UI Scale (CSS zoom on <body>) the user has picked.
  */
-import type { SendEffect } from './settings'
+import type { CursorTrail, SendEffect } from './settings'
 
 export interface RGB {
   r: number
@@ -19,7 +19,7 @@ export interface Point {
   y: number
 }
 
-type Kind = 'dot' | 'star' | 'rect' | 'ring' | 'head' | 'text' | 'stream' | 'singularity' | 'petal'
+type Kind = 'dot' | 'star' | 'rect' | 'ring' | 'head' | 'text' | 'stream' | 'singularity' | 'petal' | 'mote'
 
 /** One drop of liquid inside a 'stream' particle. */
 interface Drop {
@@ -235,6 +235,11 @@ export class FxCanvas {
     return this.rect.width
   }
 
+  /** No frame loop running (nothing on screen). */
+  get idle() {
+    return !this.raf
+  }
+
   spawn(list: Particle[]) {
     this.particles.push(...list)
     if (!this.raf) {
@@ -288,6 +293,14 @@ export class FxCanvas {
     if (p.kind === 'stream' && p.stream) return stepStream(p, p.stream, dt)
     if (p.kind === 'singularity' && p.hole) return stepHole(p, p.hole, dt)
     if (p.kind === 'petal' && p.petal) return stepPetal(p, p.petal, dt)
+    if (p.kind === 'mote' && p.to) {
+      // Spirals into `to`: radius maxR shrinks to 0 over its life while it turns.
+      const r = (p.maxR ?? 0) * Math.pow(1 - p.age / p.life, 1.5)
+      const a = p.rot + p.vr * p.age
+      p.x = p.to.x + Math.cos(a) * r
+      p.y = p.to.y + Math.sin(a) * r
+      return
+    }
     if (p.kind === 'head' && p.from && p.to) {
       const t = easeOutCubic(Math.min(1, p.age / p.life))
       // Gentle arc: bow sideways in the middle of the flight.
@@ -311,7 +324,8 @@ export class FxCanvas {
     const fade = t < 0.15 ? t / 0.15 : 1 - Math.max(0, (t - 0.55) / 0.45)
 
     switch (p.kind) {
-      case 'dot': {
+      case 'dot':
+      case 'mote': {
         g.globalCompositeOperation = 'lighter'
         g.globalAlpha = fade
         g.fillStyle = p.color
@@ -1546,4 +1560,53 @@ export function playSendEffect(
       fx.spawn(petalStorm(o, color, k, fx))
       break
   }
+}
+
+const WATER = ['rgb(150, 210, 255)', 'rgb(100, 180, 250)', '#e2f5ff']
+
+/**
+ * One step of the cursor trail: a few small particles where the mouse is (client coordinates), `v` is its speed in px/s.
+ * Each trail borrows its send effect's look at a fraction of the size. No stars: their twinkle would flicker under No flashing.
+ */
+export function playTrail(fx: FxCanvas, trail: CursorTrail, client: Point, v: Point, color: RGB, saver: boolean, length = 1) {
+  if (trail === 'none') return
+  if (fx.idle) fx.prepare()
+  const o = fx.local(client)
+  const n = saver ? 1 : 2
+  const out: Particle[] = []
+  for (let i = 0; i < n; i++) {
+    const x = o.x + rand(-3, 3), y = o.y + rand(-3, 3)
+    switch (trail) {
+      case 'splash':
+        out.push(base({ kind: 'dot', x, y, vx: -v.x * 0.1 + rand(-50, 50), vy: rand(-140, -30), gravity: 900, drag: 0.5, life: rand(0.4, 0.7), size: rand(2, 3.4), color: WATER[i % WATER.length] }))
+        break
+      case 'creamy':
+        out.push(base({ kind: 'dot', x, y, vx: rand(-15, 15), vy: rand(0, 40), gravity: 520, drag: 0.3, life: rand(0.6, 0.9), size: rand(2.5, 4.5), color: Math.random() < 0.7 ? '#fffaf0' : rgba(lighten(color, 0.82), 1) }))
+        break
+      case 'comet':
+        out.push(base({ kind: 'dot', x, y, vx: -v.x * 0.15 + rand(-20, 20), vy: -v.y * 0.15 + rand(-20, 20), gravity: 60, drag: 0.3, life: rand(0.45, 0.75), size: rand(1.8, 3.4), color: i ? 'rgba(255, 255, 255, 0.95)' : rgba(lighten(color, 0.2), 1) }))
+        break
+      case 'confetti': {
+        const pal = paletteFrom(color)
+        out.push(base({ kind: 'rect', x, y, vx: rand(-80, 80), vy: rand(-160, -60), gravity: 700, drag: 0.4, life: rand(0.9, 1.3), size: rand(2, 3.5), rot: rand(0, Math.PI * 2), vr: rand(-10, 10), color: pal[Math.floor(Math.random() * pal.length)] }))
+        break
+      }
+      case 'petalstorm':
+        out.push(base({
+          kind: 'petal', x, y, vx: rand(-40, 40), vy: rand(-30, 10), gravity: 40, life: rand(1.2, 1.8), size: rand(4, 7),
+          rot: rand(0, Math.PI * 2), vr: rand(-4, 4), color: Math.random() < 0.2 ? rgba(lighten(color, 0.55), 1) : SAKURA[Math.floor(Math.random() * SAKURA.length)],
+          petal: { tvx: rand(-140, -60), tvy: rand(20, 60), windK: 1.5, ramp: 0.4, freq: rand(3, 6), amp: rand(30, 60), phase: rand(0, 6.3), flip: rand(0, 6.3), color2: 'rgba(255, 120, 165, 1)' },
+        }))
+        break
+      case 'blackhole': {
+        // Motes spiral into the spot the cursor just left: a small accretion swirl.
+        const pal = paletteFrom(color)
+        out.push(base({ kind: 'mote', x, y, to: { ...o }, maxR: rand(14, 28), rot: rand(0, Math.PI * 2), vr: rand(5, 8), life: rand(0.5, 0.8), size: rand(1.6, 3), color: Math.random() < 0.35 ? rgba(lighten(color, 0.75), 1) : pal[i % pal.length] }))
+        break
+      }
+    }
+  }
+  // Trail length: how long each puff lives (a longer life draws a longer tail behind the pointer).
+  for (const p of out) p.life *= length
+  fx.spawn(out)
 }
