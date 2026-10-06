@@ -11,6 +11,8 @@ export interface MomentInput {
   name: string
   text: string
   avatarSrc: string | null
+  /** The character's own square crop for the round portrait, if they have one (else the avatar is fitted into the circle). */
+  portraitSrc?: string | null
   color: string // glow colour (#hex or any canvas colour)
   date: Date
 }
@@ -148,6 +150,7 @@ async function drawCard(m: MomentInput): Promise<{ canvas: HTMLCanvasElement; cu
   c.height = H
   const g = c.getContext('2d')!
   const avatar = m.avatarSrc ? await loadImage(m.avatarSrc) : null
+  const portrait = (m.portraitSrc ? await loadImage(m.portraitSrc) : null) ?? avatar
 
   // Backdrop: deep gradient, the avatar blurred behind everything, and two colour glows.
   const bg = g.createLinearGradient(0, 0, W, H)
@@ -198,9 +201,13 @@ async function drawCard(m: MomentInput): Promise<{ canvas: HTMLCanvasElement; cu
   g.beginPath()
   g.arc(ax, ay, ar, 0, Math.PI * 2)
   g.clip()
-  if (avatar) {
-    const s = Math.max((ar * 2) / avatar.width, (ar * 2) / avatar.height)
-    g.drawImage(avatar, ax - (avatar.width * s) / 2, ay - (avatar.height * s) / 3, avatar.width * s, avatar.height * s)
+  if (portrait) {
+    // Cover the circle completely, whatever the picture's shape: centred across, and on a tall picture a little
+    // towards the top, where the face usually is. (It used to shift by a third of the height, which left a gap
+    // at the top of the circle for pictures that weren't tall enough.)
+    const s = Math.max((ar * 2) / portrait.width, (ar * 2) / portrait.height)
+    const dw = portrait.width * s, dh = portrait.height * s
+    g.drawImage(portrait, ax - ar - (dw - ar * 2) / 2, ay - ar - (dh - ar * 2) * 0.25, dw, dh)
   } else {
     g.fillStyle = '#2a2140'
     g.fillRect(ax - ar, ay - ar, ar * 2, ar * 2)

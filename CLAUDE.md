@@ -26,7 +26,7 @@ The tests print what they observe rather than asserting it. **Read the output.**
 
 1. **Bump the version on every change you want Ash to test.** Lumiverse caches the frontend bundle by `identifier:version`, so a reused version silently serves old code.
    - The version lives in three places: `spindle.json`, `package.json` and `VERSION` in `src/backend.ts`.
-   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1, 1.4.0, 1.4.1, 1.4.2, 1.4.3, 1.4.4, 1.4.5, 1.4.6, 1.4.7, 1.4.8, 1.4.9, 1.4.10, 1.4.11. Public is 1.4.11 (the "v1.4" release, tag `v1.4.11`; v1.3 was 1.3.1). Next work uses fresh versions: 1.4.12 or 1.5.0 next, bumping each time Ash tests (the public release can still take whichever number Ash picks).
+   - Never reuse a version that was already installed locally. Used so far: 1.1.0–1.1.2, 1.2.0–1.2.3, 1.3.0, 1.3.1, 1.4.0, 1.4.1, 1.4.2, 1.4.3, 1.4.4, 1.4.5, 1.4.6, 1.4.7, 1.4.8, 1.4.9, 1.4.10, 1.4.11, 1.4.12. Public is 1.4.12 (tag `v1.4.12`, a fix on top of the "v1.4" release, 1.4.11; v1.3 was 1.3.1). Next work uses fresh versions: 1.4.13 or 1.5.0 next, bumping each time Ash tests (the public release can still take whichever number Ash picks).
    - After installing, Ash presses **Ctrl+Shift+R**.
 2. **`dist/` is committed.** Lumiverse installs straight from GitHub without building. Always rebuild before committing.
 3. **Backend install scanner.** `dist/backend.js` must not contain the following (check with grep before every release):

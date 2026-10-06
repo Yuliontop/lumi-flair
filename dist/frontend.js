@@ -6834,6 +6834,7 @@ async function drawCard(m) {
   c.height = H2;
   const g = c.getContext("2d");
   const avatar = m.avatarSrc ? await loadImage(m.avatarSrc) : null;
+  const portrait = (m.portraitSrc ? await loadImage(m.portraitSrc) : null) ?? avatar;
   const bg = g.createLinearGradient(0, 0, W2, H2);
   bg.addColorStop(0, "#0c0a14");
   bg.addColorStop(1, "#171126");
@@ -6877,9 +6878,10 @@ async function drawCard(m) {
   g.beginPath();
   g.arc(ax, ay, ar, 0, Math.PI * 2);
   g.clip();
-  if (avatar) {
-    const s = Math.max(ar * 2 / avatar.width, ar * 2 / avatar.height);
-    g.drawImage(avatar, ax - avatar.width * s / 2, ay - avatar.height * s / 3, avatar.width * s, avatar.height * s);
+  if (portrait) {
+    const s = Math.max(ar * 2 / portrait.width, ar * 2 / portrait.height);
+    const dw = portrait.width * s, dh = portrait.height * s;
+    g.drawImage(portrait, ax - ar - (dw - ar * 2) / 2, ay - ar - (dh - ar * 2) * 0.25, dw, dh);
   } else {
     g.fillStyle = "#2a2140";
     g.fillRect(ax - ar, ay - ar, ar * 2, ar * 2);
@@ -11058,6 +11060,21 @@ function setup(ctx) {
   };
   document.addEventListener("pointerdown", onTap, { capture: true, passive: true });
   disposers.push(() => document.removeEventListener("pointerdown", onTap, { capture: true }));
+  async function portraitFor(card, avatarSrc) {
+    if (!card || !avatarSrc || card.dataset.part === "user" || !state.characterId || isGroupChat())
+      return null;
+    if (!/\/images\/[^/?#]+/.test(avatarSrc))
+      return null;
+    try {
+      const c = await ctx.characters.get(state.characterId);
+      const crop = c?.extensions?.avatar_crop_image_id;
+      if (typeof crop !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(crop))
+        return null;
+      return avatarSrc.replace(/\/images\/[^/?#]+(\?[^#]*)?/, `/images/${crop}?size=lg`);
+    } catch {
+      return null;
+    }
+  }
   async function makeMoment(messageId, picked = null) {
     if (!messageId)
       return;
@@ -11076,8 +11093,9 @@ function setup(ctx) {
     if (!name)
       name = (card?.querySelector('[class*="_name_"]')?.textContent ?? "").trim() || (state.characterName ?? "Lumiverse");
     const avatarSrc = card?.querySelector("img[src]")?.getAttribute("src") ?? null;
+    const portraitSrc = await portraitFor(card, avatarSrc);
     const aura = auras.forMessage(messageId);
-    await showMomentCard(ctx, { name, text: plainText(text), avatarSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date }, () => unlock(["shutterbug"]), picked);
+    await showMomentCard(ctx, { name, text: plainText(text), avatarSrc, portraitSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date }, () => unlock(["shutterbug"]), picked);
   }
   function selectedIn(messageId) {
     const raw = selectionIn(messageId);

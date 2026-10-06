@@ -1483,6 +1483,24 @@ export function setup(ctx: SpindleFrontendContext) {
   disposers.push(() => document.removeEventListener('pointerdown', onTap, { capture: true }))
 
   // ── Moment Cards ──
+  /**
+   * The character's own square crop (Lumiverse keeps it as `extensions.avatar_crop_image_id`) for the Moment Card's
+   * round portrait. The message may show the full picture (the "full avatar" setting); a circle wants the crop.
+   * Only for the open character's own messages, and only when the avatar is one of Lumiverse's stored images.
+   */
+  async function portraitFor(card: HTMLElement | null, avatarSrc: string | null): Promise<string | null> {
+    if (!card || !avatarSrc || card.dataset.part === 'user' || !state.characterId || isGroupChat()) return null
+    if (!/\/images\/[^/?#]+/.test(avatarSrc)) return null
+    try {
+      const c = (await ctx.characters.get(state.characterId)) as { extensions?: Record<string, unknown> } | null
+      const crop = c?.extensions?.avatar_crop_image_id
+      if (typeof crop !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(crop)) return null
+      return avatarSrc.replace(/\/images\/[^/?#]+(\?[^#]*)?/, `/images/${crop}?size=lg`)
+    } catch {
+      return null
+    }
+  }
+
   /** `picked`: what was selected in the message when the button was pressed (the card starts with just that). */
   async function makeMoment(messageId: string | null, picked: string | null = null) {
     if (!messageId) return
@@ -1501,10 +1519,11 @@ export function setup(ctx: SpindleFrontendContext) {
     if (!text && card) text = (card.querySelector<HTMLElement>('[data-component="MessageContent"]') ?? card).innerText
     if (!name) name = (card?.querySelector('[class*="_name_"]')?.textContent ?? '').trim() || (state.characterName ?? 'Lumiverse')
     const avatarSrc = card?.querySelector('img[src]')?.getAttribute('src') ?? null
+    const portraitSrc = await portraitFor(card, avatarSrc)
     const aura = auras.forMessage(messageId)
     await showMomentCard(
       ctx,
-      { name, text: plainText(text), avatarSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date() },
+      { name, text: plainText(text), avatarSrc, portraitSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date() },
       () => unlock(['shutterbug']),
       picked,
     )

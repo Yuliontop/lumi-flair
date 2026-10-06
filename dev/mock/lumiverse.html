@@ -1586,7 +1586,7 @@ const ctx={
     async set(k,v){ chk(k); if(window.__acctDown) throw new Error('down'); localStorage.setItem('srv:acct:'+k, JSON.stringify(v)); stored[k]=v },
     async remove(k){ localStorage.removeItem('srv:acct:'+k) }, watch(){return ()=>{}}, core:{get(){},watch(){return ()=>{}},list(){return []},isReady(){return true}} },
   getActiveChat(){return window.__active ?? {chatId:'c1',characterId:'char1'}},
-  characters:{ async get(id){return {name:window.__charName||'Hazel'}} },
+  characters:{ async get(id){return {name:window.__charName||'Hazel', extensions:window.__charExt||{}}} },
   permissions:{ async getGranted(){return window.__granted||[]}, async request(p){window.__granted=p;return p} },
   dom2:0, messages:{ getLatestMessageId(){return window.__latest||'m4'}, listMessageIds(){return Array.from({length:window.__msgCount},(_, i)=>'x'+i)}, registerTagInterceptor(o,h){(window.__tags??={})[o.tagName]=h;tagHandler=window.__tags.flair;window.__tagOpts=window.__tagOpts||o;return ()=>{}}, async get(id){const el=document.querySelector(`[data-message-id='${id}'][data-component]`);return el?{id,name:'Hazel',content:el.innerText,is_user:false}:null} },
   manifest:{version:'0.3.1'},

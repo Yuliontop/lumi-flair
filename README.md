@@ -178,6 +178,9 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.4.12:** Moment Card portraits fit properly.
+  - The round portrait is always fully covered, whatever the picture's shape (pictures that weren't tall enough used to leave a gap at the top).
+  - For the open character's messages it uses their square avatar crop when they have one (the image Lumiverse shows in round avatar spots), so a full-scene avatar isn't squeezed into the circle. The full picture still makes the blurred background.
 - **1.4.11 (release v1.4):** Center Stage.
   - **Favourite moments:** a ★ in each message's action bar pins the message, or just the line you selected. Pins collect in a reel in the panel (jump to it, remove it), show as gold stars on the story heartbeat, survive restarts (`moments.json`), and can also be added with `Flair: Pin the latest message…` or the panel button. Optionally, **Save pins to Lumiverse memory** adds each pin as a short fact about whoever said it, through Lumiverse's own memory API (needs the Memory Cortex and the optional `memories` permission, requested only when you turn it on; Flair adds no tokens of its own, and Lumiverse can only add facts, so unpinning doesn't remove one).
   - **Character intro:** opening a chat plays a ~2 s name card in the character's aura colour, with their portrait. Tap to skip; reduced motion gets a plain fade. An optional **theme sound** from Your sounds plays with it (per character when they have their own look). In group chats a chip above the composer names whoever is speaking, in their avatar colour, and the other messages dim to 70% while they write.
