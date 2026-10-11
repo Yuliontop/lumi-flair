@@ -303,12 +303,10 @@ export function setup(ctx: SpindleFrontendContext) {
   reducedMotion.addEventListener?.('change', onMotionChange)
   disposers.push(() => reducedMotion.removeEventListener?.('change', onMotionChange))
 
-  /** On a touch screen the light's slow movements are already taken in steps (see cinematic.ts), so only the scene's particles need watching there. */
-  const touchScreen = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
-  const lightAnimating = () => cine.animating && !touchScreen()
   const perf = new PerfGovernor(
     // Only watch the frame rate while something is actually animating: a frame-counting loop of its own keeps the screen redrawing.
-    (): boolean => store.get().perfGovernor && (ambient.current !== 'off' || lightAnimating() || viz.animating),
+    // The light's slow movements are taken in steps unless Smooth motion is on (see cinematic.ts).
+    (): boolean => store.get().perfGovernor && (ambient.current !== 'off' || cine.animating || viz.animating),
     (saver) => {
       state.saver = saver
       applyAmbient()
@@ -634,7 +632,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function applyAmbient() {
     const s = store.get()
     const scene = resolveScene()
-    ambient.set(scene, s.ambientDensity * (state.saver || perf.saving ? 0.5 : 1))
+    ambient.set(scene, s.ambientDensity * (state.saver || perf.saving ? 0.5 : 1), s.smoothMotion && !(state.saver || perf.saving))
     if (scene !== state.lastScene) {
       state.lastScene = scene
       if (scene !== 'off') earn((d) => onScene(d, scene))
@@ -662,9 +660,9 @@ export function setup(ctx: SpindleFrontendContext) {
       noFlash: s.noFlash,
       motion: motionAllowed(),
       saver: saving,
+      smooth: s.smoothMotion,
     })
-    // Light rays, candle flicker and the like are animating too: watch the frame rate for them as well.
-    if (s.perfGovernor && lightAnimating()) perf.start()
+    if (s.perfGovernor && cine.animating) perf.start()
   }
 
   // The home button: drop the atmosphere the moment the host starts leaving the chat (see chatLeaving).

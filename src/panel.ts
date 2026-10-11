@@ -591,6 +591,8 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   hint(general.body, 'While you hover the chat, every message except the one under your cursor dims. Also in the input bar’s Extras menu.')
   toggle(general.body, 'No flashing', 'noFlash')
   hint(general.body, 'Replaces lightning flashes with a slow glow, stops flickering text and disables camera shake. Recommended for light-sensitive viewers.')
+  toggle(general.body, 'Smooth motion', 'smoothMotion')
+  hint(general.body, 'Draws particles, the audio visualizer and the light at your screen’s full frame rate (60 or more) instead of about 30. Looks silkier, uses more GPU and battery. Battery saver still steps in if it struggles.')
   toggle(general.body, 'Battery saver when needed', 'perfGovernor')
   const saverHint = hint(general.body, '')
   statusSyncers.push((st) => {

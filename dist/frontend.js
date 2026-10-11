@@ -268,6 +268,7 @@ var DEFAULT_SETTINGS = {
   customPacks: [],
   uiThemeDepth: "full",
   perfGovernor: true,
+  smoothMotion: false,
   tapGlow: true
 };
 var MAX_MAP_ENTRIES = 300;
@@ -468,6 +469,7 @@ function normalize(raw) {
     customPacks: normalizeStoredPacks(r.customPacks),
     uiThemeDepth: pick(r.uiThemeDepth, ["accent", "full"], d.uiThemeDepth),
     perfGovernor: bool(r.perfGovernor, d.perfGovernor),
+    smoothMotion: bool(r.smoothMotion, d.smoothMotion),
     tapGlow: bool(r.tapGlow, d.tapGlow)
   };
 }
@@ -2326,7 +2328,9 @@ class AmbientCanvas {
   motes = [];
   raf = 0;
   last = 0;
-  minFrameMs = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? 28 : 0;
+  minFrameMs = 28;
+  resized = true;
+  watch = null;
   scene = "off";
   density = 1;
   w = 0;
@@ -2342,12 +2346,17 @@ class AmbientCanvas {
     this.canvas = canvas;
     this.g = canvas.getContext("2d");
     document.addEventListener("visibilitychange", this.onVisibility);
+    if (typeof ResizeObserver === "function") {
+      this.watch = new ResizeObserver(() => this.resized = true);
+      this.watch.observe(canvas);
+    }
   }
   get current() {
     return this.scene;
   }
-  set(scene, density) {
+  set(scene, density, smooth = false) {
     const changed = scene !== this.scene;
+    this.minFrameMs = smooth ? 0 : 28;
     this.scene = scene;
     this.density = density;
     if (scene === "off") {
@@ -2465,7 +2474,8 @@ class AmbientCanvas {
     }
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = Math.max(this.last, now);
-    if (Math.abs(this.canvas.getBoundingClientRect().width - this.w) > 1) {
+    if (this.resized) {
+      this.resized = false;
       this.resize();
       this.fill();
     }
@@ -2594,6 +2604,7 @@ class AmbientCanvas {
   }
   destroy() {
     this.stopLoop();
+    this.watch?.disconnect();
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.motes = [];
   }
@@ -3995,6 +4006,7 @@ var T = {
   "Respect “reduce motion”": ["遵循“减少动态效果”", "遵循「減少動態效果」", "「視差効果を減らす」に従う", "Respecter « réduire les animations »", "Rispetta «riduci movimento»"],
   "Spotlight mode": ["聚光模式", "聚光模式", "スポットライト", "Mode projecteur", "Modalità riflettore"],
   "No flashing": ["无闪烁", "無閃爍", "点滅なし", "Sans flashs", "Nessun lampeggio"],
+  "Smooth motion": ["流畅动效", "流暢動態", "なめらかな動き", "Mouvement fluide", "Movimento fluido"],
   "Battery saver when needed": ["按需省电", "按需省電", "必要時に省電力", "Économie d’énergie si besoin", "Risparmio energetico se serve"],
   "Tap to glow (touch screens)": ["点按发光（触屏）", "點按發光（觸控螢幕）", "タップで光る（タッチ画面）", "Toucher pour illuminer (tactile)", "Tocca per illuminare (touch)"],
   "Import pack": ["导入风格包", "匯入風格包", "パックを読み込む", "Importer un pack", "Importa pacchetto"],
@@ -5101,7 +5113,7 @@ class Visualizer {
     if (!this.active || document.hidden)
       return;
     const saver = this.deps.saver();
-    const minMs = this.coarse || saver ? 30 : 0;
+    const minMs = saver ? 60 : s.smoothMotion ? 0 : 30;
     if (this.last && now - this.last < minMs) {
       this.raf = requestAnimationFrame(this.frame);
       return;
@@ -5216,7 +5228,7 @@ class Visualizer {
       t.w = t.h = 0;
       return;
     }
-    const dpr = Math.min(window.devicePixelRatio || 1, this.coarse ? 1 : 1.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, this.coarse || t.kind === "bg" ? 1 : 1.5);
     const bw = Math.max(1, Math.round(w * dpr));
     const bh = Math.max(1, Math.round(h * dpr));
     if (t.el.width !== bw)
@@ -6152,12 +6164,12 @@ var CINEMATIC_CSS = `
   80% { transform: translate(-1px, 1px); }
 }
 
-/* On a touch screen the slow movements (the rays' sway, neon's drift, the candle's flicker) are taken in small steps
-   instead of every frame: each change makes the browser redraw whatever blurs the background behind the messages,
-   which is where the cost is on a phone. The steps are far finer than the eye can tell apart. */
-@media (pointer: coarse) {
-  .lf-cine { --lf-sway-ease: steps(60, end); --lf-drift-ease: steps(30, end); --lf-flicker-ease: steps(6, end); }
-}
+/* The slow movements (the rays' sway, neon's drift, the candle's flicker) are taken in small steps instead of every
+   frame: each change makes the browser redraw whatever blurs the background behind the messages, which is where the
+   cost is, on a phone and on a desktop GPU alike. The steps are far finer than the eye can tell apart.
+   "Smooth motion" turns them back into continuous movement. */
+.lf-cine { --lf-sway-ease: steps(60, end); --lf-drift-ease: steps(30, end); --lf-flicker-ease: steps(6, end); }
+.lf-cine[data-smooth="1"] { --lf-sway-ease: ease-in-out; --lf-drift-ease: ease-in-out; --lf-flicker-ease: ease-in-out; }
 
 @media (prefers-reduced-motion: reduce) {
   .lf-cine .lf-rays, .lf-cine .lf-grain, .lf-cine .lf-tint, .lf-cine .lf-tint::before, .lf-cine .lf-tint::after { animation: none !important; }
@@ -6190,7 +6202,7 @@ class Cinematic {
   raysFor = { w: 0, h: 0, dusk: false };
   watch = null;
   lightningTimer = null;
-  st = { enabled: false, light: "none", vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false };
+  st = { enabled: false, light: "none", vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false, smooth: false };
   onThunder = null;
   constructor(make) {
     this.el = make("div");
@@ -6213,6 +6225,10 @@ class Cinematic {
       this.watch.observe(this.el);
     }
   }
+  get animating() {
+    const s = this.st;
+    return s.enabled && s.motion && s.smooth && !s.saver && (s.light === "candle" || s.light === "neon" || RAY_LIGHTS.has(s.light));
+  }
   set(next) {
     this.st = next;
     const on = next.enabled;
@@ -6220,13 +6236,10 @@ class Cinematic {
     this.el.dataset.light = on ? next.light : "none";
     this.el.dataset.grain = on && next.grain ? "1" : "0";
     this.el.dataset.saver = next.saver ? "1" : "0";
+    this.el.dataset.smooth = next.smooth && !next.saver ? "1" : "0";
     this.el.style.setProperty("--lf-vignette", String(on ? next.vignette : 0));
     this.paintRays();
     this.scheduleLightning();
-  }
-  get animating() {
-    const s = this.st;
-    return s.enabled && s.motion && (s.light === "candle" || s.light === "neon" || RAY_LIGHTS.has(s.light) || s.grain);
   }
   paintRays() {
     const s = this.st;
@@ -9200,6 +9213,8 @@ function mountPanel(ctx, store, actions) {
   hint(general.body, "While you hover the chat, every message except the one under your cursor dims. Also in the input bar’s Extras menu.");
   toggle(general.body, "No flashing", "noFlash");
   hint(general.body, "Replaces lightning flashes with a slow glow, stops flickering text and disables camera shake. Recommended for light-sensitive viewers.");
+  toggle(general.body, "Smooth motion", "smoothMotion");
+  hint(general.body, "Draws particles, the audio visualizer and the light at your screen’s full frame rate (60 or more) instead of about 30. Looks silkier, uses more GPU and battery. Battery saver still steps in if it struggles.");
   toggle(general.body, "Battery saver when needed", "perfGovernor");
   const saverHint = hint(general.body, "");
   statusSyncers.push((st) => {
@@ -11187,9 +11202,7 @@ function setup(ctx) {
   const onMotionChange = () => applyAll();
   reducedMotion.addEventListener?.("change", onMotionChange);
   disposers.push(() => reducedMotion.removeEventListener?.("change", onMotionChange));
-  const touchScreen = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
-  const lightAnimating = () => cine.animating && !touchScreen();
-  const perf = new PerfGovernor(() => store.get().perfGovernor && (ambient.current !== "off" || lightAnimating() || viz.animating), (saver) => {
+  const perf = new PerfGovernor(() => store.get().perfGovernor && (ambient.current !== "off" || cine.animating || viz.animating), (saver) => {
     state.saver = saver;
     applyAmbient();
     applyCinematic();
@@ -11474,7 +11487,7 @@ function setup(ctx) {
   function applyAmbient() {
     const s = store.get();
     const scene = resolveScene();
-    ambient.set(scene, s.ambientDensity * (state.saver || perf.saving ? 0.5 : 1));
+    ambient.set(scene, s.ambientDensity * (state.saver || perf.saving ? 0.5 : 1), s.smoothMotion && !(state.saver || perf.saving));
     if (scene !== state.lastScene) {
       state.lastScene = scene;
       if (scene !== "off")
@@ -11502,9 +11515,10 @@ function setup(ctx) {
       lightning: s.lightning,
       noFlash: s.noFlash,
       motion: motionAllowed(),
-      saver: saving
+      saver: saving,
+      smooth: s.smoothMotion
     });
-    if (s.perfGovernor && lightAnimating())
+    if (s.perfGovernor && cine.animating)
       perf.start();
   }
   if (typeof MutationObserver !== "undefined") {

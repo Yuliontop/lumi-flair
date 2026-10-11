@@ -150,7 +150,7 @@ type PrefsMessage = { type: 'prefs' } & Partial<Prefs>
 // ── Config files: per-user, outside the extension folder ──
 // data/users/<userId>/extensions/lumi_flair/<name>.json — survives reinstalls.
 const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat', 'moments'])
-const VERSION = '1.6.0'
+const VERSION = '1.6.1'
 
 async function vaultLoad(req: number, names: unknown, userId: string) {
   const files: Record<string, unknown> = {}

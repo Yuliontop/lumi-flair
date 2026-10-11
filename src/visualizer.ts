@@ -714,7 +714,9 @@ export class Visualizer {
     const s = this.deps.settings()
     if (!this.active || document.hidden) return
     const saver = this.deps.saver()
-    const minMs = this.coarse || saver ? 30 : 0
+    // About 30 fps unless Smooth motion is on: the desktop app's own frames arrive at 30 at most, and each redraw also makes the
+    // browser re-blur whatever frosted glass sits behind the messages. Battery saver halves it again.
+    const minMs = saver ? 60 : s.smoothMotion ? 0 : 30
     if (this.last && now - this.last < minMs) {
       this.raf = requestAnimationFrame(this.frame)
       return
@@ -831,7 +833,8 @@ export class Visualizer {
       t.w = t.h = 0
       return
     }
-    const dpr = Math.min(window.devicePixelRatio || 1, this.coarse ? 1 : 1.5)
+    // The background layer covers the most pixels and is a soft decoration, so it is drawn at 1x.
+    const dpr = Math.min(window.devicePixelRatio || 1, this.coarse || t.kind === 'bg' ? 1 : 1.5)
     const bw = Math.max(1, Math.round(w * dpr))
     const bh = Math.max(1, Math.round(h * dpr))
     if (t.el.width !== bw) t.el.width = bw

@@ -123,12 +123,12 @@ export const CINEMATIC_CSS = `
   80% { transform: translate(-1px, 1px); }
 }
 
-/* On a touch screen the slow movements (the rays' sway, neon's drift, the candle's flicker) are taken in small steps
-   instead of every frame: each change makes the browser redraw whatever blurs the background behind the messages,
-   which is where the cost is on a phone. The steps are far finer than the eye can tell apart. */
-@media (pointer: coarse) {
-  .lf-cine { --lf-sway-ease: steps(60, end); --lf-drift-ease: steps(30, end); --lf-flicker-ease: steps(6, end); }
-}
+/* The slow movements (the rays' sway, neon's drift, the candle's flicker) are taken in small steps instead of every
+   frame: each change makes the browser redraw whatever blurs the background behind the messages, which is where the
+   cost is, on a phone and on a desktop GPU alike. The steps are far finer than the eye can tell apart.
+   "Smooth motion" turns them back into continuous movement. */
+.lf-cine { --lf-sway-ease: steps(60, end); --lf-drift-ease: steps(30, end); --lf-flicker-ease: steps(6, end); }
+.lf-cine[data-smooth="1"] { --lf-sway-ease: ease-in-out; --lf-drift-ease: ease-in-out; --lf-flicker-ease: ease-in-out; }
 
 @media (prefers-reduced-motion: reduce) {
   .lf-cine .lf-rays, .lf-cine .lf-grain, .lf-cine .lf-tint, .lf-cine .lf-tint::before, .lf-cine .lf-tint::after { animation: none !important; }
@@ -163,6 +163,8 @@ export interface CinematicState {
   motion: boolean
   /** Battery saver: the rays and grain are hidden. */
   saver: boolean
+  /** Smooth motion: the slow movements run every frame instead of in steps. */
+  smooth: boolean
 }
 
 export class Cinematic {
@@ -173,7 +175,7 @@ export class Cinematic {
   private raysFor = { w: 0, h: 0, dusk: false }
   private watch: ResizeObserver | null = null
   private lightningTimer: ReturnType<typeof setTimeout> | null = null
-  private st: CinematicState = { enabled: false, light: 'none', vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false }
+  private st: CinematicState = { enabled: false, light: 'none', vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false, smooth: false }
   onThunder: (() => void) | null = null
 
   constructor(make: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K]) {
@@ -199,6 +201,12 @@ export class Cinematic {
     }
   }
 
+  /** True while the light moves every frame (only with Smooth motion), so the frame-rate governor has something to watch. */
+  get animating(): boolean {
+    const s = this.st
+    return s.enabled && s.motion && s.smooth && !s.saver && (s.light === 'candle' || s.light === 'neon' || RAY_LIGHTS.has(s.light))
+  }
+
   set(next: CinematicState) {
     this.st = next
     const on = next.enabled
@@ -206,16 +214,12 @@ export class Cinematic {
     this.el.dataset.light = on ? next.light : 'none'
     this.el.dataset.grain = on && next.grain ? '1' : '0'
     this.el.dataset.saver = next.saver ? '1' : '0'
+    this.el.dataset.smooth = next.smooth && !next.saver ? '1' : '0'
     this.el.style.setProperty('--lf-vignette', String(on ? next.vignette : 0))
     this.paintRays()
     this.scheduleLightning()
   }
 
-  /** True while the light, or the grain, moves every frame (the frame-rate governor only needs to watch then). */
-  get animating(): boolean {
-    const s = this.st
-    return s.enabled && s.motion && (s.light === 'candle' || s.light === 'neon' || RAY_LIGHTS.has(s.light) || s.grain)
-  }
 
   /** Paint the rays image when they are about to show, and again when the chat area changes shape. */
   private paintRays() {

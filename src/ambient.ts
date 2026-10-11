@@ -37,10 +37,12 @@ export class AmbientCanvas {
   private raf = 0
   private last = 0
   /**
-   * On a touch screen the scene is drawn at about 30 fps. These are slow, soft particles, and every frame
-   * makes the browser redraw whatever blurs the background behind the messages, which is where a phone struggles.
+   * The scene is drawn at about 30 fps everywhere. These are slow, soft particles, and every frame makes the browser
+   * redraw whatever blurs the background behind the messages, which costs the GPU more than the drawing itself.
    */
-  private minFrameMs = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 28 : 0
+  private minFrameMs = 28
+  private resized = true
+  private watch: ResizeObserver | null = null
   private scene: Scene = 'off'
   private density = 1
   private w = 0
@@ -54,14 +56,20 @@ export class AmbientCanvas {
   constructor(private canvas: HTMLCanvasElement) {
     this.g = canvas.getContext('2d')
     document.addEventListener('visibilitychange', this.onVisibility)
+    // Asking for the canvas's size every frame forces a layout each time; hear about a change instead.
+    if (typeof ResizeObserver === 'function') {
+      this.watch = new ResizeObserver(() => (this.resized = true))
+      this.watch.observe(canvas)
+    }
   }
 
   get current(): Scene {
     return this.scene
   }
 
-  set(scene: Scene, density: number) {
+  set(scene: Scene, density: number, smooth = false) {
     const changed = scene !== this.scene
+    this.minFrameMs = smooth ? 0 : 28
     this.scene = scene
     this.density = density
     if (scene === 'off') {
@@ -175,7 +183,8 @@ export class AmbientCanvas {
     }
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000))
     this.last = Math.max(this.last, now)
-    if (Math.abs(this.canvas.getBoundingClientRect().width - this.w) > 1) {
+    if (this.resized) {
+      this.resized = false
       this.resize()
       this.fill()
     }
@@ -306,6 +315,7 @@ export class AmbientCanvas {
 
   destroy() {
     this.stopLoop()
+    this.watch?.disconnect()
     document.removeEventListener('visibilitychange', this.onVisibility)
     this.motes = []
   }

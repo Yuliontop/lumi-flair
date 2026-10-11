@@ -1,6 +1,6 @@
 """What keeps a phone (an iOS home-screen app in particular) from struggling or being killed:
 
-  * the scene's particles are drawn at ~30 fps on a touch screen, ~60 on a desktop;
+  * the scene's particles are drawn at ~30 fps everywhere (the full frame rate with Smooth motion);
   * the frame-rate governor's own animation-frame loop only runs when something animates (and, on a touch screen, only for the particles);
   * the moment the host starts leaving the chat (the home button), our atmosphere goes: the canvas stops and the layers are hidden;
   * closing a chat for the home screen does not re-inject the whole stylesheet, and the whole-UI colour work waits for the page change to settle.
@@ -55,10 +55,13 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
 
-        print('== the scene is drawn at ~30 fps on a touch screen, ~60 on a desktop ==')
+        print('== the scene is drawn at ~30 fps, on a touch screen and on a desktop ==')
         ctx, pg = await open_page(b, {'ambientScene': 'rain'})
         expect('pointer is fine (desktop)', await pg.evaluate("matchMedia('(pointer: coarse)').matches"), False)
-        between('desktop: scene frames per second', await rate(pg, '__amb'), 45, 70)
+        between('desktop: scene frames per second', await rate(pg, '__amb'), 22, 36)
+        await ctx.close()
+        ctx, pg = await open_page(b, {'ambientScene': 'rain', 'smoothMotion': True})
+        between('Smooth motion: scene frames per second', await rate(pg, '__amb'), 45, 200)
         await ctx.close()
         ctx, pg = await open_page(b, {'ambientScene': 'rain'}, touch=True, size=(430, 932))
         expect('pointer is coarse (touch)', await pg.evaluate("matchMedia('(pointer: coarse)').matches"), True)
@@ -67,7 +70,7 @@ async def main():
 
         print('== the governor only runs a frame loop when something animates ==')
         for label, seed, touch, lo, hi in [('nothing on, desktop', {}, False, 0, 8),
-                                           ('light rays only, desktop (watched)', {'lightDefault': 'dawn'}, False, 40, 200),
+                                           ('light rays only, desktop (already stepped: not watched)', {'lightDefault': 'dawn'}, False, 0, 8),
                                            ('light rays only, touch (already stepped: not watched)', {'lightDefault': 'dawn'}, True, 0, 8),
                                            ('scene, touch (watched, and the scene itself)', {'ambientScene': 'snow'}, True, 25, 200)]:
             ctx, pg = await open_page(b, seed, touch=touch, size=(430, 932) if touch else (1280, 900))
@@ -76,7 +79,7 @@ async def main():
 
         print('== the home button: the atmosphere goes the moment the host starts leaving ==')
         ctx, pg = await open_page(b, {'ambientScene': 'rain', 'lightDefault': 'dawn'})
-        between('scene running before', await rate(pg, '__amb', 1000), 45, 70)
+        between('scene running before', await rate(pg, '__amb', 1000), 22, 36)
         cine = "(()=>{const e=document.querySelector('.lf-cine'); return e ? getComputedStyle(e).display : 'missing'})()"
         expect('light layer shown before', await pg.evaluate(cine), 'block')
         await pg.evaluate("document.querySelector('[data-component=ChatView]').setAttribute('data-chat-chrome-leaving','')")  # what the host sets for the 220 ms before it navigates
@@ -87,7 +90,7 @@ async def main():
         await pg.evaluate("document.querySelector('[data-component=ChatView]').removeAttribute('data-chat-chrome-leaving')")  # (the transition was cancelled / a wallpaper change ended)
         await pg.wait_for_timeout(400)
         expect('light layer back', await pg.evaluate(cine), 'block')
-        between('scene running again', await rate(pg, '__amb', 1000), 45, 70)
+        between('scene running again', await rate(pg, '__amb', 1000), 22, 36)
         await ctx.close()
 
         print('== closing the chat for the home screen ==')

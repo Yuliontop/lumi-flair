@@ -197,6 +197,9 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.6.1:** Lighter on the GPU, and a Smooth motion option.
+  - **Lighter by default:** particle scenes and the audio visualizer are drawn at about 30 fps instead of your screen's full refresh rate, and the light's slow movements (rays, neon, candle) move in fine steps. Each redraw makes the browser re-blur the frosted glass behind the messages, which is where the GPU time went. The visualizer's background layer is drawn at 1× resolution, and scenes no longer measure their canvas every frame.
+  - **Smooth motion:** a new switch under **General** puts particles, the visualizer and the light back at your screen's full frame rate (60 or more). Off by default; Battery saver still steps in if it struggles.
 - **1.6.0 (release v1.6):** Audio visualizer.
   - **Audio visualizer:** frequency bars that react to music, found under **Audio visualizer** in the panel (off by default).
   - **Three places, any or all:** a floating window you can drag anywhere and resize from its corner; a background layer that spans the whole chat view above the wallpaper and below the messages (opacity, height, and bars that hang from the top if you like); and a strip on each side of the chat column (width, opacity). Each has its own opacity.
@@ -204,7 +207,7 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
   - **Center mirror:** lows in the middle with the highs mirrored out to both sides (high ← low → high); "Lows on the outside" flips it so the highs meet in the middle. Works in the window, the background and the side strips.
   - **Colours** follow your Flair Pack (the glow colour plus the pack's second colour, so a pack change recolours it), or two colours of your own, or a rainbow; the colour can run up each bar or across the row.
   - **Where the sound comes from:** Flair's own sound (soundscapes and your "Always play" track), a tab or screen you share with its sound (Chrome and Edge on a computer), **this computer's sound** (the Lumiverse desktop app, on Windows, macOS 14.2+ or Linux; Flair only gets a spectrum, and Lumiverse asks you each time and shows while it listens), the microphone (hears your speakers; the way in on a phone), or a demo signal for setting it up in silence.
-  - Kind to the machine: one frame loop that stops in silence (a small check four times a second wakes it), about 30 fps on a phone or in battery saver, no filters or blend modes. It stays off when "reduce motion" is on, and "No flashing" softens how fast bars jump and turns the glow off.
+  - Kind to the machine: one frame loop that stops in silence (a small check four times a second wakes it), about 30 fps (full rate with Smooth motion, half in battery saver), no filters or blend modes. It stays off when "reduce motion" is on, and "No flashing" softens how fast bars jump and turns the glow off.
 - **1.5.0 (release v1.5):** Cursor trails.
   - **Cursor trail:** a trail follows your mouse pointer anywhere in Lumiverse, in six themes taken from the send effects: Splash (water droplets that splash and fall), Creamy (drips of cream), Petal Storm (sakura petals drifting off on the wind), Black Hole (motes that spiral into where the pointer just was), Comet (a glowing tail of sparks) and Confetti (tiny paper pieces). It takes your theme colour. Set it under **When you send → Cursor trail**; off by default.
   - **Trail length:** a slider right below it (0.25–2×) sets how long the trail lingers.

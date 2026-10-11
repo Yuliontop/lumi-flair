@@ -230,6 +230,8 @@ export interface FlairSettings {
   customPacks: StoredPack[]
   uiThemeDepth: UiThemeDepth
   perfGovernor: boolean
+  /** Draw particles, the visualizer and the light at the screen's full frame rate instead of about 30 fps. */
+  smoothMotion: boolean
   tapGlow: boolean
 }
 
@@ -386,6 +388,7 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   customPacks: [],
   uiThemeDepth: 'full',
   perfGovernor: true,
+  smoothMotion: false,
   tapGlow: true,
 }
 
@@ -592,6 +595,7 @@ export function normalize(raw: unknown): FlairSettings {
     customPacks: normalizeStoredPacks(r.customPacks),
     uiThemeDepth: pick(r.uiThemeDepth, ['accent', 'full'], d.uiThemeDepth),
     perfGovernor: bool(r.perfGovernor, d.perfGovernor),
+    smoothMotion: bool(r.smoothMotion, d.smoothMotion),
     tapGlow: bool(r.tapGlow, d.tapGlow),
   }
 }

@@ -28,6 +28,7 @@ const T: Record<string, Row> = {
   'Respect “reduce motion”': ['遵循“减少动态效果”', '遵循「減少動態效果」', '「視差効果を減らす」に従う', 'Respecter « réduire les animations »', 'Rispetta «riduci movimento»'],
   'Spotlight mode': ['聚光模式', '聚光模式', 'スポットライト', 'Mode projecteur', 'Modalità riflettore'],
   'No flashing': ['无闪烁', '無閃爍', '点滅なし', 'Sans flashs', 'Nessun lampeggio'],
+  'Smooth motion': ['流畅动效', '流暢動態', 'なめらかな動き', 'Mouvement fluide', 'Movimento fluido'],
   'Battery saver when needed': ['按需省电', '按需省電', '必要時に省電力', 'Économie d’énergie si besoin', 'Risparmio energetico se serve'],
   'Tap to glow (touch screens)': ['点按发光（触屏）', '點按發光（觸控螢幕）', 'タップで光る（タッチ画面）', 'Toucher pour illuminer (tactile)', 'Tocca per illuminare (touch)'],
   'Import pack': ['导入风格包', '匯入風格包', 'パックを読み込む', 'Importer un pack', 'Importa pacchetto'],

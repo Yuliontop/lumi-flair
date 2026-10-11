@@ -88,10 +88,8 @@ async def main():
         check('dusk rays are painted in their own colour', dusk != first)
         await pg.evaluate("mount('new','day',{saver:true})"); await pg.wait_for_timeout(120)
         expect('battery saver hides the rays', await pg.evaluate("getComputedStyle(document.querySelector('.lf-rays')).display"), 'none')
-        expect('light rays count as animating (so the frame-rate governor watches them)', await pg.evaluate("mount('new','day'), layer.animating"), True)
-        expect('light none does not', await pg.evaluate("mount('new','none'), layer.animating"), False)
 
-        print('== structure: on a touch screen the sway is taken in steps ==')
+        print('== structure: the sway is taken in steps (touch screen, and desktop too) ==')
         touch = await (await b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=3, is_mobile=True, has_touch=True)).new_page()
         touch.on('pageerror', lambda e: errs.append(str(e)))
         await touch.goto(URL); await touch.wait_for_function('window.__ready===true')
@@ -105,6 +103,15 @@ async def main():
         print('   distinct positions in 2 s:', len(seen))
         check('moves a few times a second, not every frame', len(seen) <= 12, str(len(seen)))
         await touch.close()
+        await pg.evaluate("mount('new','day')"); await pg.wait_for_timeout(100)
+        easing = await pg.evaluate("document.getAnimations().find(a=>a.effect.target.className==='lf-rays').effect.getKeyframes()[0].easing")
+        check('desktop easing is steps(60) too', easing in ('steps(60)', 'steps(60, end)'), easing)
+        await pg.evaluate("mount('new','day',{smooth:true})"); await pg.wait_for_timeout(100)
+        easing = await pg.evaluate("document.getAnimations().find(a=>a.effect.target.className==='lf-rays').effect.getKeyframes()[0].easing")
+        check('Smooth motion: continuous easing', 'steps' not in easing, easing)
+        expect('Smooth motion: the governor watches the light', await pg.evaluate("layer.animating"), True)
+        await pg.evaluate("mount('new','day',{smooth:true,saver:true})"); await pg.wait_for_timeout(100)
+        expect('Smooth motion yields to battery saver', await pg.evaluate("document.querySelector('.lf-cine').dataset.smooth"), '0')
 
         print('== parity with the previous version ==')
         if not await pg.evaluate("hasOld()"):
