@@ -1,6 +1,6 @@
 {
   "name": "lumi-flair",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "test": "python dev/run.py"
   },
   "devDependencies": {
-    "lumiverse-spindle-types": "^0.6.37",
+    "lumiverse-spindle-types": "^0.6.43",
     "typescript": "^5.6.0"
   },
   "description": "Lumi Flair, a Lumiverse extension: let the story control the room.",

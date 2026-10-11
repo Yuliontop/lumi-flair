@@ -33,6 +33,8 @@ export type SoundscapeState = 'off' | 'playing' | 'waiting'
 export class Soundscape {
   private ac: AudioContext | null = null
   private master: GainNode | null = null
+  /** Listens to the master output for the audio visualizer; connected to nothing else. */
+  private tapNode: AnalyserNode | null = null
   private current: { key: string; layer: Layer } | null = null
   private noise: { white?: AudioBuffer; pink?: AudioBuffer; brown?: AudioBuffer } = {}
   private volume = 0.35
@@ -173,6 +175,7 @@ export class Soundscape {
     const old = this.ac
     this.ac = null
     this.master = null
+    this.tapNode = null
     this.noise = {}
     this.lastClock = -1
     this.stalls = 0
@@ -189,6 +192,8 @@ export class Soundscape {
       this.master = this.ac.createGain()
       this.master.gain.value = 0
       this.master.connect(this.ac.destination)
+      this.tapNode = this.ac.createAnalyser()
+      this.master.connect(this.tapNode)
     } catch {
       return null
     }
@@ -201,6 +206,11 @@ export class Soundscape {
       this.report()
     }
     return this.ac
+  }
+
+  /** The analyser the visualizer reads (null until the first sound has needed an audio context) and the master gain it sits behind. */
+  tap(): { node: AnalyserNode; level: number } | null {
+    return this.tapNode && this.master ? { node: this.tapNode, level: this.master.gain.value } : null
   }
 
   private buffer(kind: 'white' | 'pink' | 'brown'): AudioBuffer {
@@ -664,5 +674,6 @@ export class Soundscape {
     this.current = null
     void this.ac?.close().catch(() => {})
     this.ac = null
+    this.tapNode = null
   }
 }

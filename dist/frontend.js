@@ -105,6 +105,9 @@ function cueName(raw) {
 }
 
 // src/settings.ts
+var VIZ_SOURCES = ["flair", "tab", "mic", "system", "demo"];
+var VIZ_STYLES = ["bars", "mirror", "segments", "wave"];
+var VIZ_COLORS = ["flair", "custom", "rainbow"];
 var MAX_CUSTOM_PACKS = 24;
 var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
 var CURSOR_TRAILS = ["splash", "creamy", "petalstorm", "blackhole", "comet", "confetti", "none"];
@@ -207,6 +210,33 @@ var DEFAULT_SETTINGS = {
   soundWidget: false,
   soundWidgetPos: null,
   soundWidgetCollapsed: null,
+  viz: false,
+  vizSource: "flair",
+  vizSensitivity: 1.3,
+  vizSmoothing: 0.6,
+  vizStyle: "bars",
+  vizBars: 40,
+  vizBarFill: 0.7,
+  vizRound: 0.5,
+  vizPeaks: false,
+  vizCenter: false,
+  vizCenterFlip: false,
+  vizGlow: 0.35,
+  vizColor: "flair",
+  vizColorA: "#a78bfa",
+  vizColorB: "#38bdf8",
+  vizGradientUp: true,
+  vizWindow: true,
+  vizWindowPos: null,
+  vizWindowSize: null,
+  vizWindowOpacity: 0.95,
+  vizBg: false,
+  vizBgOpacity: 0.35,
+  vizBgHeight: 0.4,
+  vizBgTop: false,
+  vizSides: false,
+  vizSideWidth: 110,
+  vizSideOpacity: 0.6,
   pinMemory: false,
   typewriter: false,
   typewriterCps: 40,
@@ -266,6 +296,19 @@ function point(v) {
   if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y))
     return null;
   return { x: Math.round(Math.max(-4000, Math.min(20000, x))), y: Math.round(Math.max(-4000, Math.min(20000, y))) };
+}
+var VIZ_WIN_MIN = { w: 140, h: 70 };
+var VIZ_WIN_MAX = { w: 1600, h: 900 };
+function size(v) {
+  if (!v || typeof v !== "object")
+    return null;
+  const { w, h } = v;
+  if (typeof w !== "number" || typeof h !== "number" || !Number.isFinite(w) || !Number.isFinite(h))
+    return null;
+  return {
+    w: Math.round(Math.max(VIZ_WIN_MIN.w, Math.min(VIZ_WIN_MAX.w, w))),
+    h: Math.round(Math.max(VIZ_WIN_MIN.h, Math.min(VIZ_WIN_MAX.h, h)))
+  };
 }
 function bool(v, fallback) {
   return typeof v === "boolean" ? v : fallback;
@@ -367,6 +410,33 @@ function normalize(raw) {
     soundWidget: bool(r.soundWidget, d.soundWidget),
     soundWidgetPos: point(r.soundWidgetPos),
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === "boolean" ? r.soundWidgetCollapsed : null,
+    viz: bool(r.viz, d.viz),
+    vizSource: pick(r.vizSource, VIZ_SOURCES, d.vizSource),
+    vizSensitivity: clamp(r.vizSensitivity, 0.3, 4, d.vizSensitivity),
+    vizSmoothing: clamp(r.vizSmoothing, 0, 0.95, d.vizSmoothing),
+    vizStyle: pick(r.vizStyle, VIZ_STYLES, d.vizStyle),
+    vizBars: Math.round(clamp(r.vizBars, 8, 96, d.vizBars)),
+    vizBarFill: clamp(r.vizBarFill, 0.2, 1, d.vizBarFill),
+    vizRound: clamp(r.vizRound, 0, 1, d.vizRound),
+    vizPeaks: bool(r.vizPeaks, d.vizPeaks),
+    vizCenter: bool(r.vizCenter, d.vizCenter),
+    vizCenterFlip: bool(r.vizCenterFlip, d.vizCenterFlip),
+    vizGlow: clamp(r.vizGlow, 0, 1, d.vizGlow),
+    vizColor: pick(r.vizColor, VIZ_COLORS, d.vizColor),
+    vizColorA: hex(r.vizColorA, d.vizColorA),
+    vizColorB: hex(r.vizColorB, d.vizColorB),
+    vizGradientUp: bool(r.vizGradientUp, d.vizGradientUp),
+    vizWindow: bool(r.vizWindow, d.vizWindow),
+    vizWindowPos: point(r.vizWindowPos),
+    vizWindowSize: size(r.vizWindowSize),
+    vizWindowOpacity: clamp(r.vizWindowOpacity, 0.15, 1, d.vizWindowOpacity),
+    vizBg: bool(r.vizBg, d.vizBg),
+    vizBgOpacity: clamp(r.vizBgOpacity, 0.05, 1, d.vizBgOpacity),
+    vizBgHeight: clamp(r.vizBgHeight, 0.1, 1, d.vizBgHeight),
+    vizBgTop: bool(r.vizBgTop, d.vizBgTop),
+    vizSides: bool(r.vizSides, d.vizSides),
+    vizSideWidth: Math.round(clamp(r.vizSideWidth, 40, 320, d.vizSideWidth)),
+    vizSideOpacity: clamp(r.vizSideOpacity, 0.05, 1, d.vizSideOpacity),
     pinMemory: bool(r.pinMemory, d.pinMemory),
     typewriter: bool(r.typewriter, d.typewriter),
     typewriterCps: Math.round(clamp(r.typewriterCps, 10, 120, d.typewriterCps)),
@@ -3315,6 +3385,7 @@ class DirectorState {
 class Soundscape {
   ac = null;
   master = null;
+  tapNode = null;
   current = null;
   noise = {};
   volume = 0.35;
@@ -3432,6 +3503,7 @@ class Soundscape {
     const old = this.ac;
     this.ac = null;
     this.master = null;
+    this.tapNode = null;
     this.noise = {};
     this.lastClock = -1;
     this.stalls = 0;
@@ -3450,6 +3522,8 @@ class Soundscape {
       this.master = this.ac.createGain();
       this.master.gain.value = 0;
       this.master.connect(this.ac.destination);
+      this.tapNode = this.ac.createAnalyser();
+      this.master.connect(this.tapNode);
     } catch {
       return null;
     }
@@ -3462,6 +3536,9 @@ class Soundscape {
       this.report();
     };
     return this.ac;
+  }
+  tap() {
+    return this.tapNode && this.master ? { node: this.tapNode, level: this.master.gain.value } : null;
   }
   buffer(kind) {
     const ac = this.ac;
@@ -3894,241 +3971,7 @@ class Soundscape {
     this.current = null;
     this.ac?.close().catch(() => {});
     this.ac = null;
-  }
-}
-
-// src/soundlib.ts
-var MAX_SOUND_BYTES = 40 * 1024 * 1024;
-var MAX_SOUNDS = 40;
-var SOUND_ACCEPT = ["audio/*", ".mp3", ".ogg", ".oga", ".opus", ".wav", ".m4a", ".aac", ".flac", ".webm"];
-var DECODE_SECONDS = 90;
-var DECODED_BUDGET = 160 * 1024 * 1024;
-var DB_NAME = "lumi_flair_sounds";
-var META = "meta";
-var DATA = "data";
-function req(r) {
-  return new Promise((resolve, reject) => {
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
-}
-function done(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error("aborted"));
-  });
-}
-function newId() {
-  return "snd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-function soundName(file) {
-  const base = file.replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[_]+/g, " ").trim();
-  return (base || "Sound").slice(0, 60);
-}
-
-class SoundLibrary {
-  db = null;
-  items = new Map;
-  memory = new Map;
-  persistent = true;
-  urls = new Map;
-  buffers = new Map;
-  listeners = new Set;
-  ready;
-  constructor() {
-    this.ready = this.open().catch((err) => {
-      console.warn("[Lumi Flair] Sound library is session-only (browser storage unavailable)", err);
-      this.persistent = false;
-    });
-  }
-  get saved() {
-    return this.persistent;
-  }
-  async open() {
-    if (typeof indexedDB === "undefined")
-      throw new Error("no indexedDB");
-    const open = indexedDB.open(DB_NAME, 1);
-    open.onupgradeneeded = () => {
-      const db = open.result;
-      if (!db.objectStoreNames.contains(META))
-        db.createObjectStore(META, { keyPath: "id" });
-      if (!db.objectStoreNames.contains(DATA))
-        db.createObjectStore(DATA);
-    };
-    this.db = await req(open);
-    const all = await req(this.db.transaction(META).objectStore(META).getAll());
-    for (const m of all)
-      if (m && typeof m.id === "string")
-        this.items.set(m.id, m);
-    this.emit();
-  }
-  onChange(fn) {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  }
-  emit() {
-    for (const fn of this.listeners) {
-      try {
-        fn();
-      } catch (err) {
-        console.error("[Lumi Flair] sound library listener failed", err);
-      }
-    }
-  }
-  list() {
-    return [...this.items.values()].sort((a, b) => a.at - b.at);
-  }
-  has(id) {
-    return !!id && this.items.has(id);
-  }
-  meta(id) {
-    return this.items.get(id);
-  }
-  get count() {
-    return this.items.size;
-  }
-  async probe(bytes) {
-    const Ctor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if (!Ctor)
-      return 0;
-    const ac = new Ctor(1, 1, 22050);
-    const copy = bytes.slice().buffer;
-    const buf = await ac.decodeAudioData(copy);
-    return buf.duration;
-  }
-  async add(file) {
-    await this.ready;
-    if (this.items.size >= MAX_SOUNDS)
-      throw new Error(`You can keep up to ${MAX_SOUNDS} sounds — delete one first.`);
-    const size = file.sizeBytes ?? file.bytes.byteLength;
-    if (size > MAX_SOUND_BYTES)
-      throw new Error(`“${file.name}” is larger than ${MAX_SOUND_BYTES / 1024 / 1024} MB.`);
-    let duration = 0;
-    try {
-      duration = await this.probe(file.bytes);
-    } catch {
-      throw new Error(`“${file.name}” isn't an audio file this browser can play.`);
-    }
-    const mime = file.mimeType && file.mimeType !== "application/octet-stream" ? file.mimeType : "audio/mpeg";
-    const meta = { id: newId(), name: soundName(file.name), mime, size, duration: Math.round(duration * 10) / 10, level: 1, at: Date.now() };
-    const blob = new Blob([file.bytes.slice().buffer], { type: mime });
-    if (this.db) {
-      try {
-        const tx = this.db.transaction([META, DATA], "readwrite");
-        tx.objectStore(DATA).put(blob, meta.id);
-        tx.objectStore(META).put(meta);
-        await done(tx);
-      } catch (err) {
-        const quota = err instanceof DOMException && err.name === "QuotaExceededError";
-        throw new Error(quota ? "The browser is out of storage space for sounds — delete some first." : `Couldn't save “${file.name}”.`);
-      }
-    } else
-      this.memory.set(meta.id, blob);
-    this.items.set(meta.id, meta);
-    this.emit();
-    return meta;
-  }
-  async remove(id) {
-    await this.ready;
-    if (this.db) {
-      const tx = this.db.transaction([META, DATA], "readwrite");
-      tx.objectStore(DATA).delete(id);
-      tx.objectStore(META).delete(id);
-      await done(tx).catch(() => {});
-    }
-    this.memory.delete(id);
-    this.items.delete(id);
-    this.buffers.delete(id);
-    const url = this.urls.get(id);
-    if (url)
-      URL.revokeObjectURL(url);
-    this.urls.delete(id);
-    this.emit();
-  }
-  async update(id, patch) {
-    const m = this.items.get(id);
-    if (!m)
-      return;
-    const next = {
-      ...m,
-      ...patch.name !== undefined ? { name: patch.name.trim().slice(0, 60) || m.name } : {},
-      ...patch.level !== undefined ? { level: Math.max(0, Math.min(1.5, patch.level)) } : {}
-    };
-    this.items.set(id, next);
-    if (this.db) {
-      const tx = this.db.transaction(META, "readwrite");
-      tx.objectStore(META).put(next);
-      await done(tx).catch(() => {});
-    }
-    this.emit();
-  }
-  async blob(id) {
-    await this.ready;
-    const mem = this.memory.get(id);
-    if (mem)
-      return mem;
-    if (!this.db)
-      return null;
-    const b = await req(this.db.transaction(DATA).objectStore(DATA).get(id)).catch(() => null);
-    return b ?? null;
-  }
-  async url(id) {
-    const have = this.urls.get(id);
-    if (have)
-      return have;
-    const b = await this.blob(id);
-    if (!b)
-      return null;
-    const u = URL.createObjectURL(b);
-    this.urls.set(id, u);
-    return u;
-  }
-  async source(id, ac) {
-    const m = this.items.get(id);
-    if (!m)
-      return null;
-    const cached = this.buffers.get(id);
-    if (cached)
-      return { kind: "buffer", buffer: cached, level: m.level };
-    if (m.duration > 0 && m.duration <= DECODE_SECONDS) {
-      const b = await this.blob(id);
-      if (!b)
-        return null;
-      try {
-        const buffer = await ac.decodeAudioData(await b.arrayBuffer());
-        this.remember(id, buffer);
-        return { kind: "buffer", buffer, level: m.level };
-      } catch {
-        return null;
-      }
-    }
-    const url = await this.url(id);
-    return url ? { kind: "url", url, level: m.level } : null;
-  }
-  remember(id, buffer) {
-    this.buffers.delete(id);
-    this.buffers.set(id, buffer);
-    const bytes = (b) => b.length * b.numberOfChannels * 4;
-    let total = 0;
-    for (const b of this.buffers.values())
-      total += bytes(b);
-    while (total > DECODED_BUDGET && this.buffers.size > 1) {
-      const oldest = this.buffers.keys().next().value;
-      if (oldest === undefined)
-        break;
-      total -= bytes(this.buffers.get(oldest));
-      this.buffers.delete(oldest);
-    }
-  }
-  destroy() {
-    for (const u of this.urls.values())
-      URL.revokeObjectURL(u);
-    this.urls.clear();
-    this.buffers.clear();
-    this.listeners.clear();
-    this.db?.close();
-    this.db = null;
+    this.tapNode = null;
   }
 }
 
@@ -4597,7 +4440,51 @@ var T = {
   "Typing speed": ["打字速度", "打字速度", "タイピング速度", "Vitesse de frappe", "Velocità di battitura"],
   "Key sounds": ["按键音", "按鍵音", "キー音", "Bruit des touches", "Suono dei tasti"],
   "Preview typewriter": ["预览打字机效果", "預覽打字機效果", "タイプライターをプレビュー", "Aperçu machine à écrire", "Anteprima macchina da scrivere"],
-  "Typewriter key": ["打字机按键", "打字機按鍵", "タイプライターのキー", "Touche de machine à écrire", "Tasto della macchina da scrivere"]
+  "Typewriter key": ["打字机按键", "打字機按鍵", "タイプライターのキー", "Touche de machine à écrire", "Tasto della macchina da scrivere"],
+  "Audio visualizer": ["音频可视化", "音訊視覺化", "オーディオビジュアライザー", "Visualiseur audio", "Visualizzatore audio"],
+  "Show the visualizer": ["显示可视化", "顯示視覺化", "ビジュアライザーを表示", "Afficher le visualiseur", "Mostra il visualizzatore"],
+  "Listen to": ["声音来源", "聲音來源", "音の入力元", "Écouter", "Ascolta"],
+  "Flair’s own sound": ["Flair 自己的声音", "Flair 自己的聲音", "Flair 自身のサウンド", "Le son de Flair", "Il suono di Flair"],
+  "A tab or screen": ["标签页或屏幕", "分頁或螢幕", "タブまたは画面", "Un onglet ou l’écran", "Una scheda o lo schermo"],
+  Microphone: ["麦克风", "麥克風", "マイク", "Microphone", "Microfono"],
+  "This computer’s sound": ["这台电脑的声音", "這台電腦的聲音", "このコンピューターの音", "Le son de cet ordinateur", "L’audio di questo computer"],
+  "Whatever your computer is playing (Lumiverse desktop app)": ["电脑正在播放的任何声音（Lumiverse 桌面应用）", "電腦正在播放的任何聲音（Lumiverse 桌面應用程式）", "パソコンで再生中のすべての音（Lumiverse デスクトップアプリ）", "Tout ce que joue votre ordinateur (application de bureau Lumiverse)", "Tutto ciò che il computer riproduce (app desktop Lumiverse)"],
+  "Listen to your computer’s sound": ["聆听电脑的声音", "聆聽電腦的聲音", "パソコンの音を聴く", "Écouter le son de l’ordinateur", "Ascolta l’audio del computer"],
+  "Not connected — press “Connect audio”; the desktop app asks you first": ["未连接 —— 点击“连接音频”；桌面应用会先询问你", "未連接 —— 按下「連接音訊」；桌面應用程式會先詢問你", "未接続 — 「オーディオを接続」を押してください。デスクトップアプリが先に確認します", "Non connecté — appuyez sur « Connecter l’audio » ; l’application de bureau vous demandera d’abord", "Non collegato — premi «Collega l’audio»; l’app desktop te lo chiederà prima"],
+  "Permission wasn’t given.": ["未授予权限。", "未授予權限。", "許可されませんでした。", "L’autorisation n’a pas été accordée.", "Il permesso non è stato concesso."],
+  "Demo signal": ["演示信号", "示範訊號", "デモ信号", "Signal de démo", "Segnale demo"],
+  "Connect audio": ["连接音频", "連接音訊", "オーディオを接続", "Connecter l’audio", "Collega l’audio"],
+  "Reconnect audio": ["重新连接音频", "重新連接音訊", "オーディオを再接続", "Reconnecter l’audio", "Ricollega l’audio"],
+  "Reset window": ["重置窗口", "重設視窗", "ウィンドウをリセット", "Réinitialiser la fenêtre", "Reimposta la finestra"],
+  "Hide this window": ["隐藏此窗口", "隱藏此視窗", "このウィンドウを隠す", "Masquer cette fenêtre", "Nascondi questa finestra"],
+  Sensitivity: ["灵敏度", "靈敏度", "感度", "Sensibilité", "Sensibilità"],
+  Smoothness: ["平滑度", "平滑度", "なめらかさ", "Fluidité", "Fluidità"],
+  "Floating window": ["悬浮窗口", "懸浮視窗", "フローティングウィンドウ", "Fenêtre flottante", "Finestra mobile"],
+  "Window opacity": ["窗口不透明度", "視窗不透明度", "ウィンドウの不透明度", "Opacité de la fenêtre", "Opacità della finestra"],
+  "Background layer": ["背景层", "背景層", "背景レイヤー", "Calque d’arrière-plan", "Livello di sfondo"],
+  "Background opacity": ["背景不透明度", "背景不透明度", "背景の不透明度", "Opacité de l’arrière-plan", "Opacità dello sfondo"],
+  "Background height": ["背景高度", "背景高度", "背景の高さ", "Hauteur de l’arrière-plan", "Altezza dello sfondo"],
+  "Hang the background bars from the top": ["背景条从顶部垂下", "背景條從頂部垂下", "背景のバーを上から下げる", "Suspendre les barres du fond en haut", "Appendi le barre dello sfondo in alto"],
+  "Strips beside the chat": ["聊天两侧的条带", "聊天兩側的條帶", "チャットの両脇のバー", "Bandes de chaque côté du chat", "Strisce ai lati della chat"],
+  "Strip width": ["条带宽度", "條帶寬度", "バーの幅", "Largeur des bandes", "Larghezza delle strisce"],
+  "Strip opacity": ["条带不透明度", "條帶不透明度", "バーの不透明度", "Opacité des bandes", "Opacità delle strisce"],
+  Style: ["样式", "樣式", "スタイル", "Style", "Stile"],
+  Bars: ["条数", "條數", "本数", "Barres", "Barre"],
+  "Mirrored bars": ["镜像条", "鏡像條", "ミラーバー", "Barres en miroir", "Barre speculari"],
+  Segments: ["分段", "分段", "セグメント", "Segments", "Segmenti"],
+  Wave: ["波形", "波形", "波形", "Onde", "Onda"],
+  "Bar width": ["条宽", "條寬", "バーの太さ", "Largeur des barres", "Larghezza delle barre"],
+  "Rounded corners": ["圆角", "圓角", "角の丸み", "Coins arrondis", "Angoli arrotondati"],
+  "Peak caps": ["峰值帽", "峰值帽", "ピークキャップ", "Pointes de crête", "Cappucci di picco"],
+  Colours: ["颜色", "顏色", "色", "Couleurs", "Colori"],
+  "Match my Flair Pack": ["匹配我的 Flair 风格包", "配合我的 Flair 風格包", "Flair パックに合わせる", "Suivre mon pack Flair", "Segui il mio pacchetto Flair"],
+  "My own colours": ["我自己的颜色", "我自己的顏色", "自分で選んだ色", "Mes propres couleurs", "I miei colori"],
+  "Colour 1": ["颜色 1", "顏色 1", "色 1", "Couleur 1", "Colore 1"],
+  "Colour 2": ["颜色 2", "顏色 2", "色 2", "Couleur 2", "Colore 2"],
+  "Colour runs up each bar": ["颜色沿每根条向上渐变", "顏色沿每根條向上漸層", "色を各バーの上方向にグラデーション", "Dégradé de couleur sur la hauteur de chaque barre", "Sfumatura di colore lungo ogni barra"],
+  "Center mirror": ["中心镜像", "中心鏡像", "センターミラー", "Miroir central", "Specchio centrale"],
+  "Lows on the outside": ["低频在外侧", "低頻在外側", "低音を外側に", "Graves à l’extérieur", "Bassi all’esterno"],
+  "The audio visualizer is only available on desktop screens, so it stays off here.": ["音频可视化仅限桌面屏幕，因此在此处保持关闭。", "音訊視覺化僅限桌面螢幕，因此在此處保持關閉。", "オーディオビジュアライザーはデスクトップ画面専用のため、ここではオフのままです。", "Le visualiseur audio n’est disponible que sur ordinateur ; il reste donc désactivé ici.", "Il visualizzatore audio è disponibile solo su desktop, quindi qui resta spento."]
 };
 var LOCALES = ["zh", "zh-TW", "ja", "fr", "it"];
 var DICT = Object.fromEntries(LOCALES.map((loc, i) => [loc, Object.fromEntries(Object.entries(T).map(([en, row]) => [en, row[i]]))]));
@@ -4611,6 +4498,1205 @@ function tr(en) {
   if (current === "en")
     return en;
   return DICT[current]?.[en] ?? en;
+}
+
+// src/visualizer.ts
+function bandEdges(n, bins, sampleRate) {
+  const nyq = sampleRate / 2;
+  const lo = 40;
+  const hi = Math.min(14000, nyq * 0.95);
+  const bin = (f) => Math.min(bins, Math.max(0, Math.round(f / nyq * bins)));
+  const edges = [bin(lo)];
+  for (let i = 1;i <= n; i++)
+    edges.push(Math.min(bins, Math.max(edges[i - 1] + 1, bin(lo * Math.pow(hi / lo, i / n)))));
+  return edges;
+}
+function readBands(data, edges, out, gain) {
+  const n = out.length;
+  for (let i = 0;i < n; i++) {
+    let m = 0;
+    const a = Math.min(edges[i], data.length - 1);
+    const b = Math.max(edges[i + 1], a + 1);
+    for (let k = a;k < b && k < data.length; k++)
+      if (data[k] > m)
+        m = data[k];
+    const v = Math.min(1, m / 255 * gain * (1 + i / n * 0.9));
+    out[i] = Math.pow(v, 1.35);
+  }
+}
+var SYS_BANDS = 64;
+function readSystemBands(src, out, gain) {
+  const n = out.length;
+  const m = src.length;
+  for (let i = 0;i < n; i++) {
+    let x = 0;
+    if (m >= n) {
+      const a = Math.floor(i * m / n);
+      const b = Math.max(a + 1, Math.floor((i + 1) * m / n));
+      for (let k = a;k < b && k < m; k++)
+        if (src[k] > x)
+          x = src[k];
+    } else if (m > 0) {
+      const at = n > 1 ? i * (m - 1) / (n - 1) : 0;
+      const lo = Math.floor(at);
+      const hi = Math.min(m - 1, lo + 1);
+      x = src[lo] * (1 - (at - lo)) + src[hi] * (at - lo);
+    }
+    const level = Math.min(1, Math.max(0, (70 * (Number.isFinite(x) ? x : 0) - 15) / 65));
+    const v = Math.min(1, level * gain * (1 + i / n * 0.9));
+    out[i] = Math.pow(v, 1.35);
+  }
+}
+function systemError(err) {
+  const name = err?.name ?? "";
+  const msg = typeof err === "string" ? err : err?.message ?? "";
+  if (msg === "sys:disabled")
+    return tr("Tick “Let Extensions Analyse System Audio” in the Lumiverse tray menu first.");
+  if (msg === "sys:unsupported" || name === "NotSupportedError")
+    return tr("System audio needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire).");
+  if (msg === "sys:denied" || name === "NotAllowedError" || name === "AbortError")
+    return tr("Permission wasn’t given.");
+  if (name !== "TypeError" && msg && msg.length < 260 && !msg.startsWith("PERMISSION_DENIED"))
+    return msg;
+  return tr("Couldn’t start listening.");
+}
+function systemEnded(reason) {
+  switch (reason) {
+    case "revoked":
+      return tr("The system audio permission was turned off.");
+    case "source-lost":
+      return tr("Lost the sound source (the screen locked, the computer slept or the output changed). Press “Connect audio” to listen again.");
+    case "host-disabled":
+      return tr("System audio was turned off in the Lumiverse tray menu.");
+    default:
+      return null;
+  }
+}
+function synth(out, t) {
+  const n = out.length;
+  const beat = Math.pow(Math.max(0, Math.sin(t * Math.PI * 3.6)), 6);
+  for (let i = 0;i < n; i++) {
+    const x = i / n;
+    const body = 0.5 + 0.5 * Math.sin(t * (1.1 + x * 3.1) + i * 0.9);
+    out[i] = Math.min(1, (0.18 + body * 0.5) * (0.85 - x * 0.55) + beat * (1 - x) * 0.45);
+  }
+}
+var rgbOf = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return [n >> 16 & 255, n >> 8 & 255, n & 255];
+};
+var lerpHex = (a, b, t) => {
+  const [r1, g1, b1] = rgbOf(a);
+  const [r2, g2, b2] = rgbOf(b);
+  return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},${Math.round(b1 + (b2 - b1) * t)})`;
+};
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+  return "#" + [f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+function shiftHue(hex, deg) {
+  const { h, s, l } = hexToHsl(hex);
+  return hslToHex((h + deg + 360) % 360, Math.max(s, 55), Math.min(70, Math.max(l, 48)));
+}
+function centerMap(n, flip) {
+  const mid = (n - 1) / 2;
+  return Array.from({ length: n }, (_, j) => {
+    const d = mid > 0 ? Math.abs(j - mid) / mid : 0;
+    return Math.round((flip ? 1 - d : d) * (n - 1));
+  });
+}
+function rect(p, x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  if (rr > 0.5 && "roundRect" in p)
+    p.roundRect(x, y, w, h, rr);
+  else
+    p.rect(x, y, w, h);
+}
+function shapes(g, L, T, v, pk, look, cols, e) {
+  const n = v.length;
+  const step = L / n;
+  const bw = Math.max(1, step * look.fill);
+  const rad = look.round * bw / 2;
+  const across = !!cols;
+  if (look.style === "wave") {
+    const pt = (i) => [step * (i + 0.5), T - v[i] * T];
+    g.beginPath();
+    g.moveTo(0, T);
+    g.lineTo(0, pt(0)[1]);
+    for (let i = 0;i < n - 1; i++) {
+      const [x0, y0] = pt(i);
+      const [x1, y1] = pt(i + 1);
+      g.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+    }
+    const [xl, yl] = pt(n - 1);
+    g.lineTo(xl, yl);
+    g.lineTo(L, yl);
+    g.lineTo(L, T);
+    g.closePath();
+    if (e === 0)
+      g.fill();
+    else {
+      g.lineWidth = e * 2;
+      g.lineJoin = "round";
+      g.stroke();
+    }
+    return;
+  }
+  const mirror = look.style === "mirror";
+  const segs = look.style === "segments";
+  const seg = Math.max(3, bw * 0.6);
+  const gap = Math.max(1, seg * 0.3);
+  const count = Math.max(2, Math.floor((T + gap) / (seg + gap)));
+  const single = across ? null : new Path2D;
+  for (let i = 0;i < n; i++) {
+    const pen = single ?? g;
+    if (across) {
+      g.beginPath();
+      g.fillStyle = cols[i];
+    }
+    const x = i * step + (step - bw) / 2 - e;
+    const w = bw + e * 2;
+    if (segs) {
+      const lit = Math.round(v[i] * count);
+      for (let k = 0;k < lit; k++)
+        rect(pen, x, T - (k + 1) * seg - k * gap - e, w, seg + e * 2, Math.min(rad, seg / 2));
+    } else if (mirror) {
+      const hh = v[i] * T / 2;
+      if (hh >= 0.5)
+        rect(pen, x, T / 2 - hh - e, w, hh * 2 + e * 2, rad);
+    } else {
+      const h = v[i] * T;
+      if (h >= 1)
+        rect(pen, x, T - h - e, w, h + e, rad);
+    }
+    if (across)
+      g.fill();
+  }
+  if (single)
+    g.fill(single);
+  if (look.peaks && !e && !segs) {
+    const th = Math.max(2, bw * 0.22);
+    for (let i = 0;i < n; i++) {
+      if (pk[i] < 0.03)
+        continue;
+      g.fillStyle = cols ? cols[i] : look.b;
+      const x = i * step + (step - bw) / 2;
+      if (mirror) {
+        const hh = pk[i] * T / 2;
+        g.fillRect(x, T / 2 - hh - th, bw, th);
+        g.fillRect(x, T / 2 + hh, bw, th);
+      } else
+        g.fillRect(x, T - pk[i] * T - th - 1, bw, th);
+    }
+  }
+}
+var GAP = 6;
+var SIDE_MIN = 20;
+var VIZ_CSS = `
+canvas.lf-vz-bg, canvas.lf-vz-side { position: absolute; pointer-events: none; z-index: 2; display: none; }
+canvas.lf-vz-bg { left: 0; width: 100%; }
+canvas.lf-vz-side { top: 0; height: 100%; }
+.lf-vzw,.lf-vzw *{box-sizing:border-box;margin:0;padding:0;text-align:left;line-height:normal;letter-spacing:normal;text-transform:none;text-indent:0;float:none}
+.lf-vzw{position:relative;overflow:hidden;border-radius:14px;color:var(--lumiverse-text,#fff);
+  background:color-mix(in srgb,var(--lumiverse-bg-elevated,#1a1626) 78%,transparent);
+  border:1px solid var(--lumiverse-border,rgba(255,255,255,.12));box-shadow:0 6px 24px rgba(0,0,0,.28);
+  font-family:var(--lumiverse-font-family,inherit);font-size:12px;user-select:none;-webkit-user-select:none;touch-action:none;cursor:grab}
+.lf-vzw:active{cursor:grabbing}
+.lf-vzw .lf-vzw-cv{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+.lf-vzw .lf-vzw-msg{position:absolute;left:10px;right:10px;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  text-align:center;color:var(--lumiverse-text-muted,#bbb);pointer-events:none}
+.lf-vzw .lf-vzw-msg[hidden]{display:none}
+.lf-vzw .lf-vzw-msg span{display:block;text-align:center;font-size:11px;line-height:15px;max-width:100%}
+.lf-vzw .lf-vzw-tools{position:absolute;top:6px;right:6px;display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.lf-vzw:hover .lf-vzw-tools,.lf-vzw:focus-within .lf-vzw-tools{opacity:1}
+@media (pointer:coarse){.lf-vzw .lf-vzw-tools{opacity:.85}}
+.lf-vzw button{flex:none;min-width:0;min-height:0;max-width:none;border:0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  box-shadow:none;outline:none;font:inherit;background:var(--lumiverse-fill,rgba(255,255,255,.12));color:var(--lumiverse-text,#fff);transition:background .15s}
+.lf-vzw .lf-vzw-tools button{width:24px;height:24px}
+.lf-vzw button:hover{background:var(--lumiverse-fill-subtle,rgba(255,255,255,.2))}
+.lf-vzw button:focus-visible{outline:2px solid var(--lumiverse-primary,#9370db);outline-offset:2px}
+.lf-vzw button svg{display:block;width:14px;height:14px;min-width:0}
+.lf-vzw .lf-vzw-go{width:auto;height:28px;padding:0 14px;border-radius:14px;pointer-events:auto;font-size:12px;font-weight:600;
+  background:var(--lumiverse-primary,#9370db);color:var(--lumiverse-primary-contrast,#fff)}
+.lf-vzw .lf-vzw-grip{position:absolute;right:0;bottom:0;width:22px;height:22px;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px;cursor:nwse-resize;
+  touch-action:none;color:var(--lumiverse-text-muted,#bbb);opacity:.55}
+.lf-vzw .lf-vzw-grip:hover{opacity:1}
+.lf-vzw .lf-vzw-grip svg{display:block;width:12px;height:12px}
+`;
+var ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+var ICON_PLUG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5"/></svg>';
+var ICON_GRIP = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M11 3 3 11M11 7l-4 4"/></svg>';
+
+class Visualizer {
+  ctx;
+  deps;
+  els;
+  bg;
+  left;
+  right;
+  win = null;
+  lanes = new Map;
+  edgeCache = new Map;
+  colCache = { key: "", cols: [] };
+  centered = new Map;
+  bytes = null;
+  configured = new WeakSet;
+  feed = null;
+  sys = null;
+  error = null;
+  raf = 0;
+  poll;
+  last = 0;
+  quietFor = 0;
+  quiet = false;
+  lastLayout = 0;
+  lastPal = 0;
+  pal = ["#a78bfa", "#38bdf8"];
+  t0 = performance.now();
+  lastState = "off";
+  active = false;
+  coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  ro;
+  onVis = () => this.sync(this.onChat);
+  onResize = () => {
+    this.keepWindowOnScreen();
+    this.layout();
+  };
+  onChat = false;
+  sidesWanted = false;
+  constructor(ctx, deps) {
+    this.ctx = ctx;
+    this.deps = deps;
+    const mk = (kind, cls) => {
+      const el = ctx.dom.createElement("canvas", { class: cls });
+      return { kind, el, g: el.getContext("2d"), w: 0, h: 0, dpr: 1, dirty: true, visible: false, n: 0 };
+    };
+    this.bg = mk("bg", "lf-vz-bg");
+    this.left = mk("left", "lf-vz-side");
+    this.right = mk("right", "lf-vz-side");
+    this.els = [this.bg.el, this.left.el, this.right.el];
+    this.ro = typeof ResizeObserver === "function" ? new ResizeObserver((es) => {
+      for (const e of es)
+        for (const t of [this.bg, this.left, this.right])
+          if (t.el === e.target)
+            t.dirty = true;
+    }) : null;
+    for (const t of [this.bg, this.left, this.right])
+      this.ro?.observe(t.el);
+    document.addEventListener("visibilitychange", this.onVis);
+    window.addEventListener("resize", this.onResize);
+  }
+  state() {
+    const s = this.deps.settings();
+    if (!this.active)
+      return "off";
+    if (s.vizSource === "demo")
+      return "live";
+    if (this.needsConnection(s.vizSource) && !this.connected(s.vizSource))
+      return this.error ? "error" : "connect";
+    return this.quiet ? "quiet" : "live";
+  }
+  get lastError() {
+    return this.error;
+  }
+  needsConnection(src) {
+    return src === "tab" || src === "mic" || src === "system";
+  }
+  connected(src) {
+    return src === "system" ? !!this.sys?.ready : !!this.feed;
+  }
+  get animating() {
+    return !!this.raf;
+  }
+  reopenWindow() {
+    this.closeWindow();
+    this.sync(this.onChat);
+  }
+  get windowShown() {
+    return !!this.win;
+  }
+  get canShare() {
+    return !!navigator.mediaDevices?.getDisplayMedia;
+  }
+  sync(onChat) {
+    this.onChat = onChat;
+    const s = this.deps.settings();
+    this.active = s.enabled && s.viz && this.deps.motionOk() && !this.coarse;
+    const on = this.active && !document.hidden;
+    if (this.feed && this.feed.kind !== s.vizSource)
+      this.disconnect();
+    if (this.sys && s.vizSource !== "system")
+      this.disconnect();
+    if (!this.active && (this.feed || this.sys))
+      this.disconnect();
+    if (this.active && s.vizWindow && this.deps.panels())
+      this.openWindow();
+    else
+      this.closeWindow();
+    this.bg.visible = on && s.vizBg && onChat;
+    this.sidesWanted = on && s.vizSides && onChat;
+    if (this.active) {
+      this.pal = this.deps.palette();
+      this.lastPal = performance.now();
+    }
+    this.bg.n = Math.min(128, s.vizBars * 2);
+    this.left.n = this.right.n = Math.max(6, Math.round(s.vizBars * 0.8));
+    if (this.win)
+      this.win.t.n = s.vizBars;
+    const bgStyle = this.bg.el.style;
+    bgStyle.display = this.bg.visible ? "block" : "none";
+    bgStyle.height = `${Math.round(s.vizBgHeight * 100)}%`;
+    bgStyle.opacity = String(s.vizBgOpacity);
+    bgStyle.top = s.vizBgTop ? "0" : "auto";
+    bgStyle.bottom = s.vizBgTop ? "auto" : "0";
+    for (const t of [this.left, this.right])
+      t.el.style.opacity = String(s.vizSideOpacity);
+    if (this.win) {
+      this.win.el.style.opacity = String(s.vizWindowOpacity);
+      this.syncWindowMsg();
+    }
+    this.layout();
+    const any = on && (this.bg.visible || this.left.visible || this.right.visible || !!this.win);
+    if (!any) {
+      this.stopLoop();
+      this.clearAll();
+    } else if (!this.raf && !this.poll) {
+      this.quiet = false;
+      this.quietFor = 0;
+      this.startLoop();
+    } else if (this.poll)
+      this.wake();
+    this.report();
+  }
+  report() {
+    const st = this.state();
+    if (st === this.lastState)
+      return;
+    this.lastState = st;
+    this.deps.onState();
+  }
+  async connect() {
+    const kind = this.deps.settings().vizSource;
+    if (kind === "system")
+      return this.connectSystem();
+    if (kind !== "tab" && kind !== "mic")
+      return;
+    this.disconnect();
+    this.error = null;
+    const md = navigator.mediaDevices;
+    try {
+      if (!md || kind === "tab" && !md.getDisplayMedia || !md.getUserMedia)
+        throw new Error("unsupported");
+      const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      const stream = kind === "tab" ? await md.getDisplayMedia({ video: true, audio: raw }) : await md.getUserMedia({ audio: raw });
+      const audio = stream.getAudioTracks();
+      stream.getVideoTracks().forEach((t) => t.stop());
+      if (!audio.length) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error("noaudio");
+      }
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      const ac = new Ctor;
+      ac.resume().catch(() => {});
+      const an = ac.createAnalyser();
+      ac.createMediaStreamSource(new MediaStream(audio)).connect(an);
+      this.feed = { ac, an, stream, kind };
+      audio[0].addEventListener("ended", () => {
+        if (this.feed?.stream === stream) {
+          this.disconnect();
+          this.sync(this.onChat);
+        }
+      });
+    } catch (err) {
+      const name = err?.name ?? "";
+      const msg = err?.message ?? "";
+      this.error = msg === "noaudio" ? tr("No sound was shared. Pick a tab and tick “Share tab audio”.") : msg === "unsupported" || name === "NotSupportedError" || name === "TypeError" ? tr("This browser can’t listen to that here. Try the microphone.") : name === "NotAllowedError" || name === "AbortError" ? tr("Permission wasn’t given.") : tr("Couldn’t start listening.");
+    }
+    this.sync(this.onChat);
+    this.deps.onState();
+  }
+  async connectSystem() {
+    this.disconnect();
+    this.error = null;
+    const holder = { session: null, bands: new Float32Array(SYS_BANDS), ready: false };
+    try {
+      const api = this.ctx.systemAudio;
+      if (!api || (this.ctx.host?.capabilities?.["system-audio-v1"] ?? 0) < 1)
+        throw new Error("sys:unsupported");
+      const status = api.isAvailable();
+      if (!status.available)
+        throw new Error(`sys:${status.unavailableReason ?? "unsupported"}`);
+      if (!(await this.ctx.permissions.getGranted()).includes("system_audio")) {
+        const granted = await this.ctx.permissions.request(["system_audio"], {
+          reason: tr("Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself, and Lumiverse asks you each time and shows when it is listening.")
+        });
+        if (!granted.includes("system_audio"))
+          throw new Error("sys:denied");
+      }
+      this.sys = holder;
+      holder.session = api.start({
+        bands: SYS_BANDS,
+        maxFps: this.deps.saver() ? 15 : 30,
+        onFrame: (frame) => this.onSystemFrame(holder, frame),
+        onEnd: (reason) => this.onSystemEnd(holder, reason)
+      });
+      await holder.session.ready;
+      if (this.sys !== holder)
+        return;
+      holder.ready = true;
+    } catch (err) {
+      if (this.sys === holder) {
+        holder.session?.stop();
+        this.sys = null;
+      } else if (this.sys)
+        return;
+      this.error = systemError(err);
+    }
+    this.sync(this.onChat);
+    this.deps.onState();
+  }
+  onSystemFrame(holder, frame) {
+    if (this.sys !== holder)
+      return;
+    const bands = holder.bands;
+    const src = frame.frequencies;
+    let loudest = 0;
+    for (let i = 0;i < bands.length; i++) {
+      const x = i < src.length && Number.isFinite(src[i]) ? src[i] : 0;
+      bands[i] = x;
+      if (x > loudest)
+        loudest = x;
+    }
+    if (this.quiet && loudest > 0.25)
+      this.wake();
+  }
+  onSystemEnd(holder, reason) {
+    if (this.sys !== holder)
+      return;
+    this.sys = null;
+    this.error = systemEnded(reason);
+    this.sync(this.onChat);
+    this.deps.onState();
+  }
+  disconnect() {
+    const sys = this.sys;
+    this.sys = null;
+    try {
+      sys?.session?.stop();
+    } catch {}
+    const f = this.feed;
+    this.feed = null;
+    if (!f)
+      return;
+    f.stream.getTracks().forEach((t) => t.stop());
+    f.ac.close().catch(() => {});
+  }
+  analyser() {
+    const src = this.deps.settings().vizSource;
+    let node = null;
+    let comp = 1;
+    if (src === "flair") {
+      const t = this.deps.tap();
+      if (t) {
+        node = t.node;
+        comp = 1 / Math.max(0.08, Math.min(1, t.level));
+      }
+    } else if (this.feed)
+      node = this.feed.an;
+    if (!node)
+      return null;
+    if (!this.configured.has(node)) {
+      this.configured.add(node);
+      node.fftSize = 2048;
+      node.smoothingTimeConstant = 0.5;
+      node.minDecibels = -85;
+      node.maxDecibels = -20;
+    }
+    return { node, comp };
+  }
+  startLoop() {
+    if (this.raf || document.hidden)
+      return;
+    this.last = 0;
+    this.raf = requestAnimationFrame(this.frame);
+  }
+  stopLoop() {
+    if (this.raf)
+      cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    if (this.poll)
+      clearInterval(this.poll);
+    this.poll = undefined;
+  }
+  clearAll() {
+    for (const t of this.targets())
+      this.clear(t);
+    for (const l of this.lanes.values()) {
+      l.v.fill(0);
+      l.pk.fill(0);
+    }
+  }
+  clear(t) {
+    t.g?.setTransform(1, 0, 0, 1, 0, 0);
+    t.g?.clearRect(0, 0, t.el.width, t.el.height);
+  }
+  targets() {
+    return [this.bg, this.left, this.right, ...this.win ? [this.win.t] : []];
+  }
+  goQuiet() {
+    this.quiet = true;
+    if (this.raf)
+      cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.clearAll();
+    if (this.deps.settings().vizSource === "system") {
+      this.syncWindowMsg();
+      this.report();
+      return;
+    }
+    this.poll = setInterval(() => {
+      const a = this.analyser();
+      if (!a)
+        return;
+      const d = this.buffer(a.node);
+      a.node.getByteFrequencyData(d);
+      let m = 0;
+      for (let i = 0;i < d.length; i++)
+        if (d[i] > m)
+          m = d[i];
+      if (m > 12)
+        this.wake();
+    }, 250);
+    this.syncWindowMsg();
+    this.report();
+  }
+  wake() {
+    if (this.poll)
+      clearInterval(this.poll);
+    this.poll = undefined;
+    this.quiet = false;
+    this.quietFor = 0;
+    this.startLoop();
+    this.syncWindowMsg();
+    this.report();
+  }
+  buffer(node) {
+    if (!this.bytes || this.bytes.length !== node.frequencyBinCount)
+      this.bytes = new Uint8Array(node.frequencyBinCount);
+    return this.bytes;
+  }
+  lane(n) {
+    let l = this.lanes.get(n);
+    if (!l)
+      this.lanes.set(n, l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) });
+    return l;
+  }
+  frame = (now) => {
+    this.raf = 0;
+    const s = this.deps.settings();
+    if (!this.active || document.hidden)
+      return;
+    const saver = this.deps.saver();
+    const minMs = this.coarse || saver ? 30 : 0;
+    if (this.last && now - this.last < minMs) {
+      this.raf = requestAnimationFrame(this.frame);
+      return;
+    }
+    const dt = this.last ? Math.min(0.1, (now - this.last) / 1000) : 1 / 60;
+    this.last = now;
+    if (now - this.lastLayout > 1000)
+      this.layout();
+    if (now - this.lastPal > 1000) {
+      this.lastPal = now;
+      this.pal = this.deps.palette();
+    }
+    const demo = s.vizSource === "demo";
+    const a = demo ? null : this.analyser();
+    const spectrum = !demo && s.vizSource === "system" && this.sys?.ready ? this.sys.bands : null;
+    let data = null;
+    if (a) {
+      data = this.buffer(a.node);
+      a.node.getByteFrequencyData(data);
+    }
+    const gain = s.vizSensitivity * (a?.comp ?? 1);
+    const noFlash = s.noFlash;
+    const kA = 1 - Math.pow(1 - (noFlash ? 0.3 : 0.75), dt * 60);
+    const kR = 1 - Math.pow(1 - (0.04 + (1 - s.vizSmoothing) * 0.5), dt * 60);
+    const t = (now - this.t0) / 1000;
+    const looks = this.look(s, saver);
+    let energy = 0;
+    const sizes = new Set;
+    for (const tg of this.targets())
+      if (tg.visible && tg.n)
+        sizes.add(tg.n);
+    for (const n of sizes) {
+      const lane = this.lane(n);
+      if (demo)
+        synth(lane.tmp, t);
+      else if (spectrum)
+        readSystemBands(spectrum, lane.tmp, gain);
+      else if (data)
+        readBands(data, this.edges(n, data.length, a.node.context.sampleRate), lane.tmp, gain);
+      else
+        lane.tmp.fill(0);
+      for (let i = 0;i < n; i++) {
+        const x = lane.tmp[i];
+        lane.v[i] += (x - lane.v[i]) * (x > lane.v[i] ? kA : kR);
+        lane.pk[i] = Math.max(lane.v[i], lane.pk[i] - dt * 0.4);
+        if (lane.v[i] > energy)
+          energy = lane.v[i];
+      }
+    }
+    for (const tg of this.targets()) {
+      if (!tg.visible || !tg.n)
+        continue;
+      this.paint(tg, this.lane(tg.n), looks, s);
+    }
+    if (!demo && energy < 0.01) {
+      this.quietFor += dt;
+      if (this.quietFor > 1.2) {
+        this.goQuiet();
+        return;
+      }
+    } else {
+      this.quietFor = 0;
+      if (this.quiet) {
+        this.quiet = false;
+        this.syncWindowMsg();
+        this.report();
+      }
+    }
+    this.raf = requestAnimationFrame(this.frame);
+  };
+  edges(n, bins, sr) {
+    const key = `${n}:${bins}:${sr}`;
+    let e = this.edgeCache.get(key);
+    if (!e) {
+      if (this.edgeCache.size > 12)
+        this.edgeCache.clear();
+      this.edgeCache.set(key, e = bandEdges(n, bins, sr));
+    }
+    return e;
+  }
+  look(s, saver) {
+    const [a, b] = s.vizColor === "custom" ? [s.vizColorA, s.vizColorB] : this.pal;
+    return {
+      style: s.vizStyle,
+      fill: s.vizBarFill,
+      round: s.vizRound,
+      peaks: s.vizPeaks,
+      glow: saver || s.noFlash ? 0 : s.vizGlow,
+      a,
+      b,
+      rainbow: s.vizColor === "rainbow",
+      up: s.vizGradientUp && s.vizStyle !== "wave"
+    };
+  }
+  colours(look, n) {
+    if (look.style === "wave" || !look.rainbow && look.up)
+      return null;
+    const key = `${look.rainbow ? "r" : look.a + look.b}:${n}`;
+    if (this.colCache.key !== key) {
+      this.colCache = {
+        key,
+        cols: Array.from({ length: n }, (_, i) => look.rainbow ? `hsl(${Math.round(i / Math.max(1, n - 1) * 300)},85%,62%)` : lerpHex(look.a, look.b, i / Math.max(1, n - 1)))
+      };
+    }
+    return this.colCache.cols;
+  }
+  fit(t) {
+    const w = t.el.clientWidth;
+    const h = t.el.clientHeight;
+    t.dirty = false;
+    if (!w || !h) {
+      t.w = t.h = 0;
+      return;
+    }
+    const dpr = Math.min(window.devicePixelRatio || 1, this.coarse ? 1 : 1.5);
+    const bw = Math.max(1, Math.round(w * dpr));
+    const bh = Math.max(1, Math.round(h * dpr));
+    if (t.el.width !== bw)
+      t.el.width = bw;
+    if (t.el.height !== bh)
+      t.el.height = bh;
+    t.w = w;
+    t.h = h;
+    t.dpr = dpr;
+  }
+  paint(t, lane, look, s) {
+    if (t.dirty || !t.w)
+      this.fit(t);
+    const g = t.g;
+    if (!g || !t.w)
+      return;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, t.el.width, t.el.height);
+    g.setTransform(t.dpr, 0, 0, t.dpr, 0, 0);
+    let L = t.w;
+    let T = t.h;
+    if (t.kind === "left") {
+      g.transform(0, -1, 1, 0, 0, t.h);
+      L = t.h;
+      T = t.w;
+    } else if (t.kind === "right") {
+      g.transform(0, -1, -1, 0, t.w, t.h);
+      L = t.h;
+      T = t.w;
+    } else if (t.kind === "bg" && s.vizBgTop)
+      g.transform(1, 0, 0, -1, 0, t.h);
+    let v = lane.v;
+    let pk = lane.pk;
+    let cols = this.colours(look, lane.v.length);
+    if (s.vizCenter) {
+      const n = lane.v.length;
+      const key = `${n}:${s.vizCenterFlip}`;
+      let c = this.centered.get(key);
+      if (!c)
+        this.centered.set(key, c = { map: centerMap(n, s.vizCenterFlip), v: new Float32Array(n), pk: new Float32Array(n) });
+      for (let j = 0;j < n; j++) {
+        c.v[j] = lane.v[c.map[j]];
+        c.pk[j] = lane.pk[c.map[j]];
+      }
+      v = c.v;
+      pk = c.pk;
+      if (cols)
+        cols = c.map.map((i) => cols[i]);
+    }
+    if (look.style === "wave" && look.rainbow) {
+      const grad = g.createLinearGradient(0, 0, L, 0);
+      for (let i = 0;i <= 5; i++)
+        grad.addColorStop(i / 5, `hsl(${i * 60},85%,62%)`);
+      g.fillStyle = g.strokeStyle = grad;
+    } else if (!cols) {
+      const grad = look.style === "mirror" ? g.createLinearGradient(0, T * 0.15, 0, T * 0.85) : g.createLinearGradient(0, T, 0, T * 0.3);
+      if (look.style === "mirror") {
+        grad.addColorStop(0, look.b);
+        grad.addColorStop(0.5, look.a);
+        grad.addColorStop(1, look.b);
+      } else {
+        grad.addColorStop(0, look.a);
+        grad.addColorStop(1, look.b);
+      }
+      g.fillStyle = g.strokeStyle = grad;
+    } else
+      g.strokeStyle = look.rainbow ? "hsl(190,85%,62%)" : look.b;
+    const bw = L / v.length * look.fill;
+    if (look.glow > 0) {
+      g.globalAlpha = 0.2 * look.glow;
+      shapes(g, L, T, v, pk, look, cols, 1 + look.glow * Math.min(7, 1 + bw * 0.4));
+      g.globalAlpha = 1;
+    }
+    shapes(g, L, T, v, pk, look, cols, 0);
+    if (look.style === "wave") {
+      g.lineWidth = 2;
+      g.stroke();
+    }
+  }
+  layout() {
+    this.lastLayout = performance.now();
+    const view = document.querySelector('[data-component="ChatView"]');
+    const list = view?.querySelector('[data-component="MessageList"]');
+    const want = this.deps.settings();
+    if (!this.sidesWanted || !view || !list) {
+      this.left.el.style.display = this.right.el.style.display = "none";
+      this.left.visible = this.right.visible = false;
+      return;
+    }
+    const vr = view.getBoundingClientRect();
+    const lr = list.getBoundingClientRect();
+    const scale = vr.width / (view.offsetWidth || vr.width) || 1;
+    const place = (t, space, side) => {
+      const w = Math.min(want.vizSideWidth, Math.floor(space - GAP));
+      const show = w >= SIDE_MIN;
+      t.el.style.display = show ? "block" : "none";
+      if (!show) {
+        t.visible = false;
+        return;
+      }
+      t.visible = true;
+      t.el.style.width = `${w}px`;
+      if (side === "l") {
+        t.el.style.left = `${Math.round(space - GAP - w)}px`;
+        t.el.style.right = "auto";
+      } else {
+        t.el.style.right = `${Math.round(space - GAP - w)}px`;
+        t.el.style.left = "auto";
+      }
+    };
+    place(this.left, (lr.left - vr.left) / scale, "l");
+    place(this.right, (vr.right - lr.right) / scale, "r");
+  }
+  winSize() {
+    const s = this.deps.settings().vizWindowSize;
+    return s ?? { w: 320, h: 150 };
+  }
+  clampWin(p, d = this.winSize()) {
+    const maxX = Math.max(0, window.innerWidth - d.w - 4);
+    const maxY = Math.max(0, window.innerHeight - d.h - 4);
+    return { x: Math.round(Math.max(4, Math.min(maxX, p.x))), y: Math.round(Math.max(4, Math.min(maxY, p.y))) };
+  }
+  keepWindowOnScreen() {
+    const w = this.win?.w;
+    if (!w)
+      return;
+    const p = w.getPosition();
+    const c = this.clampWin(p);
+    if (c.x !== p.x || c.y !== p.y)
+      w.moveTo(c.x, c.y);
+  }
+  openWindow() {
+    if (this.win)
+      return;
+    const d = this.winSize();
+    const saved = this.deps.settings().vizWindowPos;
+    const pos = this.clampWin(saved ?? { x: window.innerWidth - d.w - 24, y: window.innerHeight - d.h - 130 }, d);
+    let w;
+    try {
+      w = this.ctx.ui.createFloatWidget({ width: d.w, height: d.h, initialPosition: pos, snapToEdge: false, tooltip: tr("Audio visualizer"), chromeless: true });
+    } catch (err) {
+      console.warn("[Lumi Flair] Visualizer window unavailable", err);
+      return;
+    }
+    const el = document.createElement("div");
+    el.className = "lf-vzw";
+    el.setAttribute("role", "group");
+    el.setAttribute("aria-label", tr("Audio visualizer"));
+    el.style.width = `${d.w}px`;
+    el.style.height = `${d.h}px`;
+    el.innerHTML = `<canvas class="lf-vzw-cv" aria-hidden="true"></canvas>` + `<div class="lf-vzw-msg" hidden><span></span><button type="button" class="lf-vzw-go"></button></div>` + `<div class="lf-vzw-tools"><button type="button" class="lf-vzw-plug"></button><button type="button" class="lf-vzw-x"></button></div>` + `<div class="lf-vzw-grip" role="separator">${ICON_GRIP}</div>`;
+    const cv = el.querySelector(".lf-vzw-cv");
+    const msg = el.querySelector(".lf-vzw-msg");
+    const text = msg.querySelector("span");
+    const go = msg.querySelector(".lf-vzw-go");
+    const plug = el.querySelector(".lf-vzw-plug");
+    const x = el.querySelector(".lf-vzw-x");
+    const grip = el.querySelector(".lf-vzw-grip");
+    go.textContent = tr("Connect audio");
+    go.addEventListener("click", () => void this.connect());
+    plug.innerHTML = ICON_PLUG;
+    plug.title = plug.ariaLabel = tr("Connect audio");
+    plug.addEventListener("click", () => void this.connect());
+    x.innerHTML = ICON_CLOSE;
+    x.title = tr("Hide this window");
+    x.setAttribute("aria-label", tr("Hide this window"));
+    x.addEventListener("click", () => this.deps.update({ vizWindow: false }));
+    for (const c of [plug, x, grip, go])
+      for (const ev of ["pointerdown", "mousedown", "touchstart"])
+        c.addEventListener(ev, (e) => e.stopPropagation());
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try {
+        grip.setPointerCapture(e.pointerId);
+      } catch {}
+      const r = el.getBoundingClientRect();
+      const k = r.width / (el.offsetWidth || r.width) || 1;
+      const start = { x: e.clientX, y: e.clientY, w: el.offsetWidth, h: el.offsetHeight };
+      const p = w.getPosition();
+      const move = (ev) => {
+        const nw = Math.round(Math.max(VIZ_WIN_MIN.w, Math.min(VIZ_WIN_MAX.w, window.innerWidth - p.x - 4, start.w + (ev.clientX - start.x) / k)));
+        const nh = Math.round(Math.max(VIZ_WIN_MIN.h, Math.min(VIZ_WIN_MAX.h, window.innerHeight - p.y - 4, start.h + (ev.clientY - start.y) / k)));
+        el.style.width = `${nw}px`;
+        el.style.height = `${nh}px`;
+        w.setSize(nw, nh);
+      };
+      const up = () => {
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", up);
+        grip.removeEventListener("pointercancel", up);
+        this.deps.update({ vizWindowSize: { w: el.offsetWidth, h: el.offsetHeight } });
+      };
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+      grip.addEventListener("pointercancel", up);
+    });
+    w.root.appendChild(el);
+    const t = { kind: "win", el: cv, g: cv.getContext("2d"), w: 0, h: 0, dpr: 1, dirty: true, visible: true, n: this.deps.settings().vizBars };
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => t.dirty = true) : null;
+    ro?.observe(cv);
+    const unDrag = w.onDragEnd((p) => {
+      const c = this.clampWin(p);
+      if (c.x !== p.x || c.y !== p.y)
+        w.moveTo(c.x, c.y);
+      this.deps.update({ vizWindowPos: c });
+    });
+    this.win = { w, el, t, msg, text, go, tools: plug, unDrag, ro };
+    this.syncWindowMsg();
+  }
+  syncWindowMsg() {
+    const win = this.win;
+    if (!win)
+      return;
+    const s = this.deps.settings();
+    const st = this.state();
+    const share = this.needsConnection(s.vizSource);
+    win.tools.style.display = share ? "" : "none";
+    const text = st === "connect" || st === "error" ? this.error ?? (s.vizSource === "tab" ? tr("Share a tab or your screen with its sound") : s.vizSource === "system" ? tr("Listen to your computer’s sound") : tr("Listen through the microphone")) : st === "quiet" ? s.vizSource === "flair" ? tr("Waiting for Flair sounds — turn on Soundscapes or play an “Always play” track") : tr("Listening…") : "";
+    win.text.textContent = text;
+    win.go.style.display = st === "connect" || st === "error" ? "" : "none";
+    win.msg.hidden = !text;
+  }
+  closeWindow() {
+    const win = this.win;
+    if (!win)
+      return;
+    this.win = null;
+    win.ro?.disconnect();
+    win.unDrag();
+    try {
+      win.w.destroy();
+    } catch {}
+  }
+  destroy() {
+    this.stopLoop();
+    this.disconnect();
+    this.closeWindow();
+    this.ro?.disconnect();
+    document.removeEventListener("visibilitychange", this.onVis);
+    window.removeEventListener("resize", this.onResize);
+    for (const t of [this.bg, this.left, this.right]) {
+      this.clear(t);
+      t.el.remove();
+    }
+  }
+}
+
+// src/soundlib.ts
+var MAX_SOUND_BYTES = 40 * 1024 * 1024;
+var MAX_SOUNDS = 40;
+var SOUND_ACCEPT = ["audio/*", ".mp3", ".ogg", ".oga", ".opus", ".wav", ".m4a", ".aac", ".flac", ".webm"];
+var DECODE_SECONDS = 90;
+var DECODED_BUDGET = 160 * 1024 * 1024;
+var DB_NAME = "lumi_flair_sounds";
+var META = "meta";
+var DATA = "data";
+function req(r) {
+  return new Promise((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+function done(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("aborted"));
+  });
+}
+function newId() {
+  return "snd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function soundName(file) {
+  const base = file.replace(/\.[a-z0-9]{2,5}$/i, "").replace(/[_]+/g, " ").trim();
+  return (base || "Sound").slice(0, 60);
+}
+
+class SoundLibrary {
+  db = null;
+  items = new Map;
+  memory = new Map;
+  persistent = true;
+  urls = new Map;
+  buffers = new Map;
+  listeners = new Set;
+  ready;
+  constructor() {
+    this.ready = this.open().catch((err) => {
+      console.warn("[Lumi Flair] Sound library is session-only (browser storage unavailable)", err);
+      this.persistent = false;
+    });
+  }
+  get saved() {
+    return this.persistent;
+  }
+  async open() {
+    if (typeof indexedDB === "undefined")
+      throw new Error("no indexedDB");
+    const open = indexedDB.open(DB_NAME, 1);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains(META))
+        db.createObjectStore(META, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(DATA))
+        db.createObjectStore(DATA);
+    };
+    this.db = await req(open);
+    const all = await req(this.db.transaction(META).objectStore(META).getAll());
+    for (const m of all)
+      if (m && typeof m.id === "string")
+        this.items.set(m.id, m);
+    this.emit();
+  }
+  onChange(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  emit() {
+    for (const fn of this.listeners) {
+      try {
+        fn();
+      } catch (err) {
+        console.error("[Lumi Flair] sound library listener failed", err);
+      }
+    }
+  }
+  list() {
+    return [...this.items.values()].sort((a, b) => a.at - b.at);
+  }
+  has(id) {
+    return !!id && this.items.has(id);
+  }
+  meta(id) {
+    return this.items.get(id);
+  }
+  get count() {
+    return this.items.size;
+  }
+  async probe(bytes) {
+    const Ctor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Ctor)
+      return 0;
+    const ac = new Ctor(1, 1, 22050);
+    const copy = bytes.slice().buffer;
+    const buf = await ac.decodeAudioData(copy);
+    return buf.duration;
+  }
+  async add(file) {
+    await this.ready;
+    if (this.items.size >= MAX_SOUNDS)
+      throw new Error(`You can keep up to ${MAX_SOUNDS} sounds — delete one first.`);
+    const size = file.sizeBytes ?? file.bytes.byteLength;
+    if (size > MAX_SOUND_BYTES)
+      throw new Error(`“${file.name}” is larger than ${MAX_SOUND_BYTES / 1024 / 1024} MB.`);
+    let duration = 0;
+    try {
+      duration = await this.probe(file.bytes);
+    } catch {
+      throw new Error(`“${file.name}” isn't an audio file this browser can play.`);
+    }
+    const mime = file.mimeType && file.mimeType !== "application/octet-stream" ? file.mimeType : "audio/mpeg";
+    const meta = { id: newId(), name: soundName(file.name), mime, size, duration: Math.round(duration * 10) / 10, level: 1, at: Date.now() };
+    const blob = new Blob([file.bytes.slice().buffer], { type: mime });
+    if (this.db) {
+      try {
+        const tx = this.db.transaction([META, DATA], "readwrite");
+        tx.objectStore(DATA).put(blob, meta.id);
+        tx.objectStore(META).put(meta);
+        await done(tx);
+      } catch (err) {
+        const quota = err instanceof DOMException && err.name === "QuotaExceededError";
+        throw new Error(quota ? "The browser is out of storage space for sounds — delete some first." : `Couldn't save “${file.name}”.`);
+      }
+    } else
+      this.memory.set(meta.id, blob);
+    this.items.set(meta.id, meta);
+    this.emit();
+    return meta;
+  }
+  async remove(id) {
+    await this.ready;
+    if (this.db) {
+      const tx = this.db.transaction([META, DATA], "readwrite");
+      tx.objectStore(DATA).delete(id);
+      tx.objectStore(META).delete(id);
+      await done(tx).catch(() => {});
+    }
+    this.memory.delete(id);
+    this.items.delete(id);
+    this.buffers.delete(id);
+    const url = this.urls.get(id);
+    if (url)
+      URL.revokeObjectURL(url);
+    this.urls.delete(id);
+    this.emit();
+  }
+  async update(id, patch) {
+    const m = this.items.get(id);
+    if (!m)
+      return;
+    const next = {
+      ...m,
+      ...patch.name !== undefined ? { name: patch.name.trim().slice(0, 60) || m.name } : {},
+      ...patch.level !== undefined ? { level: Math.max(0, Math.min(1.5, patch.level)) } : {}
+    };
+    this.items.set(id, next);
+    if (this.db) {
+      const tx = this.db.transaction(META, "readwrite");
+      tx.objectStore(META).put(next);
+      await done(tx).catch(() => {});
+    }
+    this.emit();
+  }
+  async blob(id) {
+    await this.ready;
+    const mem = this.memory.get(id);
+    if (mem)
+      return mem;
+    if (!this.db)
+      return null;
+    const b = await req(this.db.transaction(DATA).objectStore(DATA).get(id)).catch(() => null);
+    return b ?? null;
+  }
+  async url(id) {
+    const have = this.urls.get(id);
+    if (have)
+      return have;
+    const b = await this.blob(id);
+    if (!b)
+      return null;
+    const u = URL.createObjectURL(b);
+    this.urls.set(id, u);
+    return u;
+  }
+  async source(id, ac) {
+    const m = this.items.get(id);
+    if (!m)
+      return null;
+    const cached = this.buffers.get(id);
+    if (cached)
+      return { kind: "buffer", buffer: cached, level: m.level };
+    if (m.duration > 0 && m.duration <= DECODE_SECONDS) {
+      const b = await this.blob(id);
+      if (!b)
+        return null;
+      try {
+        const buffer = await ac.decodeAudioData(await b.arrayBuffer());
+        this.remember(id, buffer);
+        return { kind: "buffer", buffer, level: m.level };
+      } catch {
+        return null;
+      }
+    }
+    const url = await this.url(id);
+    return url ? { kind: "url", url, level: m.level } : null;
+  }
+  remember(id, buffer) {
+    this.buffers.delete(id);
+    this.buffers.set(id, buffer);
+    const bytes = (b) => b.length * b.numberOfChannels * 4;
+    let total = 0;
+    for (const b of this.buffers.values())
+      total += bytes(b);
+    while (total > DECODED_BUDGET && this.buffers.size > 1) {
+      const oldest = this.buffers.keys().next().value;
+      if (oldest === undefined)
+        break;
+      total -= bytes(this.buffers.get(oldest));
+      this.buffers.delete(oldest);
+    }
+  }
+  destroy() {
+    for (const u of this.urls.values())
+      URL.revokeObjectURL(u);
+    this.urls.clear();
+    this.buffers.clear();
+    this.listeners.clear();
+    this.db?.close();
+    this.db = null;
+  }
 }
 
 // src/soundwidget.ts
@@ -5413,7 +6499,7 @@ var INTRO_CSS = `
 .lf-spk[data-motion="0"] .lf-spk-in { animation: none; }
 @keyframes lf-spk-pop { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 `;
-function hslToHex(h, s, l) {
+function hslToHex2(h, s, l) {
   const k = (n) => (n + h / 30) % 12;
   const a = s * Math.min(l, 1 - l);
   const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
@@ -5425,7 +6511,7 @@ function hashColor(seed) {
     h ^= seed.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return hslToHex((h >>> 0) % 360, 0.72, 0.64);
+  return hslToHex2((h >>> 0) % 360, 0.72, 0.64);
 }
 var SAFE_SRC = /^(https?:|data:image\/|blob:|\/)/i;
 
@@ -8936,6 +10022,89 @@ function mountPanel(ctx, store, actions) {
   statusSyncers.push(renderScape);
   syncers.push(() => renderScape(actions.status()));
   renderScape(actions.status());
+  const vz = section("visualizer", "Audio visualizer", I.music);
+  toggle(vz.body, "Show the visualizer", "viz");
+  hint(vz.body, "Bars that move to music, in a floating window you can drag and resize, behind the chat, and in strips beside it — use any or all. It follows your Flair Pack’s colours, or yours. A visualizer is constant motion, so it stays off when “reduce motion” is on.");
+  select(vz.body, "Listen to", "vizSource", [
+    { value: "flair", label: "Flair’s own sound", sublabel: "Soundscapes and your “Always play” track" },
+    { value: "tab", label: "A tab or screen", sublabel: "Share the music’s tab with its sound (Chrome, Edge)" },
+    { value: "mic", label: "Microphone", sublabel: "Hears your speakers; the way in on a phone" },
+    { value: "system", label: "This computer’s sound", sublabel: "Whatever your computer is playing (Lumiverse desktop app)" },
+    { value: "demo", label: "Demo signal", sublabel: "Moving bars with no sound, for setting up" }
+  ]);
+  const vzSystem = hint(vz.body, "Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. Lumiverse asks you each time you connect and shows while it is listening.");
+  const vzStatus = status(vz.body, (st, el) => {
+    const src = store.get().vizSource;
+    const bits = {
+      off: store.get().viz ? tr("Not showing — reduce motion is on, or Flair is off") : tr("Off"),
+      live: src === "demo" ? tr("♪ Showing the demo signal") : tr("♪ Listening"),
+      quiet: src === "flair" ? tr("Quiet — turn on Soundscapes or an “Always play” track to see bars") : tr("Listening — no sound right now"),
+      connect: src === "tab" ? tr("Not connected — press “Connect audio” and share a tab with its sound") : src === "system" ? tr("Not connected — press “Connect audio”; the desktop app asks you first") : tr("Not connected — press “Connect audio”"),
+      error: st.viz.error ?? tr("Couldn’t start listening")
+    };
+    el.textContent = bits[st.viz.state] ?? "";
+    el.style.display = store.get().viz ? "" : "none";
+  });
+  const vzConnect = button(buttons(vz.body), "Connect audio", actions.vizConnect, "primary", I.music);
+  const vzReset = button(buttons(vz.body), "Reset window", actions.vizResetWindow, "secondary", I.reset);
+  slider(vz.body, "Sensitivity", "vizSensitivity", 0.3, 4, 0.05, { suffix: "×" });
+  slider(vz.body, "Smoothness", "vizSmoothing", 0, 0.95, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  hint(vz.body, "<b>Where it shows</b>");
+  toggle(vz.body, "Floating window", "vizWindow", async (next) => !next || actions.status().panelsPermission || await actions.requestPanelsPermission());
+  const vzGrant = hint(vz.body, "The window needs the “UI panels” permission. Drag it anywhere; pull its bottom-right corner to resize.");
+  slider(vz.body, "Window opacity", "vizWindowOpacity", 0.15, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  toggle(vz.body, "Background layer", "vizBg");
+  slider(vz.body, "Background opacity", "vizBgOpacity", 0.05, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  slider(vz.body, "Background height", "vizBgHeight", 0.1, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  toggle(vz.body, "Hang the background bars from the top", "vizBgTop");
+  toggle(vz.body, "Strips beside the chat", "vizSides");
+  slider(vz.body, "Strip width", "vizSideWidth", 40, 320, 5, { suffix: " px", decimals: 0 });
+  slider(vz.body, "Strip opacity", "vizSideOpacity", 0.05, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  hint(vz.body, "The strips use the free space beside the chat column, so they only show when the chat is narrower than the screen.");
+  hint(vz.body, "<b>Look</b>");
+  select(vz.body, "Style", "vizStyle", [
+    { value: "bars", label: "Bars", sublabel: "Classic bars rising from the bottom" },
+    { value: "mirror", label: "Mirrored bars", sublabel: "Bars grow both ways from the middle" },
+    { value: "segments", label: "Segments", sublabel: "Stacked blocks, like a level meter" },
+    { value: "wave", label: "Wave", sublabel: "A smooth filled curve" }
+  ]);
+  slider(vz.body, "Bars", "vizBars", 8, 96, 1, { decimals: 0 });
+  slider(vz.body, "Bar width", "vizBarFill", 0.2, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  slider(vz.body, "Rounded corners", "vizRound", 0, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  slider(vz.body, "Glow", "vizGlow", 0, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
+  toggle(vz.body, "Peak caps", "vizPeaks");
+  toggle(vz.body, "Center mirror", "vizCenter");
+  hint(vz.body, "Lows in the middle and the highs mirrored out to both sides, instead of low to high from left to right.");
+  toggle(vz.body, "Lows on the outside", "vizCenterFlip");
+  const vzFlip = vz.body.lastElementChild;
+  select(vz.body, "Colours", "vizColor", [
+    { value: "flair", label: "Match my Flair Pack", sublabel: "The glow colour and the pack’s second colour" },
+    { value: "custom", label: "My own colours" },
+    { value: "rainbow", label: "Rainbow" }
+  ]);
+  const vzA = color(vz.body, "Colour 1", "vizColorA");
+  const vzB = color(vz.body, "Colour 2", "vizColorB");
+  toggle(vz.body, "Colour runs up each bar", "vizGradientUp");
+  hint(vz.body, "Off: the colour runs across the row of bars instead. “No flashing” softens how fast bars jump and turns the glow off.");
+  const syncViz = (s, st = actions.status()) => {
+    const share = s.vizSource === "tab" || s.vizSource === "mic" || s.vizSource === "system";
+    vzConnect.el.style.display = s.viz && share ? "" : "none";
+    vzSystem.style.display = s.vizSource === "system" ? "" : "none";
+    vzConnect.setText(st.viz.state === "live" || st.viz.state === "quiet" ? "Reconnect audio" : "Connect audio");
+    vzReset.el.style.display = s.viz && s.vizWindow ? "" : "none";
+    vzFlip.style.display = s.vizCenter ? "" : "none";
+    vzA.style.display = vzB.style.display = s.vizColor === "custom" ? "" : "none";
+    vzGrant.style.display = s.vizWindow && !st.panelsPermission ? "" : "none";
+  };
+  syncers.push((s) => syncViz(s));
+  statusSyncers.push((st) => syncViz(store.get(), st));
+  syncViz(s0);
+  if (typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches) {
+    const note = document.createElement("p");
+    note.className = "lf-hint";
+    note.textContent = tr("The audio visualizer is only available on desktop screens, so it stays off here.");
+    vz.body.replaceChildren(note);
+  }
   const mine = section("mysounds", "Your sounds", I.music);
   hint(mine.body, "Use your own audio files: a looping ambience for any scene or lighting (or one track that always plays), and your own message and system sounds. Files stay in this browser, so other devices need their own copies, and they aren’t included in settings backups.");
   const sl = actions.sounds;
@@ -9495,7 +10664,7 @@ class StoryNavigator {
 }
 
 // src/uitheme.ts
-function hslToHex2(h, s, l) {
+function hslToHex3(h, s, l) {
   s /= 100;
   l /= 100;
   const k = (n) => (n + h / 30) % 12;
@@ -9509,11 +10678,11 @@ function themeFromColor(hex) {
   const tint = s < 12 ? 0 : 1;
   return {
     accent: hex,
-    secondary: hslToHex2((h + 40) % 360, sat * 0.8, 62),
-    bgDark: hslToHex2(h, 26 * tint, 9),
-    bgLight: hslToHex2(h, 34 * tint, 96),
-    speech: hslToHex2(h, Math.min(90, sat + 10), 74),
-    thoughts: hslToHex2((h + 28) % 360, 38 * tint, 72)
+    secondary: hslToHex3((h + 40) % 360, sat * 0.8, 62),
+    bgDark: hslToHex3(h, 26 * tint, 9),
+    bgLight: hslToHex3(h, 34 * tint, 96),
+    speech: hslToHex3(h, Math.min(90, sat + 10), 74),
+    thoughts: hslToHex3((h + 28) % 360, 38 * tint, 72)
   };
 }
 function resolveUiTheme(s, charAura, moodColor) {
@@ -9905,7 +11074,7 @@ function setup(ctx) {
   const director = new DirectorState;
   const statusListeners = new Set;
   const pinListeners = new Set;
-  disposers.push(ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join(`
+  disposers.push(ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS, VIZ_CSS].join(`
 `)));
   let removeMainCss = null;
   disposers.push(() => removeMainCss?.());
@@ -10001,6 +11170,7 @@ function setup(ctx) {
     ambient.destroy();
     sound.destroy();
     soundWidget.destroy();
+    viz.destroy();
     scape.destroy();
     lib.destroy();
     cine.destroy();
@@ -10019,13 +11189,28 @@ function setup(ctx) {
   disposers.push(() => reducedMotion.removeEventListener?.("change", onMotionChange));
   const touchScreen = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const lightAnimating = () => cine.animating && !touchScreen();
-  const perf = new PerfGovernor(() => store.get().perfGovernor && (ambient.current !== "off" || lightAnimating()), (saver) => {
+  const perf = new PerfGovernor(() => store.get().perfGovernor && (ambient.current !== "off" || lightAnimating() || viz.animating), (saver) => {
     state.saver = saver;
     applyAmbient();
     applyCinematic();
     notifyStatus();
   });
   disposers.push(() => perf.stop());
+  const viz = new Visualizer(ctx, {
+    settings: () => store.get(),
+    update: (patch) => store.update(patch),
+    tap: () => scape.tap(),
+    palette: () => {
+      const a = hexOf(charColor());
+      const pack = packById(store.get().activePack);
+      const b = (pack && typeof pack.theme === "object" ? pack.theme.secondary : undefined) ?? pack?.swatch[1];
+      return [a, b && b.toLowerCase() !== a.toLowerCase() ? b : shiftHue(a, 45)];
+    },
+    motionOk: () => motionAllowed(),
+    saver: () => state.saver || perf.saving,
+    panels: () => state.panelsPermission,
+    onState: () => notifyStatus()
+  });
   function rgbOf(el) {
     return parseComputedColor(getComputedStyle(el).color) ?? { r: 147, g: 112, b: 219 };
   }
@@ -10215,13 +11400,13 @@ function setup(ctx) {
       }
       return false;
     }
-    if (view === ambientChatView && ambientHost?.isConnected && ambientEl.isConnected && cine.el.isConnected)
+    if (view === ambientChatView && ambientHost?.isConnected && ambientEl.isConnected && cine.el.isConnected && viz.els[0].isConnected)
       return true;
     if (ambientHost)
       ctx.dom.uninject(ambientHost);
     ambientHost = ctx.dom.inject(view, '<div class="lf-ambient-host"></div>', "beforeend");
     const host = ambientHost.querySelector(".lf-ambient-host") ?? ambientHost;
-    host.append(ambientEl, cine.el);
+    host.append(...viz.els, ambientEl, cine.el);
     ambientChatView = view;
     return true;
   }
@@ -10298,6 +11483,12 @@ function setup(ctx) {
     if (scene !== "off" && s.perfGovernor)
       perf.start();
     applySoundscape();
+    applyViz();
+  }
+  function applyViz() {
+    viz.sync(store.get().viz && ensureAmbientHost() && !chatLeaving());
+    if (store.get().perfGovernor && viz.animating)
+      perf.start();
   }
   function applyCinematic() {
     const s = store.get();
@@ -10396,7 +11587,8 @@ function setup(ctx) {
       charAura: state.charAura,
       soundscapeKey: scape.playing,
       soundscapeCustom: scape.customPlaying.map((id) => lib.meta(id)?.name ?? "").filter(Boolean),
-      soundscapeAlways: scape.alwaysPlaying
+      soundscapeAlways: scape.alwaysPlaying,
+      viz: { state: viz.state(), error: viz.lastError, window: viz.windowShown }
     };
   }
   function notifyStatus() {
@@ -11483,6 +12675,7 @@ function setup(ctx) {
     syncPrefs(true);
     syncTint();
     applySoundscape();
+    applyViz();
     notifyStatus();
     return hasPerm(perm);
   }
@@ -11656,6 +12849,11 @@ function setup(ctx) {
       requestTintPermission: requestTint,
       requestInjectPermission: requestInject,
       requestPanelsPermission: requestPanels,
+      vizConnect: () => viz.connect(),
+      vizResetWindow: () => {
+        store.update({ vizWindowPos: null, vizWindowSize: null });
+        viz.reopenWindow();
+      },
       sounds: soundActions,
       applyPack,
       exportPack: () => {

@@ -212,6 +212,8 @@ export interface PanelStatus {
   soundscapeCustom: string[]
   /** the user's "always play" file is replacing the scene sounds */
   soundscapeAlways: boolean
+  /** Audio visualizer: what it is doing and the last reason it couldn't listen. */
+  viz: { state: 'off' | 'live' | 'quiet' | 'connect' | 'error'; error: string | null; window: boolean }
   uiThemeLabel: string | null
   charAura: string | null
 }
@@ -226,6 +228,10 @@ export interface PanelActions {
   requestTintPermission(): Promise<boolean>
   requestInjectPermission(): Promise<boolean>
   requestPanelsPermission(): Promise<boolean>
+  /** Start listening to the shared tab/screen or the microphone (must run inside a click). */
+  vizConnect(): Promise<void>
+  /** Put the visualizer window back to its default place and size. */
+  vizResetWindow(): void
   sounds: SoundActions
   previewLightning(): void
   applyPack(id: string): void
@@ -1427,6 +1433,100 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   statusSyncers.push(renderScape)
   syncers.push(() => renderScape(actions.status()))
   renderScape(actions.status())
+
+  // ── Audio visualizer ──
+  const vz = section('visualizer', 'Audio visualizer', I.music)
+  toggle(vz.body, 'Show the visualizer', 'viz')
+  hint(vz.body, 'Bars that move to music, in a floating window you can drag and resize, behind the chat, and in strips beside it — use any or all. It follows your Flair Pack’s colours, or yours. A visualizer is constant motion, so it stays off when “reduce motion” is on.')
+  select(vz.body, 'Listen to', 'vizSource', [
+    { value: 'flair', label: 'Flair’s own sound', sublabel: 'Soundscapes and your “Always play” track' },
+    { value: 'tab', label: 'A tab or screen', sublabel: 'Share the music’s tab with its sound (Chrome, Edge)' },
+    { value: 'mic', label: 'Microphone', sublabel: 'Hears your speakers; the way in on a phone' },
+    { value: 'system', label: 'This computer’s sound', sublabel: 'Whatever your computer is playing (Lumiverse desktop app)' },
+    { value: 'demo', label: 'Demo signal', sublabel: 'Moving bars with no sound, for setting up' },
+  ])
+  const vzSystem = hint(vz.body, 'Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. Lumiverse asks you each time you connect and shows while it is listening.')
+  const vzStatus = status(vz.body, (st, el) => {
+    const src = store.get().vizSource
+    const bits: Record<string, string> = {
+      off: store.get().viz ? tr('Not showing — reduce motion is on, or Flair is off') : tr('Off'),
+      live: src === 'demo' ? tr('♪ Showing the demo signal') : tr('♪ Listening'),
+      quiet: src === 'flair' ? tr('Quiet — turn on Soundscapes or an “Always play” track to see bars') : tr('Listening — no sound right now'),
+      connect:
+        src === 'tab'
+          ? tr('Not connected — press “Connect audio” and share a tab with its sound')
+          : src === 'system'
+            ? tr('Not connected — press “Connect audio”; the desktop app asks you first')
+            : tr('Not connected — press “Connect audio”'),
+      error: st.viz.error ?? tr('Couldn’t start listening'),
+    }
+    el.textContent = bits[st.viz.state] ?? ''
+    el.style.display = store.get().viz ? '' : 'none'
+  })
+  const vzConnect = button(buttons(vz.body), 'Connect audio', actions.vizConnect, 'primary', I.music)
+  const vzReset = button(buttons(vz.body), 'Reset window', actions.vizResetWindow, 'secondary', I.reset)
+  slider(vz.body, 'Sensitivity', 'vizSensitivity', 0.3, 4, 0.05, { suffix: '×' })
+  slider(vz.body, 'Smoothness', 'vizSmoothing', 0, 0.95, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+
+  hint(vz.body, '<b>Where it shows</b>')
+  toggle(vz.body, 'Floating window', 'vizWindow', async (next) => !next || actions.status().panelsPermission || (await actions.requestPanelsPermission()))
+  const vzGrant = hint(vz.body, 'The window needs the “UI panels” permission. Drag it anywhere; pull its bottom-right corner to resize.')
+  slider(vz.body, 'Window opacity', 'vizWindowOpacity', 0.15, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  toggle(vz.body, 'Background layer', 'vizBg')
+  slider(vz.body, 'Background opacity', 'vizBgOpacity', 0.05, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  slider(vz.body, 'Background height', 'vizBgHeight', 0.1, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  toggle(vz.body, 'Hang the background bars from the top', 'vizBgTop')
+  toggle(vz.body, 'Strips beside the chat', 'vizSides')
+  slider(vz.body, 'Strip width', 'vizSideWidth', 40, 320, 5, { suffix: ' px', decimals: 0 })
+  slider(vz.body, 'Strip opacity', 'vizSideOpacity', 0.05, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  hint(vz.body, 'The strips use the free space beside the chat column, so they only show when the chat is narrower than the screen.')
+
+  hint(vz.body, '<b>Look</b>')
+  select(vz.body, 'Style', 'vizStyle', [
+    { value: 'bars', label: 'Bars', sublabel: 'Classic bars rising from the bottom' },
+    { value: 'mirror', label: 'Mirrored bars', sublabel: 'Bars grow both ways from the middle' },
+    { value: 'segments', label: 'Segments', sublabel: 'Stacked blocks, like a level meter' },
+    { value: 'wave', label: 'Wave', sublabel: 'A smooth filled curve' },
+  ])
+  slider(vz.body, 'Bars', 'vizBars', 8, 96, 1, { decimals: 0 })
+  slider(vz.body, 'Bar width', 'vizBarFill', 0.2, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  slider(vz.body, 'Rounded corners', 'vizRound', 0, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  slider(vz.body, 'Glow', 'vizGlow', 0, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
+  toggle(vz.body, 'Peak caps', 'vizPeaks')
+  toggle(vz.body, 'Center mirror', 'vizCenter')
+  hint(vz.body, 'Lows in the middle and the highs mirrored out to both sides, instead of low to high from left to right.')
+  toggle(vz.body, 'Lows on the outside', 'vizCenterFlip')
+  const vzFlip = vz.body.lastElementChild as HTMLElement
+  select(vz.body, 'Colours', 'vizColor', [
+    { value: 'flair', label: 'Match my Flair Pack', sublabel: 'The glow colour and the pack’s second colour' },
+    { value: 'custom', label: 'My own colours' },
+    { value: 'rainbow', label: 'Rainbow' },
+  ])
+  const vzA = color(vz.body, 'Colour 1', 'vizColorA')
+  const vzB = color(vz.body, 'Colour 2', 'vizColorB')
+  toggle(vz.body, 'Colour runs up each bar', 'vizGradientUp')
+  hint(vz.body, 'Off: the colour runs across the row of bars instead. “No flashing” softens how fast bars jump and turns the glow off.')
+  const syncViz = (s: FlairSettings, st = actions.status()) => {
+    const share = s.vizSource === 'tab' || s.vizSource === 'mic' || s.vizSource === 'system'
+    vzConnect.el.style.display = s.viz && share ? '' : 'none'
+    vzSystem.style.display = s.vizSource === 'system' ? '' : 'none'
+    vzConnect.setText(st.viz.state === 'live' || st.viz.state === 'quiet' ? 'Reconnect audio' : 'Connect audio')
+    vzReset.el.style.display = s.viz && s.vizWindow ? '' : 'none'
+    vzFlip.style.display = s.vizCenter ? '' : 'none'
+    vzA.style.display = vzB.style.display = s.vizColor === 'custom' ? '' : 'none'
+    vzGrant.style.display = s.vizWindow && !st.panelsPermission ? '' : 'none'
+  }
+  syncers.push((s) => syncViz(s))
+  statusSyncers.push((st) => syncViz(store.get(), st))
+  syncViz(s0)
+  void vzStatus
+  // Desktop only: on a touch screen the section is just a note (the settings sync from the account, so they may be on).
+  if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) {
+    const note = document.createElement('p')
+    note.className = 'lf-hint'
+    note.textContent = tr('The audio visualizer is only available on desktop screens, so it stays off here.')
+    vz.body.replaceChildren(note)
+  }
 
   // ── Your sounds ──
   const mine = section('mysounds', 'Your sounds', I.music)

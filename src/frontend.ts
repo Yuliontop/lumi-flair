@@ -23,6 +23,7 @@ import { matchTrigger, milestoneAtOrBelow, parseTriggers } from './celebrate'
 import { exportThemePack } from './themepack'
 import { DirectorState, parseDirection } from './director'
 import { Soundscape, type CustomBed } from './soundscape'
+import { Visualizer, VIZ_CSS, shiftHue } from './visualizer'
 import { SOUND_ACCEPT, SoundLibrary, type AudioSource } from './soundlib'
 import { SoundWidget, SOUND_WIDGET_CSS } from './soundwidget'
 import { Cinematic, CINEMATIC_CSS, blackHoleWarpRule, cameraShakeRule } from './cinematic'
@@ -180,7 +181,7 @@ export function setup(ctx: SpindleFrontendContext) {
   // ── Styles ──
   disposers.push(
     ctx.dom.addStyle(
-      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS].join('\n'),
+      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS, VIZ_CSS].join('\n'),
     ),
   )
   let removeMainCss: (() => void) | null = null
@@ -283,6 +284,7 @@ export function setup(ctx: SpindleFrontendContext) {
     ambient.destroy()
     sound.destroy()
     soundWidget.destroy()
+    viz.destroy()
     scape.destroy()
     lib.destroy()
     cine.destroy()
@@ -306,7 +308,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const lightAnimating = () => cine.animating && !touchScreen()
   const perf = new PerfGovernor(
     // Only watch the frame rate while something is actually animating: a frame-counting loop of its own keeps the screen redrawing.
-    () => store.get().perfGovernor && (ambient.current !== 'off' || lightAnimating()),
+    (): boolean => store.get().perfGovernor && (ambient.current !== 'off' || lightAnimating() || viz.animating),
     (saver) => {
       state.saver = saver
       applyAmbient()
@@ -315,6 +317,24 @@ export function setup(ctx: SpindleFrontendContext) {
     },
   )
   disposers.push(() => perf.stop())
+
+  // ── Audio visualizer: bars in a floating window, behind the chat and beside it ──
+  const viz = new Visualizer(ctx, {
+    settings: () => store.get(),
+    update: (patch) => store.update(patch),
+    tap: () => scape.tap(),
+    // The glow colour (which follows the pack, a custom colour or the speaking character) plus the pack's second colour.
+    palette: () => {
+      const a = hexOf(charColor())
+      const pack = packById(store.get().activePack)
+      const b = (pack && typeof pack.theme === 'object' ? pack.theme.secondary : undefined) ?? pack?.swatch[1]
+      return [a, b && b.toLowerCase() !== a.toLowerCase() ? b : shiftHue(a, 45)]
+    },
+    motionOk: () => motionAllowed(),
+    saver: (): boolean => state.saver || perf.saving,
+    panels: () => state.panelsPermission,
+    onState: () => notifyStatus(),
+  })
 
   // ── Helpers ──
   function rgbOf(el: HTMLElement): RGB {
@@ -539,11 +559,11 @@ export function setup(ctx: SpindleFrontendContext) {
       }
       return false
     }
-    if (view === ambientChatView && ambientHost?.isConnected && ambientEl.isConnected && cine.el.isConnected) return true
+    if (view === ambientChatView && ambientHost?.isConnected && ambientEl.isConnected && cine.el.isConnected && viz.els[0].isConnected) return true
     if (ambientHost) ctx.dom.uninject(ambientHost)
     ambientHost = ctx.dom.inject(view, '<div class="lf-ambient-host"></div>', 'beforeend')
     const host = ambientHost.querySelector('.lf-ambient-host') ?? ambientHost
-    host.append(ambientEl, cine.el)
+    host.append(...viz.els, ambientEl, cine.el)
     ambientChatView = view
     return true
   }
@@ -621,6 +641,12 @@ export function setup(ctx: SpindleFrontendContext) {
     }
     if (scene !== 'off' && s.perfGovernor) perf.start()
     applySoundscape()
+    applyViz()
+  }
+
+  function applyViz() {
+    viz.sync(store.get().viz && ensureAmbientHost() && !chatLeaving())
+    if (store.get().perfGovernor && viz.animating) perf.start()
   }
 
   function applyCinematic() {
@@ -723,6 +749,7 @@ export function setup(ctx: SpindleFrontendContext) {
       soundscapeKey: scape.playing,
       soundscapeCustom: scape.customPlaying.map((id) => lib.meta(id)?.name ?? '').filter(Boolean),
       soundscapeAlways: scape.alwaysPlaying,
+      viz: { state: viz.state(), error: viz.lastError, window: viz.windowShown },
     }
   }
   function notifyStatus() {
@@ -1861,6 +1888,7 @@ export function setup(ctx: SpindleFrontendContext) {
     syncPrefs(true)
     syncTint()
     applySoundscape()
+    applyViz()
     notifyStatus()
     return hasPerm(perm)
   }
@@ -2040,6 +2068,11 @@ export function setup(ctx: SpindleFrontendContext) {
         requestTintPermission: requestTint,
         requestInjectPermission: requestInject,
         requestPanelsPermission: requestPanels,
+        vizConnect: () => viz.connect(),
+        vizResetWindow: () => {
+          store.update({ vizWindowPos: null, vizWindowSize: null })
+          viz.reopenWindow()
+        },
         sounds: soundActions,
         applyPack,
         exportPack: () => {

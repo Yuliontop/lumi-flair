@@ -19,8 +19,9 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Ambient scenes** | Snow, rain, embers, fireflies, petals or a starfield, drawn above your wallpaper but behind the messages. Set one per chat, or let lorebook entries and the AI switch it |
 | **Cinematic lighting** | Dawn, day, dusk, night, candle, storm and neon light, with a vignette, film grain and light rays. Storm light adds lightning |
 | **Soundscapes** | Rain, wind, crackling fire, crickets, birdsong and a space hum, generated live with no audio files. They crossfade with the scene and recover by themselves if the browser pauses audio |
-| **AI sound effects** | The AI adds short sound cues to its replies (a door knock, a sword clash, a heartbeat, thunder…) that play as the line appears. 14 cues are generated live with no audio files, and you can assign your own file to any of them. Off by default |
+| **AI sound effects** | The AI adds short sound cues to its replies (a door knock, a sword clash, a heartbeat, thunder…) that play as the line appears. 14 cues are generated live with no audio files, and you can assign your own file to any of them. Off by default, and desktop only (never shown on a touch screen) |
 | **Volume widget** | An optional floating pill you can drag anywhere: turn the ambience on or off and set its volume without opening the panel. It shows what's playing and remembers where you left it. Fold it into a small round button to keep the screen clear (it starts that way on phones) |
+| **Audio visualizer** | Bars that move to music, in a floating window you can drag and resize, as a layer behind the chat (with its own opacity slider), and as a strip on each side of the chat column; use any or all. Four styles (bars, mirrored, segments, wave), bar count and width, rounded corners, glow, peak caps, and colours that follow your Flair Pack or your own. Listens to Flair's own sound, whatever your computer is playing (in the Lumiverse desktop app), a shared tab or screen (Chrome/Edge), or the microphone (the way in on a phone). Off by default |
 | **Your own sounds** | Upload your own audio (MP3, OGG, WAV, M4A, FLAC…) and use it as a seamless looping ambience for any scene or lighting, as one track that always plays, as a character's intro theme, or as your send, reply, milestone, achievement, screen-effect and typewriter-key sounds. Files stay in your browser, with a level control and preview for each |
 | **Background sound** | Optionally dim (to a level you choose) or mute the soundscape while you're in another window or app, then fade it back when you return |
 | **Character intro** | Opening a chat plays a short name card in the character's aura colour, with an optional theme sound from your library (each character can have their own). In group chats a small chip names whoever is speaking, in their own colour, and the other messages dim while they talk |
@@ -97,6 +98,22 @@ When Lumiverse starts, Flair reads all three copies and uses the **newest** one,
 
 > **Upgrading from v0.3.0 or earlier:** those versions didn't save settings at all (see the changelog), so set your look once more after updating. From now on it sticks.
 
+## Using "This computer's sound" with the visualizer
+
+The visualizer can move to whatever your computer is playing, in the **Lumiverse desktop app** (Windows 10+, macOS 14.2+, or Linux with PulseAudio or PipeWire). It needs the system-audio support that Lumiverse added in its PRs #445 and #446, so the desktop app and its page must be current.
+
+1. **Update Lumiverse.** In the desktop app's tray menu use **Check for Updates / Apply Update**; if it says the app needs rebuilding, or the tray menu in step 3 has no such item, choose **Rebuild Desktop App…**. Building from source? After pulling, also run `bun run build:frontend`: the page the app shows is built separately.
+2. **Update Lumi Flair** (Extensions → Lumi Flair → **Update**, then Ctrl+Shift+R).
+3. **Switch it on in the desktop app.** In the **tray menu** (the Lumiverse icon in the system tray) tick **Let Extensions Analyse System Audio** and confirm **Allow**. It is off by default and remembered. Nothing can hear your computer until you do this.
+4. In the Flair panel → **Audio visualizer**: turn on **Show the visualizer** and set **Listen to** to **This computer's sound**.
+5. Press **Connect audio**. Lumiverse asks whether to give Lumi Flair the **system audio** permission, then shows an **"Analyse system audio?"** prompt: allow both. It asks again every time you connect.
+6. Play something. A **"Lumi Flair is analysing system audio"** pill with a **Stop** button shows while it listens, and the tray item reads **Extension Is Analysing System Audio**. Stop it from the pill, or untick the tray item.
+
+- **macOS:** the first time, macOS asks for **System Audio Recording** (not Screen Recording). If you refused, enable it under System Settings → Privacy & Security → Screen & System Audio Recording → **System Audio Recording Only**.
+- **Linux:** needs `parec`: `sudo apt install pulseaudio-utils` (Debian/Ubuntu), `sudo dnf install pulseaudio-utils` (Fedora) or `sudo pacman -S libpulse` (Arch); `pipewire-pulse` provides it on PipeWire systems. It reads the monitor of your speakers, never the microphone. Flatpak and Snap builds don't include it.
+- **"System audio needs the Lumiverse desktop app…"** means a browser tab, or a desktop app or page that is out of date: redo step 1, then Ctrl+Shift+R. **"Tick 'Let Extensions Analyse System Audio'…"**: step 3. **"Permission wasn't given"**: you declined a prompt in step 5; press Connect again. **Flat bars:** check something is playing, the Sensitivity slider, and (macOS) the System Audio Recording permission.
+- **Privacy:** Lumi Flair only receives a loudness level and a spectrum, never the sound, and nothing is recorded or sent anywhere.
+
 ## Permissions
 
 Lumi Flair requests four permissions. All are optional, and Lumiverse asks for each one the first time you turn on the feature that needs it:
@@ -105,7 +122,8 @@ Lumi Flair requests four permissions. All are optional, and Lumiverse asks for e
 |---|---|
 | `interceptor` | **Add the instructions to every prompt** (on by default). Flair adds a short styling note just before the latest message on each generation, so the AI keeps using text effects in nearly every reply. The note covers text effects, scene direction, screen effects and choices, following your settings. It appears as **Lumi Flair storytelling** in Prompt Breakdown. It's skipped for impersonate and quiet generations, and when `{{flair_tags}}` is already in the prompt |
 | `app_manipulation` | **Lumiverse theme matching** (packs and Character Aware) through `spindle.theme.generateVariables` and `apply`, and **Tint the whole UI with the mood** (`applyPalette`, or folded into the matched theme). Both are layered and fully removable |
-| `ui_panels` | The **floating volume widget** (Sound → Floating volume widget), a small draggable float widget. Nothing is shown unless you turn it on |
+| `ui_panels` | The **floating volume widget** (Sound → Floating volume widget) and the **visualizer window** (Audio visualizer → Floating window), small draggable float widgets. Nothing is shown unless you turn it on |
+| `system_audio` | **This computer's sound** as a visualizer source (Audio visualizer → Listen to), in the Lumiverse **desktop app** only. Optional: asked for when you press Connect audio with that source chosen. Flair receives a level and a spectrum, never the sound itself. Lumiverse asks you every time it starts and shows while it is listening, and the desktop app has to be told to allow it first (tick **Let Extensions Analyse System Audio** in its tray menu) |
 | `memories` | **Save pins to Lumiverse memory** (Favourite moments). Each pinned line is added to Lumiverse's memory as a short fact about whoever said it. Nothing is saved unless you turn it on, and it only ever adds |
 
 ## Teaching the AI
@@ -179,6 +197,14 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.6.0 (release v1.6):** Audio visualizer.
+  - **Audio visualizer:** frequency bars that react to music, found under **Audio visualizer** in the panel (off by default).
+  - **Three places, any or all:** a floating window you can drag anywhere and resize from its corner; a background layer that spans the whole chat view above the wallpaper and below the messages (opacity, height, and bars that hang from the top if you like); and a strip on each side of the chat column (width, opacity). Each has its own opacity.
+  - **Looks:** bars, mirrored bars, segments or a wave; bar count, bar width, rounded corners, glow, peak caps, and how fast bars fall.
+  - **Center mirror:** lows in the middle with the highs mirrored out to both sides (high ← low → high); "Lows on the outside" flips it so the highs meet in the middle. Works in the window, the background and the side strips.
+  - **Colours** follow your Flair Pack (the glow colour plus the pack's second colour, so a pack change recolours it), or two colours of your own, or a rainbow; the colour can run up each bar or across the row.
+  - **Where the sound comes from:** Flair's own sound (soundscapes and your "Always play" track), a tab or screen you share with its sound (Chrome and Edge on a computer), **this computer's sound** (the Lumiverse desktop app, on Windows, macOS 14.2+ or Linux; Flair only gets a spectrum, and Lumiverse asks you each time and shows while it listens), the microphone (hears your speakers; the way in on a phone), or a demo signal for setting it up in silence.
+  - Kind to the machine: one frame loop that stops in silence (a small check four times a second wakes it), about 30 fps on a phone or in battery saver, no filters or blend modes. It stays off when "reduce motion" is on, and "No flashing" softens how fast bars jump and turns the glow off.
 - **1.5.0 (release v1.5):** Cursor trails.
   - **Cursor trail:** a trail follows your mouse pointer anywhere in Lumiverse, in six themes taken from the send effects: Splash (water droplets that splash and fall), Creamy (drips of cream), Petal Storm (sakura petals drifting off on the wind), Black Hole (motes that spiral into where the pointer just was), Comet (a glowing tail of sparks) and Confetti (tiny paper pieces). It takes your theme colour. Set it under **When you send → Cursor trail**; off by default.
   - **Trail length:** a slider right below it (0.25–2×) sets how long the trail lingers.

@@ -15,6 +15,14 @@ export type UiTheme = 'off' | 'pack' | 'character'
 export type UiThemeDepth = 'accent' | 'full'
 /** What the soundscape does while Lumiverse isn't the focused window. */
 export type SoundUnfocused = 'keep' | 'dim' | 'mute'
+/** Where the audio visualizer listens: Flair's own sound, a shared tab or screen, the microphone, or a made-up demo signal. */
+export type VizSource = 'flair' | 'tab' | 'mic' | 'system' | 'demo'
+export type VizStyle = 'bars' | 'mirror' | 'segments' | 'wave'
+/** Flair Pack colours, two colours of your own, or a rainbow. */
+export type VizColor = 'flair' | 'custom' | 'rainbow'
+export const VIZ_SOURCES: readonly VizSource[] = ['flair', 'tab', 'mic', 'system', 'demo']
+export const VIZ_STYLES: readonly VizStyle[] = ['bars', 'mirror', 'segments', 'wave']
+export const VIZ_COLORS: readonly VizColor[] = ['flair', 'custom', 'rainbow']
 
 /** A user pack (imported .flair.json or "Save my look"). Validated again by packs.ts before use. */
 export interface StoredPack {
@@ -130,6 +138,43 @@ export interface FlairSettings {
   soundWidgetPos: { x: number; y: number } | null
   /** The floating volume control as a small button (true) or the full pill (false). null: a button on touch screens, the pill elsewhere. */
   soundWidgetCollapsed: boolean | null
+  // v1.6 — audio visualizer
+  viz: boolean
+  vizSource: VizSource
+  /** Gain on the signal, 0.3 – 4. */
+  vizSensitivity: number
+  /** How slowly the bars fall, 0 – 0.95. */
+  vizSmoothing: number
+  vizStyle: VizStyle
+  /** Bars in the floating window (the background has twice as many, the side strips four fifths). 8 – 96. */
+  vizBars: number
+  /** Bar width as a share of its slot, 0.2 – 1. */
+  vizBarFill: number
+  /** Corner rounding, 0 – 1. */
+  vizRound: number
+  vizPeaks: boolean
+  /** Lows in the middle and the highs mirrored out to both sides (instead of low to high, left to right). */
+  vizCenter: boolean
+  /** With vizCenter: lows on the outside, highs in the middle. */
+  vizCenterFlip: boolean
+  vizGlow: number // 0 – 1
+  vizColor: VizColor
+  vizColorA: string
+  vizColorB: string
+  /** Colour runs up each bar (true) or across the row of bars (false). */
+  vizGradientUp: boolean
+  vizWindow: boolean
+  vizWindowPos: { x: number; y: number } | null
+  vizWindowSize: { w: number; h: number } | null
+  vizWindowOpacity: number // 0.15 – 1
+  vizBg: boolean
+  vizBgOpacity: number // 0.05 – 1
+  /** Share of the window height the background bars can reach, 0.1 – 1. */
+  vizBgHeight: number
+  vizBgTop: boolean
+  vizSides: boolean
+  vizSideWidth: number // 40 – 320 px
+  vizSideOpacity: number // 0.05 – 1
   // v1.4 — pinned moments
   /** Also save each pin to Lumiverse's memory (a short fact on the speaker). Needs the `memories` permission. */
   pinMemory: boolean
@@ -283,6 +328,33 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   soundWidget: false,
   soundWidgetPos: null,
   soundWidgetCollapsed: null,
+  viz: false,
+  vizSource: 'flair',
+  vizSensitivity: 1.3,
+  vizSmoothing: 0.6,
+  vizStyle: 'bars',
+  vizBars: 40,
+  vizBarFill: 0.7,
+  vizRound: 0.5,
+  vizPeaks: false,
+  vizCenter: false,
+  vizCenterFlip: false,
+  vizGlow: 0.35,
+  vizColor: 'flair',
+  vizColorA: '#a78bfa',
+  vizColorB: '#38bdf8',
+  vizGradientUp: true,
+  vizWindow: true,
+  vizWindowPos: null,
+  vizWindowSize: null,
+  vizWindowOpacity: 0.95,
+  vizBg: false,
+  vizBgOpacity: 0.35,
+  vizBgHeight: 0.4,
+  vizBgTop: false,
+  vizSides: false,
+  vizSideWidth: 110,
+  vizSideOpacity: 0.6,
   pinMemory: false,
   typewriter: false,
   typewriterCps: 40,
@@ -345,6 +417,18 @@ function point(v: unknown): { x: number; y: number } | null {
   const { x, y } = v as Record<string, unknown>
   if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return null
   return { x: Math.round(Math.max(-4000, Math.min(20000, x))), y: Math.round(Math.max(-4000, Math.min(20000, y))) }
+}
+
+export const VIZ_WIN_MIN = { w: 140, h: 70 }
+export const VIZ_WIN_MAX = { w: 1600, h: 900 }
+function size(v: unknown): { w: number; h: number } | null {
+  if (!v || typeof v !== 'object') return null
+  const { w, h } = v as Record<string, unknown>
+  if (typeof w !== 'number' || typeof h !== 'number' || !Number.isFinite(w) || !Number.isFinite(h)) return null
+  return {
+    w: Math.round(Math.max(VIZ_WIN_MIN.w, Math.min(VIZ_WIN_MAX.w, w))),
+    h: Math.round(Math.max(VIZ_WIN_MIN.h, Math.min(VIZ_WIN_MAX.h, h))),
+  }
 }
 
 function bool(v: unknown, fallback: boolean): boolean {
@@ -450,6 +534,33 @@ export function normalize(raw: unknown): FlairSettings {
     soundWidget: bool(r.soundWidget, d.soundWidget),
     soundWidgetPos: point(r.soundWidgetPos),
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === 'boolean' ? r.soundWidgetCollapsed : null,
+    viz: bool(r.viz, d.viz),
+    vizSource: pick(r.vizSource, VIZ_SOURCES, d.vizSource),
+    vizSensitivity: clamp(r.vizSensitivity, 0.3, 4, d.vizSensitivity),
+    vizSmoothing: clamp(r.vizSmoothing, 0, 0.95, d.vizSmoothing),
+    vizStyle: pick(r.vizStyle, VIZ_STYLES, d.vizStyle),
+    vizBars: Math.round(clamp(r.vizBars, 8, 96, d.vizBars)),
+    vizBarFill: clamp(r.vizBarFill, 0.2, 1, d.vizBarFill),
+    vizRound: clamp(r.vizRound, 0, 1, d.vizRound),
+    vizPeaks: bool(r.vizPeaks, d.vizPeaks),
+    vizCenter: bool(r.vizCenter, d.vizCenter),
+    vizCenterFlip: bool(r.vizCenterFlip, d.vizCenterFlip),
+    vizGlow: clamp(r.vizGlow, 0, 1, d.vizGlow),
+    vizColor: pick(r.vizColor, VIZ_COLORS, d.vizColor),
+    vizColorA: hex(r.vizColorA, d.vizColorA),
+    vizColorB: hex(r.vizColorB, d.vizColorB),
+    vizGradientUp: bool(r.vizGradientUp, d.vizGradientUp),
+    vizWindow: bool(r.vizWindow, d.vizWindow),
+    vizWindowPos: point(r.vizWindowPos),
+    vizWindowSize: size(r.vizWindowSize),
+    vizWindowOpacity: clamp(r.vizWindowOpacity, 0.15, 1, d.vizWindowOpacity),
+    vizBg: bool(r.vizBg, d.vizBg),
+    vizBgOpacity: clamp(r.vizBgOpacity, 0.05, 1, d.vizBgOpacity),
+    vizBgHeight: clamp(r.vizBgHeight, 0.1, 1, d.vizBgHeight),
+    vizBgTop: bool(r.vizBgTop, d.vizBgTop),
+    vizSides: bool(r.vizSides, d.vizSides),
+    vizSideWidth: Math.round(clamp(r.vizSideWidth, 40, 320, d.vizSideWidth)),
+    vizSideOpacity: clamp(r.vizSideOpacity, 0.05, 1, d.vizSideOpacity),
     pinMemory: bool(r.pinMemory, d.pinMemory),
     typewriter: bool(r.typewriter, d.typewriter),
     typewriterCps: Math.round(clamp(r.typewriterCps, 10, 120, d.typewriterCps)),
