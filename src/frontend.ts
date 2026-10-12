@@ -15,6 +15,7 @@ import {
 import { buildCss, colorVarsCss, composerActiveCss, entranceRule, tapGlowRule, type CardAnimation } from './styles'
 import { FxCanvas, HOLE_TIMING, parseComputedColor, playBanner, playSendEffect, playTrail, viewportCenter, type Point, type RGB } from './effects'
 import { AmbientCanvas, sceneFromEntries } from './ambient'
+import { away, onPresence, setPauseUnfocused } from './presence'
 import { SoundBoard, type Chime } from './sound'
 import { SfxBoard } from './sfx'
 import { cueName } from './sfx-cues'
@@ -315,6 +316,8 @@ export function setup(ctx: SpindleFrontendContext) {
     },
   )
   disposers.push(() => perf.stop())
+  // The governor stops counting frames while nobody is looking; start it again on return.
+  disposers.push(onPresence(() => !away() && store.get().perfGovernor && perf.start()))
 
   // ── Audio visualizer: bars in a floating window, behind the chat and beside it ──
   const viz = new Visualizer(ctx, {
@@ -699,6 +702,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function applyAll() {
     const s = store.get()
+    setPauseUnfocused(s.pauseUnfocused)
     applyMain(s)
     applyColor()
     applyAmbient()

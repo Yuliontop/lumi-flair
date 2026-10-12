@@ -593,6 +593,8 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   hint(general.body, 'Replaces lightning flashes with a slow glow, stops flickering text and disables camera shake. Recommended for light-sensitive viewers.')
   toggle(general.body, 'Smooth motion', 'smoothMotion')
   hint(general.body, 'Draws particles, the audio visualizer and the light at your screen’s full frame rate (60 or more) instead of about 30. Looks silkier, uses more GPU and battery. Battery saver still steps in if it struggles.')
+  toggle(general.body, 'Pause when the window isn’t in front', 'pauseUnfocused')
+  hint(general.body, 'Scenes, the light and the audio visualizer stop drawing while another window is in front, and carry on when you come back. Turn it off to keep them moving on a second screen.')
   toggle(general.body, 'Battery saver when needed', 'perfGovernor')
   const saverHint = hint(general.body, '')
   statusSyncers.push((st) => {

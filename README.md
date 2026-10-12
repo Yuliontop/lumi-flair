@@ -197,6 +197,8 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.6.2:** Pauses when you're not looking.
+  - **Pause when the window isn't in front:** a new switch under **General** (on by default). While another window is in front, particle scenes, the audio visualizer and the cinematic light (ray sway, neon drift, candle flicker, film grain) stop drawing, and carry on when you come back. Scenes and the visualizer keep their last picture. Turn it off to keep them moving on a second screen. Lightning flashes and send effects are unaffected.
 - **1.6.1:** Lighter on the GPU, and a Smooth motion option.
   - **Lighter by default:** particle scenes and the audio visualizer are drawn at about 30 fps instead of your screen's full refresh rate, and the light's slow movements (rays, neon, candle) move in fine steps. Each redraw makes the browser re-blur the frosted glass behind the messages, which is where the GPU time went. The visualizer's background layer is drawn at 1× resolution, and scenes no longer measure their canvas every frame.
   - **Smooth motion:** a new switch under **General** puts particles, the visualizer and the light back at your screen's full frame rate (60 or more). Off by default; Battery saver still steps in if it struggles.

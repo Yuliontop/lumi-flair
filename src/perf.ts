@@ -1,3 +1,4 @@
+import { away } from './presence'
 /**
  * Performance governor: samples the frame rate while Flair is animating and
  * switches to "battery saver" (fewer particles, no grain/rays) when the
@@ -30,7 +31,7 @@ export class PerfGovernor {
     this.windowStart = performance.now()
     this.frames = 0
     const tick = (now: number) => {
-      if (!this.isActive() || document.hidden) {
+      if (!this.isActive() || away()) {
         this.raf = 0
         return
       }

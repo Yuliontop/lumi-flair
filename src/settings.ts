@@ -232,6 +232,8 @@ export interface FlairSettings {
   perfGovernor: boolean
   /** Draw particles, the visualizer and the light at the screen's full frame rate instead of about 30 fps. */
   smoothMotion: boolean
+  /** Stop drawing scenes, the light and the visualizer while the window isn't the one in front. */
+  pauseUnfocused: boolean
   tapGlow: boolean
 }
 
@@ -389,6 +391,7 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   uiThemeDepth: 'full',
   perfGovernor: true,
   smoothMotion: false,
+  pauseUnfocused: true,
   tapGlow: true,
 }
 
@@ -596,6 +599,7 @@ export function normalize(raw: unknown): FlairSettings {
     uiThemeDepth: pick(r.uiThemeDepth, ['accent', 'full'], d.uiThemeDepth),
     perfGovernor: bool(r.perfGovernor, d.perfGovernor),
     smoothMotion: bool(r.smoothMotion, d.smoothMotion),
+    pauseUnfocused: bool(r.pauseUnfocused, d.pauseUnfocused),
     tapGlow: bool(r.tapGlow, d.tapGlow),
   }
 }

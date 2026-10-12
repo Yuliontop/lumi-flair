@@ -269,6 +269,7 @@ var DEFAULT_SETTINGS = {
   uiThemeDepth: "full",
   perfGovernor: true,
   smoothMotion: false,
+  pauseUnfocused: true,
   tapGlow: true
 };
 var MAX_MAP_ENTRIES = 300;
@@ -470,6 +471,7 @@ function normalize(raw) {
     uiThemeDepth: pick(r.uiThemeDepth, ["accent", "full"], d.uiThemeDepth),
     perfGovernor: bool(r.perfGovernor, d.perfGovernor),
     smoothMotion: bool(r.smoothMotion, d.smoothMotion),
+    pauseUnfocused: bool(r.pauseUnfocused, d.pauseUnfocused),
     tapGlow: bool(r.tapGlow, d.tapGlow)
   };
 }
@@ -2311,6 +2313,34 @@ function playTrail(fx, trail, client, v, color, saver, length = 1) {
   fx.spawn(out);
 }
 
+// src/presence.ts
+var pauseUnfocused = true;
+var subs = new Set;
+var away = () => document.hidden || pauseUnfocused && typeof document.hasFocus === "function" && !document.hasFocus();
+var fire = () => subs.forEach((f) => f());
+function setPauseUnfocused(v) {
+  if (v === pauseUnfocused)
+    return;
+  pauseUnfocused = v;
+  fire();
+}
+function onPresence(fn) {
+  if (!subs.size) {
+    document.addEventListener("visibilitychange", fire);
+    window.addEventListener("focus", fire);
+    window.addEventListener("blur", fire);
+  }
+  subs.add(fn);
+  return () => {
+    subs.delete(fn);
+    if (subs.size)
+      return;
+    document.removeEventListener("visibilitychange", fire);
+    window.removeEventListener("focus", fire);
+    window.removeEventListener("blur", fire);
+  };
+}
+
 // src/ambient.ts
 var rand2 = (a, b) => a + Math.random() * (b - a);
 var BASE_COUNT = {
@@ -2337,15 +2367,16 @@ class AmbientCanvas {
   h = 0;
   shooting = null;
   onVisibility = () => {
-    if (document.hidden)
+    if (away())
       this.stopLoop();
     else if (this.scene !== "off")
       this.startLoop();
   };
+  unPresence;
   constructor(canvas) {
     this.canvas = canvas;
     this.g = canvas.getContext("2d");
-    document.addEventListener("visibilitychange", this.onVisibility);
+    this.unPresence = onPresence(this.onVisibility);
     if (typeof ResizeObserver === "function") {
       this.watch = new ResizeObserver(() => this.resized = true);
       this.watch.observe(canvas);
@@ -2369,7 +2400,7 @@ class AmbientCanvas {
     if (changed)
       this.motes = [];
     this.fill();
-    if (!document.hidden)
+    if (!away())
       this.startLoop();
   }
   target() {
@@ -2605,7 +2636,7 @@ class AmbientCanvas {
   destroy() {
     this.stopLoop();
     this.watch?.disconnect();
-    document.removeEventListener("visibilitychange", this.onVisibility);
+    this.unPresence();
     this.motes = [];
   }
 }
@@ -4006,6 +4037,7 @@ var T = {
   "Respect “reduce motion”": ["遵循“减少动态效果”", "遵循「減少動態效果」", "「視差効果を減らす」に従う", "Respecter « réduire les animations »", "Rispetta «riduci movimento»"],
   "Spotlight mode": ["聚光模式", "聚光模式", "スポットライト", "Mode projecteur", "Modalità riflettore"],
   "No flashing": ["无闪烁", "無閃爍", "点滅なし", "Sans flashs", "Nessun lampeggio"],
+  "Pause when the window isn’t in front": ["窗口不在前台时暂停", "視窗不在前景時暫停", "ウィンドウが前面にないとき一時停止", "Pause quand la fenêtre n’est pas au premier plan", "Pausa quando la finestra non è in primo piano"],
   "Smooth motion": ["流畅动效", "流暢動態", "なめらかな動き", "Mouvement fluide", "Movimento fluido"],
   "Battery saver when needed": ["按需省电", "按需省電", "必要時に省電力", "Économie d’énergie si besoin", "Risparmio energetico se serve"],
   "Tap to glow (touch screens)": ["点按发光（触屏）", "點按發光（觸控螢幕）", "タップで光る（タッチ画面）", "Toucher pour illuminer (tactile)", "Tocca per illuminare (touch)"],
@@ -4773,7 +4805,15 @@ class Visualizer {
   active = false;
   coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   ro;
-  onVis = () => this.sync(this.onChat);
+  onVis = () => {
+    if (document.hidden)
+      this.sync(this.onChat);
+    else if (away())
+      this.stopLoop();
+    else if (!this.raf && !this.poll)
+      this.sync(this.onChat);
+  };
+  unPresence = null;
   onResize = () => {
     this.keepWindowOnScreen();
     this.layout();
@@ -4799,7 +4839,7 @@ class Visualizer {
     }) : null;
     for (const t of [this.bg, this.left, this.right])
       this.ro?.observe(t.el);
-    document.addEventListener("visibilitychange", this.onVis);
+    this.unPresence = onPresence(this.onVis);
     window.addEventListener("resize", this.onResize);
   }
   state() {
@@ -5031,7 +5071,7 @@ class Visualizer {
     return { node, comp };
   }
   startLoop() {
-    if (this.raf || document.hidden)
+    if (this.raf || away())
       return;
     this.last = 0;
     this.raf = requestAnimationFrame(this.frame);
@@ -5110,7 +5150,7 @@ class Visualizer {
   frame = (now) => {
     this.raf = 0;
     const s = this.deps.settings();
-    if (!this.active || document.hidden)
+    if (!this.active || away())
       return;
     const saver = this.deps.saver();
     const minMs = saver ? 60 : s.smoothMotion ? 0 : 30;
@@ -5467,7 +5507,7 @@ class Visualizer {
     this.disconnect();
     this.closeWindow();
     this.ro?.disconnect();
-    document.removeEventListener("visibilitychange", this.onVis);
+    this.unPresence?.();
     window.removeEventListener("resize", this.onResize);
     for (const t of [this.bg, this.left, this.right]) {
       this.clear(t);
@@ -6145,6 +6185,9 @@ var CINEMATIC_CSS = `
   background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,calc(var(--lf-vignette, .35) * 2.1)) 100%); }
 
 .lf-cine[data-saver="1"] .lf-rays, .lf-cine[data-saver="1"] .lf-grain { display: none; }
+/* While nobody is looking (another window in front) the slow movements hold still; the lightning is left alone so a strike is never frozen on screen. */
+.lf-cine[data-away="1"] .lf-rays, .lf-cine[data-away="1"] .lf-grain, .lf-cine[data-away="1"] .lf-tint,
+.lf-cine[data-away="1"] .lf-tint::before, .lf-cine[data-away="1"] .lf-tint::after { animation-play-state: paused !important; }
 .lf-cine.lf-flashing .lf-flash { animation: lf-lightning 1.1s ease-out; }
 .lf-cine.lf-flashing.lf-soft .lf-flash { animation: lf-lightning-soft 2.4s ease-in-out; }
 
@@ -6202,11 +6245,15 @@ class Cinematic {
   raysFor = { w: 0, h: 0, dusk: false };
   watch = null;
   lightningTimer = null;
+  unPresence;
   st = { enabled: false, light: "none", vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false, smooth: false };
   onThunder = null;
   constructor(make) {
     this.el = make("div");
     this.el.className = "lf-cine";
+    const syncAway = () => this.el.dataset.away = away() ? "1" : "0";
+    syncAway();
+    this.unPresence = onPresence(syncAway);
     const layer = (cls) => {
       const d = make("div");
       d.className = cls;
@@ -6264,7 +6311,7 @@ class Cinematic {
     if (!s.enabled || s.light !== "storm" || !s.lightning || !s.motion)
       return;
     this.lightningTimer = setTimeout(() => {
-      if (!document.hidden)
+      if (!away())
         this.flash();
       this.scheduleLightning();
     }, 7000 + Math.random() * 14000);
@@ -6279,6 +6326,7 @@ class Cinematic {
   destroy() {
     if (this.lightningTimer)
       clearTimeout(this.lightningTimer);
+    this.unPresence();
     this.watch?.disconnect();
     this.el.remove();
   }
@@ -8623,7 +8671,7 @@ class PerfGovernor {
     this.windowStart = performance.now();
     this.frames = 0;
     const tick = (now) => {
-      if (!this.isActive() || document.hidden) {
+      if (!this.isActive() || away()) {
         this.raf = 0;
         return;
       }
@@ -9215,6 +9263,8 @@ function mountPanel(ctx, store, actions) {
   hint(general.body, "Replaces lightning flashes with a slow glow, stops flickering text and disables camera shake. Recommended for light-sensitive viewers.");
   toggle(general.body, "Smooth motion", "smoothMotion");
   hint(general.body, "Draws particles, the audio visualizer and the light at your screen’s full frame rate (60 or more) instead of about 30. Looks silkier, uses more GPU and battery. Battery saver still steps in if it struggles.");
+  toggle(general.body, "Pause when the window isn’t in front", "pauseUnfocused");
+  hint(general.body, "Scenes, the light and the audio visualizer stop drawing while another window is in front, and carry on when you come back. Turn it off to keep them moving on a second screen.");
   toggle(general.body, "Battery saver when needed", "perfGovernor");
   const saverHint = hint(general.body, "");
   statusSyncers.push((st) => {
@@ -11209,6 +11259,7 @@ function setup(ctx) {
     notifyStatus();
   });
   disposers.push(() => perf.stop());
+  disposers.push(onPresence(() => !away() && store.get().perfGovernor && perf.start()));
   const viz = new Visualizer(ctx, {
     settings: () => store.get(),
     update: (patch) => store.update(patch),
@@ -11555,6 +11606,7 @@ function setup(ctx) {
   }
   function applyAll() {
     const s = store.get();
+    setPauseUnfocused(s.pauseUnfocused);
     applyMain(s);
     applyColor();
     applyAmbient();

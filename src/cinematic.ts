@@ -9,6 +9,7 @@
  * image painted once instead of a screen-sized conic gradient that is masked and rotated.
  */
 import type { Light } from './settings'
+import { away, onPresence } from './presence'
 
 /**
  * Where the light rays go, as fractions of the chat area. This is the old CSS laid out by hand: a fan of beams
@@ -104,6 +105,9 @@ export const CINEMATIC_CSS = `
   background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,calc(var(--lf-vignette, .35) * 2.1)) 100%); }
 
 .lf-cine[data-saver="1"] .lf-rays, .lf-cine[data-saver="1"] .lf-grain { display: none; }
+/* While nobody is looking (another window in front) the slow movements hold still; the lightning is left alone so a strike is never frozen on screen. */
+.lf-cine[data-away="1"] .lf-rays, .lf-cine[data-away="1"] .lf-grain, .lf-cine[data-away="1"] .lf-tint,
+.lf-cine[data-away="1"] .lf-tint::before, .lf-cine[data-away="1"] .lf-tint::after { animation-play-state: paused !important; }
 .lf-cine.lf-flashing .lf-flash { animation: lf-lightning 1.1s ease-out; }
 .lf-cine.lf-flashing.lf-soft .lf-flash { animation: lf-lightning-soft 2.4s ease-in-out; }
 
@@ -175,12 +179,16 @@ export class Cinematic {
   private raysFor = { w: 0, h: 0, dusk: false }
   private watch: ResizeObserver | null = null
   private lightningTimer: ReturnType<typeof setTimeout> | null = null
+  private unPresence: () => void
   private st: CinematicState = { enabled: false, light: 'none', vignette: 0.35, grain: false, lightning: true, noFlash: false, motion: true, saver: false, smooth: false }
   onThunder: (() => void) | null = null
 
   constructor(make: <K extends keyof HTMLElementTagNameMap>(tag: K) => HTMLElementTagNameMap[K]) {
     this.el = make('div')
     this.el.className = 'lf-cine'
+    const syncAway = () => (this.el.dataset.away = away() ? '1' : '0')
+    syncAway()
+    this.unPresence = onPresence(syncAway)
     const layer = (cls: string) => {
       const d = make('div')
       d.className = cls
@@ -241,7 +249,7 @@ export class Cinematic {
     const s = this.st
     if (!s.enabled || s.light !== 'storm' || !s.lightning || !s.motion) return
     this.lightningTimer = setTimeout(() => {
-      if (!document.hidden) this.flash()
+      if (!away()) this.flash()
       this.scheduleLightning()
     }, 7000 + Math.random() * 14000)
   }
@@ -257,6 +265,7 @@ export class Cinematic {
 
   destroy() {
     if (this.lightningTimer) clearTimeout(this.lightningTimer)
+    this.unPresence()
     this.watch?.disconnect()
     this.el.remove()
   }

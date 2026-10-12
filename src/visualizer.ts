@@ -27,6 +27,7 @@ import type {
 import { VIZ_WIN_MAX, VIZ_WIN_MIN, type FlairSettings } from './settings'
 import { hexToHsl } from './palette'
 import { tr } from './i18n'
+import { away, onPresence } from './presence'
 
 type FloatWidget = ReturnType<SpindleFrontendContext['ui']['createFloatWidget']>
 export type VizState = 'off' | 'live' | 'quiet' | 'connect' | 'error'
@@ -365,7 +366,13 @@ export class Visualizer {
   private active = false
   private coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
   private ro: ResizeObserver | null
-  private onVis = () => this.sync(this.onChat)
+  // The page being hidden re-syncs everything; losing focus only stops the frames (the last one stays), and coming back restarts them.
+  private onVis = () => {
+    if (document.hidden) this.sync(this.onChat)
+    else if (away()) this.stopLoop()
+    else if (!this.raf && !this.poll) this.sync(this.onChat)
+  }
+  private unPresence: (() => void) | null = null
   private onResize = () => {
     this.keepWindowOnScreen()
     this.layout()
@@ -386,7 +393,7 @@ export class Visualizer {
       for (const e of es) for (const t of [this.bg, this.left, this.right]) if (t.el === e.target) t.dirty = true
     }) : null
     for (const t of [this.bg, this.left, this.right]) this.ro?.observe(t.el)
-    document.addEventListener('visibilitychange', this.onVis)
+    this.unPresence = onPresence(this.onVis)
     window.addEventListener('resize', this.onResize)
   }
 
@@ -639,7 +646,7 @@ export class Visualizer {
   // ── the loop ──
 
   private startLoop() {
-    if (this.raf || document.hidden) return
+    if (this.raf || away()) return
     this.last = 0
     this.raf = requestAnimationFrame(this.frame)
   }
@@ -712,7 +719,7 @@ export class Visualizer {
   private frame = (now: number) => {
     this.raf = 0
     const s = this.deps.settings()
-    if (!this.active || document.hidden) return
+    if (!this.active || away()) return
     const saver = this.deps.saver()
     // About 30 fps unless Smooth motion is on: the desktop app's own frames arrive at 30 at most, and each redraw also makes the
     // browser re-blur whatever frosted glass sits behind the messages. Battery saver halves it again.
@@ -1100,7 +1107,7 @@ export class Visualizer {
     this.disconnect()
     this.closeWindow()
     this.ro?.disconnect()
-    document.removeEventListener('visibilitychange', this.onVis)
+    this.unPresence?.()
     window.removeEventListener('resize', this.onResize)
     for (const t of [this.bg, this.left, this.right]) {
       this.clear(t)

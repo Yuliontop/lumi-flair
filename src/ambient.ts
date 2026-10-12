@@ -1,9 +1,10 @@
 /**
  * Ambient scene layer: slow, low-opacity particles (snow, rain, embers,
  * fireflies, petals, stars) on their own canvas under the burst effects.
- * It pauses while the tab is hidden and stops entirely when the scene is off.
+ * It pauses while the tab is hidden or the window isn't in front, and stops entirely when the scene is off.
  */
 import type { Scene } from './settings'
+import { away, onPresence } from './presence'
 
 interface Mote {
   x: number
@@ -49,13 +50,14 @@ export class AmbientCanvas {
   private h = 0
   private shooting: { x: number; y: number; vx: number; vy: number; age: number } | null = null
   private onVisibility = () => {
-    if (document.hidden) this.stopLoop()
+    if (away()) this.stopLoop()
     else if (this.scene !== 'off') this.startLoop()
   }
+  private unPresence: () => void
 
   constructor(private canvas: HTMLCanvasElement) {
     this.g = canvas.getContext('2d')
-    document.addEventListener('visibilitychange', this.onVisibility)
+    this.unPresence = onPresence(this.onVisibility)
     // Asking for the canvas's size every frame forces a layout each time; hear about a change instead.
     if (typeof ResizeObserver === 'function') {
       this.watch = new ResizeObserver(() => (this.resized = true))
@@ -81,7 +83,7 @@ export class AmbientCanvas {
     this.resize()
     if (changed) this.motes = []
     this.fill()
-    if (!document.hidden) this.startLoop()
+    if (!away()) this.startLoop()
   }
 
   private target(): number {
@@ -316,7 +318,7 @@ export class AmbientCanvas {
   destroy() {
     this.stopLoop()
     this.watch?.disconnect()
-    document.removeEventListener('visibilitychange', this.onVisibility)
+    this.unPresence()
     this.motes = []
   }
 }
