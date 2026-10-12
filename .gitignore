@@ -4,10 +4,7 @@ bun.lock
 Thumbs.db
 *.log
 
-# dev tooling output (regenerate with `bun dev/build.ts` and `python dev/make_fixtures.py`)
-dev/out/
-dev/mock/build/
-dev/mock/fixtures/
-# Lumiverse's theme engine, copied locally for the mock (not ours to redistribute)
-dev/mock/vendor/
+# internal: dev tooling (tests, mock host, build helpers) and the notes/roadmap/release drafts
+dev/
+docs/
 __pycache__/
