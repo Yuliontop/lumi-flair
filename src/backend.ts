@@ -150,7 +150,7 @@ type PrefsMessage = { type: 'prefs' } & Partial<Prefs>
 // ── Config files: per-user, outside the extension folder ──
 // data/users/<userId>/extensions/lumi_flair/<name>.json — survives reinstalls.
 const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat', 'moments'])
-const VERSION = '1.6.3'
+const VERSION = '1.6.4'
 
 async function vaultLoad(req: number, names: unknown, userId: string) {
   const files: Record<string, unknown> = {}
@@ -350,7 +350,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
     const e = raw as { req?: unknown; title?: unknown; value?: unknown }
     const req = e.req
     try {
-      const r = await spindle.textEditor.open({ title: typeof e.title === 'string' ? e.title : undefined, value: typeof e.value === 'string' ? e.value : '' })
+      const r = await spindle.textEditor.open({ title: typeof e.title === 'string' ? e.title : undefined, value: typeof e.value === 'string' ? e.value : '', userId })
       return spindle.sendToFrontend({ type: 'edit_text_result', req, text: r.text, cancelled: r.cancelled }, userId)
     } catch (err) {
       spindle.log.warn(`[Lumi Flair] text editor failed: ${String(err)}`)

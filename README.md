@@ -197,6 +197,8 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.6.4:** Fixes the Moment Card expand button.
+  - **Expand button works:** on installs added with Import Local (and anywhere the extension is scoped to a user), the button did nothing because the editor request wasn't tied to your account. It now opens Lumiverse's full-screen editor.
 - **1.6.3:** Moment Cards on phones.
   - **The text box is no longer hidden by the keyboard:** while the keyboard is up, the Moment Card window can be scrolled so the "Text on the card" box sits above it.
   - **Expand button:** the box has Lumiverse's own expander in its top-right corner, which opens the full-screen text editor. The card follows what you write.
