@@ -61,6 +61,7 @@ const KEYFRAMES = `
 @property --lf-breath { syntax: '<number>'; inherits: false; initial-value: .5; }
 
 @keyframes lf-spin { to { --lf-angle: 360deg; } }
+@keyframes lf-orbit { to { offset-distance: 100%; } }
 @keyframes lf-breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 @keyframes lf-pop {
   0%   { transform: translateY(14px) scale(.965); opacity: 0; }
@@ -130,6 +131,28 @@ function ringDeclarations(): string {
   display: block;`
 }
 
+/** Move a small, painted-once light instead of repainting a card-sized masked gradient every frame. */
+function orbitCss(sel: string, s: FlairSettings, streaming = false): string {
+  const css = `
+@supports (offset-path: inset(1px round 14px)) {
+  ${sel}::after {
+    inset: auto; top: 0; left: 0; right: auto; bottom: auto;
+    width: clamp(24px, 8%, 96px); height: 2px; padding: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--lf-glow) 70%, color-mix(in srgb, var(--lf-glow) 70%, #fff));
+    box-shadow: 0 0 5px ${mix(60)};
+    -webkit-mask: none; mask: none;
+    offset-path: inset(1px round var(--lcs-radius, 14px));
+    offset-anchor: 85% 50%;
+    animation-name: ${streaming ? 'lf-orbit, lf-breathe' : 'lf-orbit'};
+  }
+  ${streaming ? `${sel}::after` : `${sel}:hover::after`} { will-change: transform; }
+}
+`
+  // Reduced motion keeps the complete static ring, rather than a stationary light on one edge.
+  return s.respectReducedMotion ? `@media (prefers-reduced-motion: no-preference) { ${css} }` : css
+}
+
 function cardTransitionCss(): string {
   return `
 :root ${CARD} {
@@ -185,7 +208,7 @@ ${sel}::after {${ringDeclarations()}
 @media (hover: hover) {
   ${sel}:hover::after { opacity: 1; animation-play-state: running; }
 }
-`
+` + orbitCss(sel, s)
   }
   return css
 }
@@ -197,7 +220,7 @@ function streamingCss(s: FlairSettings): string {
   animation: lf-spin calc(var(--lf-speed) * .8) linear infinite, lf-breathe 2.4s ease-in-out infinite;
 }
 :root [data-component="MinimalMessage"][data-message-id][data-part="streaming"]::after { inset: -1px; }
-`
+` + orbitCss(`:root ${CARD}[data-part="streaming"]`, s, true)
 }
 
 /**
@@ -360,6 +383,7 @@ export function exportableCss(s: FlairSettings): string {
     `:root ${CARD}[data-part="user"] { --lf-glow: var(--lf-c-user); }`,
     '@property --lf-angle { syntax: \'<angle>\'; inherits: false; initial-value: 0deg; }',
     '@keyframes lf-spin { to { --lf-angle: 360deg; } }',
+    '@keyframes lf-orbit { to { offset-distance: 100%; } }',
     '@keyframes lf-breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }',
     cardTransitionCss(),
     hoverCss(solid),

@@ -8,6 +8,7 @@
     "dev:build": "bun dev/build.ts",
     "typecheck": "tsc --noEmit -p .",
     "test:visualizer": "bun test tests/visualizer.test.ts",
+    "test:visualizer:hover": "python3 tests/visualizer-hover.browser.py",
     "test": "python dev/run.py"
   },
   "devDependencies": {
