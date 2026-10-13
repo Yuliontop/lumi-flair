@@ -99,8 +99,9 @@ def main():
                 colours.textContent = colorVarsCss(settings, null, null); viz.sync(true);
               };
               window.look = () => { const s = getComputedStyle(document.querySelector('.card'), '::after');
-                return Object.fromEntries(['animationName', 'animationPlayState', 'offsetPath', 'offsetDistance',
-                  'width', 'height', 'maskImage', 'opacity', 'willChange', 'animationDuration'].map(k => [k, s[k]])); };
+                return {angle: s.getPropertyValue('--lf-angle'), ...Object.fromEntries(['animationName', 'animationPlayState',
+                  'offsetPath', 'backgroundImage', 'width', 'height', 'maskImage', 'opacity', 'willChange',
+                  'animationDuration'].map(k => [k, s[k]]))}; };
               window.canvasPixels = () => viz.els.slice(1).map(canvas => {
                 const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
                 return data.some((value, index) => index % 4 === 3 && value > 20);
@@ -109,7 +110,7 @@ def main():
             }''')
             session = page.context.new_cdp_session(page) if args.browser == 'chromium' else None
 
-            def profile(name, move_pointer=None):
+            def profile(name, move_pointer=None, animated_ring=False):
                 # Let the hover fade and host background transition settle before measuring ongoing paint work.
                 page.wait_for_timeout(500)
                 paints_before = page.evaluate('paintCount')
@@ -137,7 +138,8 @@ def main():
                                   'visualizerDraws': draws, 'look': page.evaluate('look()')}), flush=True)
                 assert draws > 24, (name, draws)
                 if session:
-                    if not move_pointer:
+                    # The original edge trace animates its conic gradient and intentionally repaints.
+                    if not move_pointer and not animated_ring:
                         assert counts['Paint'] <= 2, (name, result)
                         assert counts['RasterTask'] <= 4, (name, result)
                     assert counts['Layout'] == 0, (name, result)
@@ -199,13 +201,16 @@ def main():
             }''')
 
             page.mouse.move(800, 240)
-            profile('trace with stereo sidebar ribbons, 96 bars, high DPI, glass')
+            profile('trace with stereo sidebar ribbons, 96 bars, high DPI, glass', animated_ring=True)
             before = page.evaluate('look()')
             page.wait_for_timeout(150)
             after = page.evaluate('look()')
-            assert before['offsetDistance'] != after['offsetDistance'], (before, after)
-            assert after['animationName'] == 'lf-orbit' and after['maskImage'] == 'none', after
-            assert float(after['width'].removesuffix('px')) <= 96, after
+            assert before['angle'] != after['angle'], (before, after)
+            assert after['animationName'] == 'lf-spin' and after['maskImage'] != 'none', after
+            assert after['backgroundImage'].startswith('conic-gradient(') and after['offsetPath'] == 'none', after
+            card_size = page.evaluate('({w: document.querySelector(".card").offsetWidth, h: document.querySelector(".card").offsetHeight})')
+            assert abs(float(after['width'].removesuffix('px')) - card_size['w']) <= 2, (after, card_size)
+            assert abs(float(after['height'].removesuffix('px')) - card_size['h']) <= 2, (after, card_size)
             assert page.evaluate('canvasPixels()') == [True, True]
 
             page.mouse.move(10, 10)
@@ -216,18 +221,18 @@ def main():
             page.mouse.move(800, 240)
             for component in ['MinimalMessage', 'BubbleMessage']:
                 page.evaluate('(component) => document.querySelector(".card").dataset.component = component', component)
-                profile(component + ' trace')
+                profile(component + ' trace', animated_ring=True)
 
             page.evaluate('document.querySelector(".card").dataset.part = "streaming"')
-            profile('streaming aura with stereo sidebar ribbons')
-            assert page.evaluate('look().animationName') == 'lf-orbit, lf-breathe'
+            profile('streaming aura with stereo sidebar ribbons', animated_ring=True)
+            assert page.evaluate('look().animationName') == 'lf-spin, lf-breathe'
             page.evaluate('document.querySelector(".card").dataset.part = "character"')
             page.emulate_media(reduced_motion='reduce')
             reduced = page.evaluate('look()')
             assert reduced['animationName'] == 'none' and reduced['offsetPath'] == 'none', reduced
             assert reduced['maskImage'] != 'none', reduced
             page.evaluate('apply({respectReducedMotion: false})')
-            assert page.evaluate('look().animationName') == 'lf-orbit'
+            assert page.evaluate('look().animationName') == 'lf-spin'
             page.emulate_media(reduced_motion='no-preference')
 
             page.set_viewport_size({'width': 1300, 'height': 800})
@@ -237,14 +242,14 @@ def main():
             page.mouse.move(650, 240)
             page.evaluate('apply({traceSpeed: 1})')
             assert page.evaluate('look().animationDuration') == '1s'
-            profile('resized user-target trace')
+            profile('resized user-target trace', animated_ring=True)
             for style in ['glow', 'neon', 'none']:
                 page.evaluate('(style) => apply({hoverStyle: style})', style)
                 profile(style + ' with stereo sidebar ribbons')
 
             page.evaluate('flairStyle.textContent = exportableCss({...settings, hoverStyle: "trace", hoverTarget: "all"})')
-            assert page.evaluate('look().animationName') == 'lf-orbit'
-            profile('exported theme pack trace')
+            assert page.evaluate('look().animationName') == 'lf-spin'
+            profile('exported theme pack trace', animated_ring=True)
             page.evaluate('apply({enabled: false})')
             assert page.evaluate('look().animationName') == 'none'
             page.evaluate('viz.destroy()')

@@ -185,7 +185,7 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 | Piece | Mechanism |
 |---|---|
 | Soft glow edges | The chat list clips sideways at its padding (about 20px, or 8px on mobile). Flair measures that gap as `--lf-room` and keeps every outer shadow inside it (blur + spread ≤ room), so glows fade out instead of being cut off. Inner (inset) glow adds depth |
-| Glow, ring, aura, text effects, spotlight | Global CSS on the public selectors `[data-component="BubbleMessage" \| "MinimalMessage"][data-part][data-message-id]` and `[data-lf]` spans. The trace moves a small light around the border using a CSS motion path, avoiding repeated painting of the entire message. Reduced motion keeps a static ring; older browsers retain the conic-gradient trace. |
+| Glow, ring, aura, text effects, spotlight | Global CSS on the public selectors `[data-component="BubbleMessage" \| "MinimalMessage"][data-part][data-message-id]` and `[data-lf]` spans. The trace is a masked `conic-gradient` rotated with `@property --lf-angle` |
 | Colour pipeline | `--lf-c` is a registered `<color>`, so mood and time changes fade smoothly. It starts from the theme accent (or your custom colour), mixes in the time-of-day tint, then the mood colour |
 | Bursts | A canvas in a `pointer-events: none` overlay, measured with `getBoundingClientRect()` so it lines up correctly at any UI Scale |
 | Ambient | A canvas placed inside `ChatView` at z-index 2: above the wallpaper, scene background and text scrim (z 0–2), below the chat body (z 3). It reattaches whenever the chat view remounts |
