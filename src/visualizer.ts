@@ -711,12 +711,14 @@ export class Visualizer {
     if (this.raf || away()) return
     this.last = 0
     this.raf = requestAnimationFrame(this.frame)
+    document.documentElement.setAttribute('data-lf-viz-active', '')
   }
   private stopLoop() {
     if (this.raf) cancelAnimationFrame(this.raf)
     this.raf = 0
     if (this.poll) clearInterval(this.poll)
     this.poll = undefined
+    document.documentElement.removeAttribute('data-lf-viz-active')
   }
   private clearAll() {
     for (const t of this.targets()) this.clear(t)
@@ -735,8 +737,7 @@ export class Visualizer {
 
   private goQuiet() {
     this.quiet = true
-    if (this.raf) cancelAnimationFrame(this.raf)
-    this.raf = 0
+    this.stopLoop()
     this.clearAll()
     // The desktop app's frames wake it themselves (they stop while nothing is audible), so there is nothing to poll.
     if (this.deps.settings().vizSource === 'system') {
@@ -782,7 +783,10 @@ export class Visualizer {
   private frame = (now: number) => {
     this.raf = 0
     const s = this.deps.settings()
-    if (!this.active || away()) return
+    if (!this.active || away()) {
+      this.stopLoop()
+      return
+    }
     const saver = this.deps.saver()
     // About 30 fps unless Smooth motion is on: the desktop app's own frames arrive at 30 at most, and each redraw also makes the
     // browser re-blur whatever frosted glass sits behind the messages. Battery saver halves it again.

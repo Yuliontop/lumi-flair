@@ -115,6 +115,8 @@ For a single flowing display, choose **Stereo ribbons** under **Style** with ste
 
 Under **Colours**, choose **Match current Lumiverse theme** to follow the live primary and secondary colours that Lumiverse displays. This includes album-art palettes from SpotifyControls or SubsonicControls, Flair's backend theme override, and light/dark mode changes. Lumiverse's existing override precedence controls the result; the visualizer does not apply another theme or change permissions. If Flair's theme hides an album palette, select **Flair Packs → Lumiverse theme → Keep my theme** to remove Flair's override. Colours refresh while the visualizer is active, and **Match my Flair Pack**, custom colours and Rainbow remain available.
 
+While the visualizer is drawing, message hover backgrounds, shadows and filters change immediately, avoiding repeated repainting as the pointer crosses messages. Opacity fades and the moving edge trace remain animated. Normal message transitions return when the visualizer is quiet, paused or switched off. **Demo** animates generated levels without playing sound.
+
 Pressing Lumiverse's **Stop** pauses future capture requests, including after reload. To resume, select **Allow requests again** in Lumi Flair's permissions area, then press **Connect audio**. Flair does not repeatedly retry failed or stopped sessions.
 
 - **macOS:** the first time, macOS asks for **System Audio Recording** (not Screen Recording). If you refused, enable it under System Settings → Privacy & Security → Screen & System Audio Recording → **System Audio Recording Only**.

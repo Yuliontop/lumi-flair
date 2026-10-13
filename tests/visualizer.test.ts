@@ -42,7 +42,8 @@ class TestCanvas {
 let frames: Map<number, FrameRequestCallback>
 let nextFrame: number
 let visualizers: Visualizer[]
-let doc: { hidden: boolean; hasFocus(): boolean; addEventListener(): void; removeEventListener(): void; querySelector(): unknown }
+let doc: { hidden: boolean; hasFocus(): boolean; addEventListener(): void; removeEventListener(): void; querySelector(): unknown;
+  documentElement: { setAttribute(key: string, value: string): void; removeAttribute(key: string): void; hasAttribute(key: string): boolean } }
 const globals = ['document', 'window', 'Path2D', 'matchMedia', 'requestAnimationFrame', 'cancelAnimationFrame']
 const original = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
 
@@ -52,7 +53,13 @@ beforeEach(() => {
   visualizers = []
   const list = { getBoundingClientRect: () => ({ left: 200, right: 800 }) }
   const view = { offsetWidth: 1000, getBoundingClientRect: () => ({ left: 0, right: 1000, width: 1000 }), querySelector: () => list }
-  doc = { hidden: false, hasFocus: () => true, addEventListener() {}, removeEventListener() {}, querySelector: () => view }
+  const attributes = new Map<string, string>()
+  doc = { hidden: false, hasFocus: () => true, addEventListener() {}, removeEventListener() {}, querySelector: () => view,
+    documentElement: {
+      setAttribute: (key, value) => { attributes.set(key, value) },
+      removeAttribute: (key) => { attributes.delete(key) },
+      hasAttribute: (key) => attributes.has(key),
+    } }
   Object.assign(globalThis, {
     document: doc,
     window: { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} },
@@ -117,6 +124,36 @@ function fixture(patch: Partial<FlairSettings> = {}) {
 const channel = (level: number) => ({ amplitude: level, peak: level, frequencies: Array(64).fill(level) })
 const stereoFrame = (left: number, right: number, mono = Math.max(left, right)): SpindleSystemAudioFrame =>
   ({ ...channel(mono), stereo: { left: channel(left), right: channel(right) } })
+
+test('limits message hover transitions only while a visualizer is animating', async () => {
+  const f = fixture({ vizStereo: true })
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(false)
+  f.viz.sync(true)
+  await flush()
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(true)
+  f.sessions[0].options.onFrame(stereoFrame(0, 0))
+  for (let at = 100; at <= 1700; at += 100) tick(at)
+  expect(f.viz.animating).toBe(false)
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(false)
+  f.sessions[0].options.onFrame(stereoFrame(1, 0))
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(true)
+  f.viz.destroy()
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(false)
+})
+
+test.each(['hidden', 'unfocused', 'disabled', 'no targets'] as const)('restores normal message transitions when %s', (reason) => {
+  const f = fixture({ vizSource: 'demo' })
+  f.viz.sync(true)
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(true)
+  if (reason === 'hidden') doc.hidden = true
+  if (reason === 'unfocused') doc.hasFocus = () => false
+  if (reason === 'disabled') f.settings.enabled = false
+  if (reason === 'no targets') f.settings.vizBg = f.settings.vizSides = false
+  if (reason === 'unfocused') tick(100)
+  else f.viz.sync(true)
+  expect(f.viz.animating).toBe(false)
+  expect(doc.documentElement.hasAttribute('data-lf-viz-active')).toBe(false)
+})
 
 test('stereo setting survives normalization and old settings keep the combined view', () => {
   expect(normalize({ vizStereo: true }).vizStereo).toBe(true)

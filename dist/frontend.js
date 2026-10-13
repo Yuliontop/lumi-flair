@@ -774,6 +774,10 @@ function cardTransitionCss() {
 :root ${CARD} {
   transition: box-shadow .25s ease, background var(--lcs-transition-fast, 120ms ease), opacity .35s ease, filter .35s ease;
 }
+/* Pointer entry otherwise repaints the whole message throughout its background,
+   shadow and filter transitions, competing with the visualizer for every frame.
+   Keep the hover appearance and composited opacity fade while audio is drawing. */
+:root[data-lf-viz-active] ${CARD} { transition: opacity .35s ease; }
 `;
 }
 function hoverCss(s) {
@@ -5155,6 +5159,7 @@ class Visualizer {
       return;
     this.last = 0;
     this.raf = requestAnimationFrame(this.frame);
+    document.documentElement.setAttribute("data-lf-viz-active", "");
   }
   stopLoop() {
     if (this.raf)
@@ -5163,6 +5168,7 @@ class Visualizer {
     if (this.poll)
       clearInterval(this.poll);
     this.poll = undefined;
+    document.documentElement.removeAttribute("data-lf-viz-active");
   }
   clearAll() {
     for (const t of this.targets())
@@ -5181,9 +5187,7 @@ class Visualizer {
   }
   goQuiet() {
     this.quiet = true;
-    if (this.raf)
-      cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    this.stopLoop();
     this.clearAll();
     if (this.deps.settings().vizSource === "system") {
       this.syncWindowMsg();
@@ -5231,8 +5235,10 @@ class Visualizer {
   frame = (now) => {
     this.raf = 0;
     const s = this.deps.settings();
-    if (!this.active || away())
+    if (!this.active || away()) {
+      this.stopLoop();
       return;
+    }
     const saver = this.deps.saver();
     const minMs = saver ? 60 : s.smoothMotion ? 0 : 30;
     if (this.last && now - this.last < minMs) {

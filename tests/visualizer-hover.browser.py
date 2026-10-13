@@ -18,6 +18,7 @@ from playwright.sync_api import sync_playwright
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host-checkout', type=Path)
+    parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix='lumi-flair-hover-') as temporary:
@@ -32,7 +33,7 @@ def main():
         subprocess.run(['bun', 'build', str(entry), '--target', 'browser', '--format', 'iife',
                         '--outfile', str(output / 'browser.js')], cwd=repo, check=True, capture_output=True)
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
+            browser = getattr(playwright, args.browser).launch()
             page = browser.new_page(viewport={'width': 1600, 'height': 1000}, device_scale_factor=2)
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
@@ -47,7 +48,9 @@ def main():
                 padding: 16px 20px 0; overflow: auto; }
               .card { position: relative; margin: 20px 0; overflow: hidden; contain: layout style paint;
                 border-radius: var(--lcs-radius); background: var(--lcs-glass-bg);
-                backdrop-filter: blur(var(--lcs-glass-strong-blur)) saturate(1.2); }
+                backdrop-filter: none; }
+              html[data-glass][data-chat-bg] .card { backdrop-filter: blur(var(--lcs-glass-strong-blur)) saturate(1.2); }
+              .card:hover { background: rgba(32,28,43,.72); box-shadow: 0 1px 2px rgba(0,0,0,.28); }
               .bubble { width: 100%; padding: 18px; }
               .lf-ambient-host { display: contents; }
             </style></head><body><div data-component="ChatView"><div class="chat-body">
@@ -84,6 +87,9 @@ def main():
               window.viz = new Visualizer(ctx, { settings: () => settings, update: patch => Object.assign(settings, patch),
                 tap: () => null, palette: () => ['#a78bfa', '#38bdf8'], motionOk: () => true,
                 saver: () => false, panels: () => false, onState() {} });
+              window.paintCount = 0;
+              const paint = viz.paint.bind(viz);
+              viz.paint = (...args) => { paintCount++; return paint(...args); };
               document.querySelector('.lf-ambient-host').append(...viz.els);
               window.flairStyle = document.createElement('style'); document.head.append(flairStyle);
               const colours = document.createElement('style'); colours.textContent = colorVarsCss(settings, null, null);
@@ -101,29 +107,76 @@ def main():
               });
               apply({hoverStyle: 'trace'});
             }''')
-            session = page.context.new_cdp_session(page)
+            session = page.context.new_cdp_session(page) if args.browser == 'chromium' else None
 
-            def profile(name):
+            def profile(name, move_pointer=None):
                 # Let the hover fade and host background transition settle before measuring ongoing paint work.
                 page.wait_for_timeout(500)
+                paints_before = page.evaluate('paintCount')
                 events = []
                 collect = lambda value: events.extend(value['value'])
-                session.on('Tracing.dataCollected', collect)
-                session.send('Tracing.start', {'categories': 'devtools.timeline,disabled-by-default-devtools.timeline',
-                                               'transferMode': 'ReportEvents'})
-                page.wait_for_timeout(1200)
-                complete = []
-                session.once('Tracing.tracingComplete', lambda value: complete.append(True))
-                session.send('Tracing.end')
-                while not complete:
-                    page.wait_for_timeout(10)
-                session.remove_listener('Tracing.dataCollected', collect)
+                if session:
+                    session.on('Tracing.dataCollected', collect)
+                    session.send('Tracing.start', {'categories': 'devtools.timeline,disabled-by-default-devtools.timeline',
+                                                   'transferMode': 'ReportEvents'})
+                if move_pointer:
+                    move_pointer()
+                else:
+                    page.wait_for_timeout(1200)
+                if session:
+                    complete = []
+                    session.once('Tracing.tracingComplete', lambda value: complete.append(True))
+                    session.send('Tracing.end')
+                    while not complete:
+                        page.wait_for_timeout(10)
+                    session.remove_listener('Tracing.dataCollected', collect)
                 counts = Counter(event['name'] for event in events)
                 result = {key: counts[key] for key in ['Paint', 'RasterTask', 'Layout', 'UpdateLayoutTree']}
-                print(json.dumps({'case': name, 'events': result, 'look': page.evaluate('look()')}), flush=True)
-                assert counts['Paint'] <= 2, (name, result)
-                assert counts['RasterTask'] <= 4, (name, result)
-                assert counts['Layout'] == 0, (name, result)
+                draws = page.evaluate('paintCount') - paints_before
+                print(json.dumps({'browser': args.browser, 'case': name, 'events': result if session else None,
+                                  'visualizerDraws': draws, 'look': page.evaluate('look()')}), flush=True)
+                assert draws > 24, (name, draws)
+                if session:
+                    if not move_pointer:
+                        assert counts['Paint'] <= 2, (name, result)
+                        assert counts['RasterTask'] <= 4, (name, result)
+                    assert counts['Layout'] == 0, (name, result)
+                return result
+
+            # Measure the pointer transitions themselves, including the user's no-glass/no-glow case.
+            page.evaluate('''() => {
+              document.documentElement.removeAttribute('data-glass');
+              apply({hoverStyle: 'none', streamingAura: false, spotlight: false});
+            }''')
+            assert page.evaluate('getComputedStyle(document.querySelector(".card")).backdropFilter') == 'none'
+            assert page.evaluate('getComputedStyle(document.querySelector(".card")).transitionProperty') == 'opacity'
+            comparison = page.add_style_tag(content='''
+              :root[data-lf-viz-active] :is([data-component="BubbleMessage"],[data-component="MinimalMessage"])[data-message-id] {
+                transition: box-shadow .25s ease, background 120ms ease, opacity .35s ease, filter .35s ease;
+              }''')
+
+            def cross_messages():
+                for index in range(30):
+                    page.mouse.move(800, 90 + index % 9 * 85)
+                    page.wait_for_timeout(45)
+
+            page.mouse.move(10, 10)
+            old = profile('crossing messages: previous transitions, no glass or Flair glow', cross_messages)
+            comparison.evaluate('(style) => style.remove()')
+            page.mouse.move(10, 10)
+            new = profile('crossing messages: active visualizer transitions, no glass or Flair glow', cross_messages)
+            if session:
+                assert new['Paint'] < old['Paint'] * .5, (old, new)
+                assert new['RasterTask'] < old['RasterTask'] * .5, (old, new)
+            assert page.evaluate('canvasPixels()') == [True, True]
+            page.evaluate('viz.sync(false)')
+            normal = page.evaluate('getComputedStyle(document.querySelector(".card")).transitionProperty')
+            assert 'background' in normal and 'box-shadow' in normal, normal
+            assert not page.evaluate('document.documentElement.hasAttribute("data-lf-viz-active")')
+            page.evaluate('''() => {
+              document.documentElement.setAttribute('data-glass', '');
+              apply({hoverStyle: 'trace', streamingAura: true});
+            }''')
 
             page.mouse.move(800, 240)
             profile('trace with stereo sidebar ribbons, 96 bars, high DPI, glass')
