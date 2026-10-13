@@ -19,15 +19,21 @@ class TestCanvas {
   rects: number[][] = []
   translations: number[][] = []
   curves: number[][] = []
+  transforms: number[][] = []
+  labels: Array<{ text: string; colour: unknown }> = []
   g = {
-    setTransform() {}, transform() {}, save() {}, restore() {},
+    fillStyle: '' as unknown,
+    globalAlpha: 1,
+    setTransform() {}, save() {}, restore() {},
+    transform: (...args: number[]) => this.transforms.push(args),
     translate: (...args: number[]) => this.translations.push(args),
-    clearRect: () => { this.rects = []; this.translations = []; this.curves = [] },
+    clearRect: () => { this.rects = []; this.translations = []; this.curves = []; this.transforms = []; this.labels = [] },
     createLinearGradient: () => ({ addColorStop() {} }),
     beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, stroke() {},
     quadraticCurveTo: (...args: number[]) => this.curves.push(args),
     fill: (path?: TestPath) => { if (path) this.rects.push(...path.rects) },
     fillRect: (...args: number[]) => this.rects.push(args),
+    fillText: (text: string) => this.labels.push({ text, colour: this.g.fillStyle }),
   }
   getContext() { return this.g }
   remove() {}
@@ -159,8 +165,8 @@ test('routes left-only and right-only audio to the matching strips and backgroun
   expect(f.canvases[2].rects.length).toBeGreaterThan(0)
 })
 
-test('wakes on channel activity even when the combined spectrum cancels', async () => {
-  const f = fixture({ vizStereo: true })
+test.each(['bars', 'ribbons'] as const)('wakes %s on channel activity even when the combined spectrum cancels', async (vizStyle) => {
+  const f = fixture({ vizStereo: true, vizStyle })
   f.viz.sync(true)
   await flush()
   for (let at = 100; at <= 1600; at += 100) tick(at)
@@ -171,6 +177,66 @@ test('wakes on channel activity even when the combined spectrum cancels', async 
   tick(1700)
   expect(f.canvases[1].rects.length).toBeGreaterThan(0)
   expect(f.canvases[2].rects.length).toBeGreaterThan(0)
+})
+
+test('preserves Stereo ribbons as a saved style when stereo is toggled off', () => {
+  expect(normalize({ vizStereo: true, vizStyle: 'ribbons' }).vizStyle).toBe('ribbons')
+  expect(normalize({ vizStereo: false, vizStyle: 'ribbons' }).vizStyle).toBe('ribbons')
+})
+
+test.each([false, true])('ribbons align the channels across the full spectrum with centre flip %s', async (vizCenterFlip) => {
+  const f = fixture({ vizStereo: true, vizStyle: 'ribbons', vizCenter: true, vizCenterFlip, vizBgTop: true })
+  f.viz.sync(true)
+  await flush()
+  f.sessions[0].options.onFrame(stereoFrame(1, 0, 0))
+  tick(100)
+  const [bg, left, right] = f.canvases
+  expect(bg.rects).toHaveLength(f.settings.vizBars * 2)
+  expect(bg.rects.some(([x]) => x > 900)).toBe(true)
+  expect(bg.transforms).toEqual([[1, 0, 0, -1, 22, 172]])
+  expect(bg.labels.map((label) => label.text)).toEqual(['L', 'R'])
+  expect(left.rects.length).toBeGreaterThan(0)
+  expect(right.rects).toEqual([])
+  expect(bg.g.globalAlpha).toBe(1)
+})
+
+test('ribbons keep the right channel in its own strip and separate matching colours', async () => {
+  const f = fixture({ vizStereo: true, vizStyle: 'ribbons', vizColor: 'custom', vizColorA: '#a78bfa', vizColorB: '#a78bfa' })
+  f.viz.sync(true)
+  await flush()
+  f.sessions[0].options.onFrame(stereoFrame(0, 1, 0))
+  tick(100)
+  const [bg, left, right] = f.canvases
+  expect(left.rects).toEqual([])
+  expect(right.rects.length).toBeGreaterThan(0)
+  expect(bg.labels[0].colour).not.toBe(bg.labels[1].colour)
+})
+
+test.each(['disabled', 'unsupported', 'missing frame'] as const)('ribbons fall back to a combined Wave when stereo is %s', async (reason) => {
+  const f = fixture({ vizStereo: reason !== 'disabled', vizStyle: 'ribbons' })
+  if (reason === 'unsupported') f.status.stereoSupported = false
+  f.viz.sync(true)
+  await flush()
+  f.sessions[0].options.onFrame(channel(1))
+  tick(100)
+  expect(f.canvases[0].labels).toEqual([])
+  expect(f.canvases[0].translations).toEqual([])
+  expect(f.canvases[0].curves.length).toBeGreaterThan(0)
+  expect(f.canvases[1].curves).toEqual(f.canvases[2].curves)
+})
+
+test('changing to ribbons reuses the capture session and works with rainbow, peaks and glow', async () => {
+  const f = fixture({ vizStereo: true })
+  f.viz.sync(true)
+  await flush()
+  Object.assign(f.settings, { vizStyle: 'ribbons', vizColor: 'rainbow', vizPeaks: true, vizGlow: 0.8 })
+  f.viz.sync(true)
+  f.sessions[0].options.onFrame(stereoFrame(1, 0.6))
+  tick(100)
+  expect(f.start).toHaveBeenCalledTimes(1)
+  expect(f.canvases[0].rects.length).toBeGreaterThan(0)
+  expect(f.canvases[0].curves.length).toBeGreaterThan(0)
+  expect(f.canvases[0].g.globalAlpha).toBe(1)
 })
 
 test.each(['bars', 'mirror', 'segments', 'wave'] as const)('draws two independent channels in %s style', async (style) => {

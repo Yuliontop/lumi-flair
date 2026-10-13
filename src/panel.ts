@@ -424,7 +424,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     parent: HTMLElement,
     label: string,
     key: K,
-    options: Array<{ value: string; label: string; sublabel?: string }>,
+    options: Array<{ value: string; label: string; sublabel?: string; disabled?: boolean }>,
   ) {
     const slot = row(parent, label, 'fill')
     const h = ctx.components.mountSelect(slot, {
@@ -437,6 +437,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     syncers.push((s) => {
       if (h.getValue() !== String(s[key])) h.update({ value: String(s[key]) })
     })
+    return h
   }
 
   function toggle<K extends keyof FlairSettings>(
@@ -1451,7 +1452,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   ])
   const vzSystem = hint(vz.body, 'Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. It tries to connect automatically with an existing system audio permission. Lumiverse can remember your approval on this device and always shows while it is listening. If it cannot connect, press “Connect audio”.')
   toggle(vz.body, 'Show stereo channels', 'vizStereo')
-  hint(vz.body, 'With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side. Works with every style, including Wave. Sources without stereo support keep the combined view; Demo signal previews both channels.')
+  hint(vz.body, 'With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side, or together with Stereo ribbons. Sources without stereo support keep the combined view; Demo signal previews both channels.')
   const vzStatus = status(vz.body, (st, el) => {
     const src = store.get().vizSource
     const bits: Record<string, string> = {
@@ -1488,12 +1489,16 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   hint(vz.body, 'The strips use the free space beside the chat column, so they only show when the chat is narrower than the screen.')
 
   hint(vz.body, '<b>Look</b>')
-  select(vz.body, 'Style', 'vizStyle', [
+  const vzStyleOptions = (stereo: boolean) => [
     { value: 'bars', label: 'Bars', sublabel: 'Classic bars rising from the bottom' },
     { value: 'mirror', label: 'Mirrored bars', sublabel: 'Bars grow both ways from the middle' },
     { value: 'segments', label: 'Segments', sublabel: 'Stacked blocks, like a level meter' },
     { value: 'wave', label: 'Wave', sublabel: 'A smooth filled curve' },
-  ])
+    { value: 'ribbons', label: 'Stereo ribbons', sublabel: 'Two coloured waves and fine bars around one centre line', disabled: !stereo },
+  ]
+  const vzStyle = select(vz.body, 'Style', 'vizStyle', vzStyleOptions(s0.vizStereo))
+  let vzStylesStereo = s0.vizStereo
+  hint(vz.body, 'Stereo ribbons brings both channels into one shape: the left channel above the centre line, the right below it, each in its own colour. Enable “Show stereo channels” to choose it. With a mono source, it falls back to Wave.')
   slider(vz.body, 'Bars', 'vizBars', 8, 96, 1, { decimals: 0 })
   slider(vz.body, 'Bar width', 'vizBarFill', 0.2, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
   slider(vz.body, 'Rounded corners', 'vizRound', 0, 1, 0.05, { suffix: '%', decimals: 0, scale: 100 })
@@ -1513,6 +1518,10 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   toggle(vz.body, 'Colour runs up each bar', 'vizGradientUp')
   hint(vz.body, 'Off: the colour runs across the row of bars instead. “No flashing” softens how fast bars jump and turns the glow off.')
   const syncViz = (s: FlairSettings, st = actions.status()) => {
+    if (vzStylesStereo !== s.vizStereo) {
+      vzStylesStereo = s.vizStereo
+      vzStyle.update({ options: vzStyleOptions(s.vizStereo).map((o) => ({ ...o, label: tr(o.label), sublabel: tr(o.sublabel) })) })
+    }
     const share = s.vizSource === 'tab' || s.vizSource === 'mic' || s.vizSource === 'system'
     vzConnect.el.style.display = s.viz && share ? '' : 'none'
     vzSystem.style.display = s.vizSource === 'system' ? '' : 'none'

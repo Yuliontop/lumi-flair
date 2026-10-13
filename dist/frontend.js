@@ -106,7 +106,7 @@ function cueName(raw) {
 
 // src/settings.ts
 var VIZ_SOURCES = ["flair", "tab", "mic", "system", "demo"];
-var VIZ_STYLES = ["bars", "mirror", "segments", "wave"];
+var VIZ_STYLES = ["bars", "mirror", "segments", "wave", "ribbons"];
 var VIZ_COLORS = ["flair", "custom", "rainbow"];
 var MAX_CUSTOM_PACKS = 24;
 var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
@@ -4521,6 +4521,8 @@ var T = {
   "Mirrored bars": ["镜像条", "鏡像條", "ミラーバー", "Barres en miroir", "Barre speculari"],
   Segments: ["分段", "分段", "セグメント", "Segments", "Segmenti"],
   Wave: ["波形", "波形", "波形", "Onde", "Onda"],
+  "Stereo ribbons": ["立体声飘带", "立體聲飄帶", "ステレオリボン", "Rubans stéréo", "Nastri stereo"],
+  "Two coloured waves and fine bars around one centre line": ["两种颜色的波形与细条围绕同一中心线", "兩種顏色的波形與細條圍繞同一中心線", "中心線を挟む2色の波形と細いバー", "Deux ondes colorées et de fines barres autour d’une ligne centrale", "Due onde colorate e barre sottili attorno a una linea centrale"],
   "Bar width": ["条宽", "條寬", "バーの太さ", "Largeur des barres", "Larghezza delle barre"],
   "Rounded corners": ["圆角", "圓角", "角の丸み", "Coins arrondis", "Angoli arrotondati"],
   "Peak caps": ["峰值帽", "峰值帽", "ピークキャップ", "Pointes de crête", "Cappucci di picco"],
@@ -5227,11 +5229,13 @@ class Visualizer {
     const kR = 1 - Math.pow(1 - (0.04 + (1 - s.vizSmoothing) * 0.5), dt * 60);
     const t = (now - this.t0) / 1000;
     const looks = this.look(s, saver);
+    if (looks.style === "ribbons" && !stereo)
+      looks.style = "wave";
     let energy = 0;
     const readings = new Map;
     const targets = this.targets().filter((tg) => tg.visible && tg.n);
     const channels = (tg) => !stereo ? ["mono"] : tg.kind === "left" || tg.kind === "right" ? [tg.kind] : ["left", "right"];
-    const count = (tg) => stereo && (tg.kind === "win" || tg.kind === "bg") ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n;
+    const count = (tg) => stereo && s.vizStyle !== "ribbons" && (tg.kind === "win" || tg.kind === "bg") ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n;
     for (const tg of targets)
       for (const channel of channels(tg))
         readings.set(this.lane(count(tg), channel), channel);
@@ -5348,9 +5352,45 @@ class Visualizer {
       g.transform(0, -1, -1, 0, t.w, t.h);
       L = t.h;
       T = t.w;
-    } else if (t.kind === "bg" && s.vizBgTop)
+    } else if (t.kind === "bg" && s.vizBgTop && look.style !== "ribbons")
       g.transform(1, 0, 0, -1, 0, t.h);
-    if (right) {
+    if (look.style === "ribbons") {
+      const a = look.rainbow ? "#ff7ab6" : look.a;
+      const rgbB = rgbOf(look.b);
+      const distance = rgbOf(a).reduce((sum, value, i) => sum + Math.abs(value - rgbB[i]), 0);
+      const b = look.rainbow ? "#52d9ff" : distance < 90 ? shiftHue(a, 110) : look.b;
+      if (right) {
+        const mid = T / 2;
+        const pad = Math.min(8, T * 0.08);
+        const half = Math.max(1, mid - pad - 3);
+        const inset = Math.min(22, L * 0.08);
+        const width = Math.max(1, L - inset - pad);
+        g.save();
+        g.translate(inset, pad);
+        this.paintRibbon(g, width, half, lane, look, s, a, 300);
+        g.restore();
+        g.save();
+        g.transform(1, 0, 0, -1, inset, T - pad);
+        this.paintRibbon(g, width, half, right, look, s, b, 160);
+        g.restore();
+        g.globalAlpha = 0.18;
+        g.strokeStyle = a;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(inset, mid);
+        g.lineTo(L - pad, mid);
+        g.stroke();
+        g.globalAlpha = 0.8;
+        g.font = "600 10px sans-serif";
+        g.textBaseline = "middle";
+        g.fillStyle = a;
+        g.fillText("L", 6, mid - 11);
+        g.fillStyle = b;
+        g.fillText("R", 6, mid + 11);
+        g.globalAlpha = 1;
+      } else
+        this.paintRibbon(g, L, T, lane, look, s, t.kind === "right" ? b : a, t.kind === "right" ? 160 : 300);
+    } else if (right) {
       const gap = 4;
       const half = (L - gap) / 2;
       g.save();
@@ -5362,6 +5402,49 @@ class Visualizer {
       g.restore();
     } else
       this.paintLane(g, L, T, lane, look, s);
+  }
+  paintRibbon(g, L, T, lane, look, s, colour, hue) {
+    let v = lane.v;
+    let pk = lane.pk;
+    if (s.vizCenter) {
+      const key = `${v.length}:${s.vizCenterFlip}`;
+      let c = this.centered.get(key);
+      if (!c)
+        this.centered.set(key, c = { map: centerMap(v.length, s.vizCenterFlip), v: new Float32Array(v.length), pk: new Float32Array(v.length) });
+      for (let i = 0;i < v.length; i++) {
+        c.v[i] = v[c.map[i]];
+        c.pk[i] = pk[c.map[i]];
+      }
+      v = c.v;
+      pk = c.pk;
+    }
+    if (!v.some((value) => value > 0.002) && !pk.some((value) => value > 0.03))
+      return;
+    const grad = look.rainbow ? g.createLinearGradient(0, 0, L, 0) : g.createLinearGradient(0, T, 0, 0);
+    if (look.rainbow) {
+      for (let i = 0;i <= 2; i++)
+        grad.addColorStop(i / 2, `hsl(${hue + i * 60},85%,65%)`);
+    } else {
+      const [r, green, b] = rgbOf(colour);
+      grad.addColorStop(0, `rgba(${r},${green},${b},0.35)`);
+      grad.addColorStop(1, colour);
+    }
+    const wave = { ...look, style: "wave", peaks: false, glow: 0 };
+    g.fillStyle = g.strokeStyle = grad;
+    g.globalAlpha = 0.22;
+    shapes(g, L, T, v, pk, wave, null, 0);
+    g.globalAlpha = 0.85;
+    g.lineWidth = 1.5;
+    g.stroke();
+    const bars = { ...look, style: "bars", fill: look.fill * 0.65, a: colour, b: colour };
+    g.fillStyle = grad;
+    if (look.glow > 0) {
+      g.globalAlpha = 0.12 * look.glow;
+      shapes(g, L, T, v, pk, bars, null, 1 + look.glow * 3);
+    }
+    g.globalAlpha = 0.6;
+    shapes(g, L, T, v, pk, bars, null, 0);
+    g.globalAlpha = 1;
   }
   paintLane(g, L, T, lane, look, s) {
     let v = lane.v;
@@ -9227,6 +9310,7 @@ function mountPanel(ctx, store, actions) {
       if (h.getValue() !== String(s[key]))
         h.update({ value: String(s[key]) });
     });
+    return h;
   }
   function toggle(parent, label, key, before) {
     const slot = row(parent, label, "fit");
@@ -10197,7 +10281,7 @@ function mountPanel(ctx, store, actions) {
   ]);
   const vzSystem = hint(vz.body, "Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. It tries to connect automatically with an existing system audio permission. Lumiverse can remember your approval on this device and always shows while it is listening. If it cannot connect, press “Connect audio”.");
   toggle(vz.body, "Show stereo channels", "vizStereo");
-  hint(vz.body, "With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side. Works with every style, including Wave. Sources without stereo support keep the combined view; Demo signal previews both channels.");
+  hint(vz.body, "With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side, or together with Stereo ribbons. Sources without stereo support keep the combined view; Demo signal previews both channels.");
   const vzStatus = status(vz.body, (st, el) => {
     const src = store.get().vizSource;
     const bits = {
@@ -10227,12 +10311,16 @@ function mountPanel(ctx, store, actions) {
   slider(vz.body, "Strip opacity", "vizSideOpacity", 0.05, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
   hint(vz.body, "The strips use the free space beside the chat column, so they only show when the chat is narrower than the screen.");
   hint(vz.body, "<b>Look</b>");
-  select(vz.body, "Style", "vizStyle", [
+  const vzStyleOptions = (stereo) => [
     { value: "bars", label: "Bars", sublabel: "Classic bars rising from the bottom" },
     { value: "mirror", label: "Mirrored bars", sublabel: "Bars grow both ways from the middle" },
     { value: "segments", label: "Segments", sublabel: "Stacked blocks, like a level meter" },
-    { value: "wave", label: "Wave", sublabel: "A smooth filled curve" }
-  ]);
+    { value: "wave", label: "Wave", sublabel: "A smooth filled curve" },
+    { value: "ribbons", label: "Stereo ribbons", sublabel: "Two coloured waves and fine bars around one centre line", disabled: !stereo }
+  ];
+  const vzStyle = select(vz.body, "Style", "vizStyle", vzStyleOptions(s0.vizStereo));
+  let vzStylesStereo = s0.vizStereo;
+  hint(vz.body, "Stereo ribbons brings both channels into one shape: the left channel above the centre line, the right below it, each in its own colour. Enable “Show stereo channels” to choose it. With a mono source, it falls back to Wave.");
   slider(vz.body, "Bars", "vizBars", 8, 96, 1, { decimals: 0 });
   slider(vz.body, "Bar width", "vizBarFill", 0.2, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
   slider(vz.body, "Rounded corners", "vizRound", 0, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
@@ -10252,6 +10340,10 @@ function mountPanel(ctx, store, actions) {
   toggle(vz.body, "Colour runs up each bar", "vizGradientUp");
   hint(vz.body, "Off: the colour runs across the row of bars instead. “No flashing” softens how fast bars jump and turns the glow off.");
   const syncViz = (s, st = actions.status()) => {
+    if (vzStylesStereo !== s.vizStereo) {
+      vzStylesStereo = s.vizStereo;
+      vzStyle.update({ options: vzStyleOptions(s.vizStereo).map((o) => ({ ...o, label: tr(o.label), sublabel: tr(o.sublabel) })) });
+    }
     const share = s.vizSource === "tab" || s.vizSource === "mic" || s.vizSource === "system";
     vzConnect.el.style.display = s.viz && share ? "" : "none";
     vzSystem.style.display = s.vizSource === "system" ? "" : "none";

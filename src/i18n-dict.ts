@@ -563,6 +563,8 @@ const T: Record<string, Row> = {
   'Mirrored bars': ['镜像条', '鏡像條', 'ミラーバー', 'Barres en miroir', 'Barre speculari'],
   'Segments': ['分段', '分段', 'セグメント', 'Segments', 'Segmenti'],
   'Wave': ['波形', '波形', '波形', 'Onde', 'Onda'],
+  'Stereo ribbons': ['立体声飘带', '立體聲飄帶', 'ステレオリボン', 'Rubans stéréo', 'Nastri stereo'],
+  'Two coloured waves and fine bars around one centre line': ['两种颜色的波形与细条围绕同一中心线', '兩種顏色的波形與細條圍繞同一中心線', '中心線を挟む2色の波形と細いバー', 'Deux ondes colorées et de fines barres autour d’une ligne centrale', 'Due onde colorate e barre sottili attorno a una linea centrale'],
   'Bar width': ['条宽', '條寬', 'バーの太さ', 'Largeur des barres', 'Larghezza delle barre'],
   'Rounded corners': ['圆角', '圓角', '角の丸み', 'Coins arrondis', 'Angoli arrotondati'],
   'Peak caps': ['峰值帽', '峰值帽', 'ピークキャップ', 'Pointes de crête', 'Cappucci di picco'],

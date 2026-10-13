@@ -805,13 +805,14 @@ export class Visualizer {
     const t = (now - this.t0) / 1000
 
     const looks = this.look(s, saver)
+    if (looks.style === 'ribbons' && !stereo) looks.style = 'wave'
     let energy = 0
     // Each channel/bar count is analysed once, even when several targets use it. Smoothing and peaks never cross channels.
     const readings = new Map<Lane, Channel>()
     const targets = this.targets().filter((tg) => tg.visible && tg.n)
     const channels = (tg: Target): Channel[] => !stereo ? ['mono'] :
       tg.kind === 'left' || tg.kind === 'right' ? [tg.kind] : ['left', 'right']
-    const count = (tg: Target) => stereo && (tg.kind === 'win' || tg.kind === 'bg') ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n
+    const count = (tg: Target) => stereo && s.vizStyle !== 'ribbons' && (tg.kind === 'win' || tg.kind === 'bg') ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n
     for (const tg of targets) for (const channel of channels(tg)) readings.set(this.lane(count(tg), channel), channel)
     for (const [lane, channel] of readings) {
       const n = lane.v.length
@@ -927,9 +928,44 @@ export class Visualizer {
       g.transform(0, -1, -1, 0, t.w, t.h)
       L = t.h
       T = t.w
-    } else if (t.kind === 'bg' && s.vizBgTop) g.transform(1, 0, 0, -1, 0, t.h)
+    } else if (t.kind === 'bg' && s.vizBgTop && look.style !== 'ribbons') g.transform(1, 0, 0, -1, 0, t.h)
 
-    if (right) {
+    if (look.style === 'ribbons') {
+      const a = look.rainbow ? '#ff7ab6' : look.a
+      const rgbB = rgbOf(look.b)
+      const distance = rgbOf(a).reduce((sum, value, i) => sum + Math.abs(value - rgbB[i]), 0)
+      const b = look.rainbow ? '#52d9ff' : distance < 90 ? shiftHue(a, 110) : look.b
+      if (right) {
+        const mid = T / 2
+        const pad = Math.min(8, T * 0.08)
+        const half = Math.max(1, mid - pad - 3)
+        const inset = Math.min(22, L * 0.08)
+        const width = Math.max(1, L - inset - pad)
+        g.save()
+        g.translate(inset, pad)
+        this.paintRibbon(g, width, half, lane, look, s, a, 300)
+        g.restore()
+        g.save()
+        g.transform(1, 0, 0, -1, inset, T - pad)
+        this.paintRibbon(g, width, half, right, look, s, b, 160)
+        g.restore()
+        g.globalAlpha = 0.18
+        g.strokeStyle = a
+        g.lineWidth = 1
+        g.beginPath()
+        g.moveTo(inset, mid)
+        g.lineTo(L - pad, mid)
+        g.stroke()
+        g.globalAlpha = 0.8
+        g.font = '600 10px sans-serif'
+        g.textBaseline = 'middle'
+        g.fillStyle = a
+        g.fillText('L', 6, mid - 11)
+        g.fillStyle = b
+        g.fillText('R', 6, mid + 11)
+        g.globalAlpha = 1
+      } else this.paintRibbon(g, L, T, lane, look, s, t.kind === 'right' ? b : a, t.kind === 'right' ? 160 : 300)
+    } else if (right) {
       const gap = 4
       const half = (L - gap) / 2
       g.save()
@@ -940,6 +976,50 @@ export class Visualizer {
       this.paintLane(g, half, T, right, look, s)
       g.restore()
     } else this.paintLane(g, L, T, lane, look, s)
+  }
+
+  /** A soft spectral contour with fine bars inside it; channels share frequencies, never their levels or peaks. */
+  private paintRibbon(g: CanvasRenderingContext2D, L: number, T: number, lane: Lane, look: Look, s: FlairSettings, colour: string, hue: number) {
+    let v = lane.v
+    let pk = lane.pk
+    if (s.vizCenter) {
+      const key = `${v.length}:${s.vizCenterFlip}`
+      let c = this.centered.get(key)
+      if (!c) this.centered.set(key, (c = { map: centerMap(v.length, s.vizCenterFlip), v: new Float32Array(v.length), pk: new Float32Array(v.length) }))
+      for (let i = 0; i < v.length; i++) {
+        c.v[i] = v[c.map[i]]
+        c.pk[i] = pk[c.map[i]]
+      }
+      v = c.v
+      pk = c.pk
+    }
+    if (!v.some((value) => value > 0.002) && !pk.some((value) => value > 0.03)) return
+
+    const grad = look.rainbow ? g.createLinearGradient(0, 0, L, 0) : g.createLinearGradient(0, T, 0, 0)
+    if (look.rainbow) {
+      for (let i = 0; i <= 2; i++) grad.addColorStop(i / 2, `hsl(${hue + i * 60},85%,65%)`)
+    } else {
+      const [r, green, b] = rgbOf(colour)
+      grad.addColorStop(0, `rgba(${r},${green},${b},0.35)`)
+      grad.addColorStop(1, colour)
+    }
+    const wave: Look = { ...look, style: 'wave', peaks: false, glow: 0 }
+    g.fillStyle = g.strokeStyle = grad
+    g.globalAlpha = 0.22
+    shapes(g, L, T, v, pk, wave, null, 0)
+    g.globalAlpha = 0.85
+    g.lineWidth = 1.5
+    g.stroke()
+
+    const bars: Look = { ...look, style: 'bars', fill: look.fill * 0.65, a: colour, b: colour }
+    g.fillStyle = grad
+    if (look.glow > 0) {
+      g.globalAlpha = 0.12 * look.glow
+      shapes(g, L, T, v, pk, bars, null, 1 + look.glow * 3)
+    }
+    g.globalAlpha = 0.6
+    shapes(g, L, T, v, pk, bars, null, 0)
+    g.globalAlpha = 1
   }
 
   private paintLane(g: CanvasRenderingContext2D, L: number, T: number, lane: Lane, look: Look, s: FlairSettings) {
