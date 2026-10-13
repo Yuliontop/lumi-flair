@@ -117,6 +117,8 @@ Under **Colours**, choose **Match current Lumiverse theme** to follow the live p
 
 While the visualizer is drawing, message hover backgrounds, shadows and filters change immediately, avoiding repeated repainting as the pointer crosses messages. Opacity fades and the moving edge trace remain animated. Normal message transitions return when the visualizer is quiet, paused or switched off. **Demo** animates generated levels without playing sound.
 
+Sidebar strips draw in their own layers in WKWebView, reducing shared painting with messages, including those with embedded HTML.
+
 Pressing Lumiverse's **Stop** pauses future capture requests, including after reload. To resume, select **Allow requests again** in Lumi Flair's permissions area, then press **Connect audio**. Flair does not repeatedly retry failed or stopped sessions.
 
 - **macOS:** the first time, macOS asks for **System Audio Recording** (not Screen Recording). If you refused, enable it under System Settings → Privacy & Security → Screen & System Audio Recording → **System Audio Recording Only**.

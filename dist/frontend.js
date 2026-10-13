@@ -4786,7 +4786,9 @@ var SIDE_MIN = 20;
 var VIZ_CSS = `
 canvas.lf-vz-bg, canvas.lf-vz-side { position: absolute; pointer-events: none; z-index: 2; display: none; }
 canvas.lf-vz-bg { left: 0; width: 100%; }
-canvas.lf-vz-side { top: 0; height: 100%; }
+/* WKWebView can flatten a 2D canvas into the surrounding paint surface. Keep the animated strips in
+   separate compositor layers so message hover repaints do not redraw them. Hidden strips allocate no layer. */
+canvas.lf-vz-side { top: 0; height: 100%; contain: paint; transform: translateZ(0); }
 .lf-vzw,.lf-vzw *{box-sizing:border-box;margin:0;padding:0;text-align:left;line-height:normal;letter-spacing:normal;text-transform:none;text-indent:0;float:none}
 .lf-vzw{position:relative;overflow:hidden;border-radius:14px;color:var(--lumiverse-text,#fff);
   background:color-mix(in srgb,var(--lumiverse-bg-elevated,#1a1626) 78%,transparent);

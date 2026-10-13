@@ -169,6 +169,26 @@ def main():
                 assert new['Paint'] < old['Paint'] * .5, (old, new)
                 assert new['RasterTask'] < old['RasterTask'] * .5, (old, new)
             assert page.evaluate('canvasPixels()') == [True, True]
+            # Embedded HTML relaxes the host card's paint containment. The sidebar strips must retain their
+            # own paint boundaries and leave message hit testing alone while this content is hovered.
+            page.evaluate('''() => {
+              const html = document.createElement('div');
+              html.dataset.lumiverseHtmlIsland = '';
+              html.innerHTML = '<article style="padding:24px;border-radius:20px;background:linear-gradient(135deg,#183a4a,#402552);box-shadow:0 8px 24px #0006">'
+                + '<h3>Album details</h3><p>Embedded HTML with gradients, shadows and interactive controls.</p>'
+                + '<button type="button">Details</button></article>';
+              document.querySelector('.bubble').append(html);
+            }''')
+            for kind in ['bars', 'wave', 'ribbons']:
+                page.evaluate('(vizStyle) => apply({vizStyle})', kind)
+                for canvas in page.locator('canvas.lf-vz-side').all():
+                    layer = canvas.evaluate('el => { const s = getComputedStyle(el); return {contain:s.contain,transform:s.transform,pointer:s.pointerEvents}; }')
+                    assert 'paint' in layer['contain'] and layer['transform'] != 'none', layer
+                    assert layer['pointer'] == 'none', layer
+                page.mouse.move(10, 10)
+                profile(kind + ': crossing messages with embedded HTML', cross_messages)
+                assert page.evaluate('canvasPixels()') == [True, True]
+                assert page.evaluate('document.elementFromPoint(800, 180).closest("[data-component=BubbleMessage]") !== null')
             page.evaluate('viz.sync(false)')
             normal = page.evaluate('getComputedStyle(document.querySelector(".card")).transitionProperty')
             assert 'background' in normal and 'box-shadow' in normal, normal
