@@ -107,7 +107,7 @@ function cueName(raw) {
 // src/settings.ts
 var VIZ_SOURCES = ["flair", "tab", "mic", "system", "demo"];
 var VIZ_STYLES = ["bars", "mirror", "segments", "wave", "ribbons"];
-var VIZ_COLORS = ["flair", "custom", "rainbow"];
+var VIZ_COLORS = ["flair", "theme", "custom", "rainbow"];
 var MAX_CUSTOM_PACKS = 24;
 var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
 var CURSOR_TRAILS = ["splash", "creamy", "petalstorm", "blackhole", "comet", "confetti", "none"];
@@ -4528,6 +4528,8 @@ var T = {
   "Peak caps": ["峰值帽", "峰值帽", "ピークキャップ", "Pointes de crête", "Cappucci di picco"],
   Colours: ["颜色", "顏色", "色", "Couleurs", "Colori"],
   "Match my Flair Pack": ["匹配我的 Flair 风格包", "配合我的 Flair 風格包", "Flair パックに合わせる", "Suivre mon pack Flair", "Segui il mio pacchetto Flair"],
+  "Match current Lumiverse theme": ["跟随当前 Lumiverse 主题", "跟隨目前的 Lumiverse 主題", "現在の Lumiverse テーマに合わせる", "Suivre le thème Lumiverse actuel", "Segui il tema Lumiverse attuale"],
+  "Live theme colours, including album-art palettes and extension overrides": ["当前主题颜色，包括专辑封面配色和扩展主题覆盖", "目前的主題顏色，包含專輯封面配色與擴充功能主題覆寫", "アルバムアートや拡張機能の上書きを含む現在のテーマ色", "Couleurs actuelles, y compris les palettes des pochettes et les thèmes des extensions", "Colori attuali, incluse le palette delle copertine e i temi delle estensioni"],
   "My own colours": ["我自己的颜色", "我自己的顏色", "自分で選んだ色", "Mes propres couleurs", "I miei colori"],
   "Colour 1": ["颜色 1", "顏色 1", "色 1", "Couleur 1", "Colore 1"],
   "Colour 2": ["颜色 2", "顏色 2", "色 2", "Couleur 2", "Colore 2"],
@@ -4651,6 +4653,16 @@ function hslToHex(h, s, l) {
 function shiftHue(hex, deg) {
   const { h, s, l } = hexToHsl(hex);
   return hslToHex((h + deg + 360) % 360, Math.max(s, 55), Math.min(70, Math.max(l, 48)));
+}
+function themePalette(primary, secondary) {
+  const hex = (value) => {
+    const rgb = parseComputedColor(value);
+    if (!rgb || ![rgb.r, rgb.g, rgb.b].every(Number.isFinite))
+      return null;
+    return "#" + [rgb.r, rgb.g, rgb.b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  };
+  const a = hex(primary) ?? "#9370db";
+  return [a, hex(secondary) ?? shiftHue(a, 45)];
 }
 function centerMap(n, flip) {
   const mid = (n - 1) / 2;
@@ -10332,9 +10344,11 @@ function mountPanel(ctx, store, actions) {
   const vzFlip = vz.body.lastElementChild;
   select(vz.body, "Colours", "vizColor", [
     { value: "flair", label: "Match my Flair Pack", sublabel: "The glow colour and the pack’s second colour" },
+    { value: "theme", label: "Match current Lumiverse theme", sublabel: "Live theme colours, including album-art palettes and extension overrides" },
     { value: "custom", label: "My own colours" },
     { value: "rainbow", label: "Rainbow" }
   ]);
+  const vzTheme = hint(vz.body, "“Match current Lumiverse theme” follows the colours Lumiverse is displaying, including album-art palettes from SpotifyControls or SubsonicControls and Flair’s theme override. Lumiverse decides which override is active. If Flair’s theme hides the album palette, choose “Keep my theme” under Flair Packs → Lumiverse theme to remove Flair’s override.");
   const vzA = color(vz.body, "Colour 1", "vizColorA");
   const vzB = color(vz.body, "Colour 2", "vizColorB");
   toggle(vz.body, "Colour runs up each bar", "vizGradientUp");
@@ -10347,6 +10361,7 @@ function mountPanel(ctx, store, actions) {
     const share = s.vizSource === "tab" || s.vizSource === "mic" || s.vizSource === "system";
     vzConnect.el.style.display = s.viz && share ? "" : "none";
     vzSystem.style.display = s.vizSource === "system" ? "" : "none";
+    vzTheme.style.display = s.vizColor === "theme" ? "" : "none";
     vzConnect.setText(st.viz.state === "live" || st.viz.state === "quiet" ? "Reconnect audio" : "Connect audio");
     vzReset.el.style.display = s.viz && s.vizWindow ? "" : "none";
     vzFlip.style.display = s.vizCenter ? "" : "none";
@@ -11348,7 +11363,11 @@ function setup(ctx) {
   probe.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lf-c-user, var(--lf-c, var(--lumiverse-primary, #9370db)))";
   const probeChar = ctx.dom.createElement("span");
   probeChar.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lf-c, var(--lumiverse-primary, #9370db))";
-  overlay.append(probe, probeChar);
+  const probeTheme = ctx.dom.createElement("span");
+  probeTheme.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lumiverse-primary, #9370db)";
+  const probeThemeSecondary = ctx.dom.createElement("span");
+  probeThemeSecondary.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lumiverse-secondary, var(--lumiverse-primary-hover, #c7b4ff))";
+  overlay.append(probe, probeChar, probeTheme, probeThemeSecondary);
   const colorStyle = ctx.dom.createElement("style");
   const composerStyle = ctx.dom.createElement("style");
   const auraStyle = ctx.dom.createElement("style");
@@ -11457,6 +11476,8 @@ function setup(ctx) {
     update: (patch) => store.update(patch),
     tap: () => scape.tap(),
     palette: () => {
+      if (store.get().vizColor === "theme")
+        return themePalette(getComputedStyle(probeTheme).color, getComputedStyle(probeThemeSecondary).color);
       const a = hexOf(charColor());
       const pack = packById(store.get().activePack);
       const b = (pack && typeof pack.theme === "object" ? pack.theme.secondary : undefined) ?? pack?.swatch[1];

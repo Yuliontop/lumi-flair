@@ -26,6 +26,7 @@ import type {
 } from 'lumiverse-spindle-types'
 import { VIZ_WIN_MAX, VIZ_WIN_MIN, type FlairSettings } from './settings'
 import { hexToHsl } from './palette'
+import { parseComputedColor } from './effects'
 import { tr } from './i18n'
 import { away, onPresence } from './presence'
 
@@ -37,7 +38,7 @@ export interface VizDeps {
   update(patch: Partial<FlairSettings>): void
   /** Flair's own output (the soundscape's analyser and the master gain in front of it), null before any sound has run. */
   tap(): { node: AnalyserNode; level: number } | null
-  /** The two colours of the current look, from the glow colour and the active Flair Pack. */
+  /** The selected live palette: Flair's glow/pack colours or Lumiverse's resolved theme colours. */
   palette(): [string, string]
   motionOk(): boolean
   saver(): boolean
@@ -160,6 +161,17 @@ function hslToHex(h: number, s: number, l: number): string {
 export function shiftHue(hex: string, deg: number): string {
   const { h, s, l } = hexToHsl(hex)
   return hslToHex((h + deg + 360) % 360, Math.max(s, 55), Math.min(70, Math.max(l, 48)))
+}
+
+/** Resolved theme hues include backend overrides and the current mode. Surface opacity belongs to the visualizer. */
+export function themePalette(primary: string, secondary: string): [string, string] {
+  const hex = (value: string) => {
+    const rgb = parseComputedColor(value)
+    if (!rgb || ![rgb.r, rgb.g, rgb.b].every(Number.isFinite)) return null
+    return '#' + [rgb.r, rgb.g, rgb.b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')
+  }
+  const a = hex(primary) ?? '#9370db'
+  return [a, hex(secondary) ?? shiftHue(a, 45)]
 }
 
 /**

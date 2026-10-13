@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import type { SpindleFrontendContext, SpindleSystemAudioFrame, SpindleSystemAudioStartOptions } from 'lumiverse-spindle-types'
 import { DEFAULT_SETTINGS, normalize, type FlairSettings } from '../src/settings'
-import { Visualizer } from '../src/visualizer'
+import { Visualizer, themePalette } from '../src/visualizer'
 
 // A small canvas/host fixture: exercise the real session lifecycle, frame loop and drawing paths.
 class TestPath {
@@ -122,6 +122,73 @@ test('stereo setting survives normalization and old settings keep the combined v
   expect(normalize({ vizStereo: true }).vizStereo).toBe(true)
   expect(normalize({}).vizStereo).toBe(false)
   expect(normalize({ vizStereo: 'true' }).vizStereo).toBe(false)
+})
+
+test('accepts the current-theme colour option while keeping Flair as the default', () => {
+  expect(normalize({ vizColor: 'theme' }).vizColor).toBe('theme')
+  expect(normalize({}).vizColor).toBe('flair')
+  expect(normalize({ vizColor: 'unknown' }).vizColor).toBe('flair')
+})
+
+test('reads resolved RGB and sRGB theme hues, preserving a secondary colour with UI transparency', () => {
+  expect(themePalette('rgba(240, 80, 40, 0.9)', 'rgba(128, 128, 128, 0.15)')).toEqual(['#f05028', '#808080'])
+  expect(themePalette('color(srgb 0.2 0.4 0.6 / 0.9)', 'rgb(102 153 204)')).toEqual(['#336699', '#6699cc'])
+})
+
+test('respects identical or neutral theme colours instead of substituting a Flair Pack palette', () => {
+  expect(themePalette('rgb(0, 0, 0)', 'rgb(0, 0, 0)')).toEqual(['#000000', '#000000'])
+  expect(themePalette('rgb(255, 255, 255)', 'rgb(128, 128, 128)')).toEqual(['#ffffff', '#808080'])
+})
+
+test('uses valid fallback colours when resolved theme colours cannot be read', () => {
+  const fallback = themePalette('', '')
+  expect(fallback[0]).toBe('#9370db')
+  expect(fallback[1]).toMatch(/^#[\da-f]{6}$/)
+  expect(fallback[1]).not.toBe(fallback[0])
+  const partial = themePalette('rgb(255, 100, 50)', 'not a colour')
+  expect(partial[0]).toBe('#ff6432')
+  expect(partial[1]).not.toBe(partial[0])
+})
+
+test('refreshes live theme colours without restarting capture or changing saved custom colours', async () => {
+  const f = fixture({ vizStereo: true, vizStyle: 'ribbons', vizColor: 'theme' })
+  let colours = ['rgb(240, 80, 40)', 'rgba(128, 128, 128, 0.15)']
+  f.deps.palette = () => themePalette(colours[0], colours[1])
+  f.viz.sync(true)
+  await flush()
+  f.sessions[0].options.onFrame(stereoFrame(1, 1))
+  tick(100)
+  expect(f.canvases[0].labels.map((label) => label.colour)).toEqual(['#f05028', '#808080'])
+  colours = ['rgb(50, 200, 180)', 'rgb(100, 150, 250)']
+  tick(1200)
+  expect(f.canvases[0].labels.map((label) => label.colour)).toEqual(['#32c8b4', '#6496fa'])
+  expect(f.start).toHaveBeenCalledTimes(1)
+  expect(f.settings.vizColorA).toBe(DEFAULT_SETTINGS.vizColorA)
+  expect(f.settings.vizColorB).toBe(DEFAULT_SETTINGS.vizColorB)
+})
+
+test('uses a changed theme immediately when channel activity wakes the visualizer', async () => {
+  const f = fixture({ vizStereo: true, vizStyle: 'ribbons', vizColor: 'theme' })
+  let colours = ['rgb(240, 80, 40)', 'rgb(128, 128, 128)']
+  f.deps.palette = () => themePalette(colours[0], colours[1])
+  f.viz.sync(true)
+  await flush()
+  for (let at = 100; at <= 1600; at += 100) tick(at)
+  expect(f.viz.state()).toBe('quiet')
+  colours = ['rgb(50, 200, 180)', 'rgb(100, 150, 250)']
+  f.sessions[0].options.onFrame(stereoFrame(1, 1))
+  tick(2700)
+  expect(f.canvases[0].labels.map((label) => label.colour)).toEqual(['#32c8b4', '#6496fa'])
+})
+
+test('custom colours stay selected while the live theme palette changes', async () => {
+  const f = fixture({ vizStereo: true, vizStyle: 'ribbons', vizColor: 'custom' })
+  f.deps.palette = () => themePalette('rgb(240, 80, 40)', 'rgb(128, 128, 128)')
+  f.viz.sync(true)
+  await flush()
+  f.sessions[0].options.onFrame(stereoFrame(1, 1))
+  tick(100)
+  expect(f.canvases[0].labels.map((label) => label.colour)).toEqual([f.settings.vizColorA, f.settings.vizColorB])
 })
 
 test('automatically starts once using the existing permission', async () => {

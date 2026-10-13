@@ -18,11 +18,11 @@ export type SoundUnfocused = 'keep' | 'dim' | 'mute'
 /** Where the audio visualizer listens: Flair's own sound, a shared tab or screen, the microphone, or a made-up demo signal. */
 export type VizSource = 'flair' | 'tab' | 'mic' | 'system' | 'demo'
 export type VizStyle = 'bars' | 'mirror' | 'segments' | 'wave' | 'ribbons'
-/** Flair Pack colours, two colours of your own, or a rainbow. */
-export type VizColor = 'flair' | 'custom' | 'rainbow'
+/** Flair Pack colours, the resolved Lumiverse theme, two colours of your own, or a rainbow. */
+export type VizColor = 'flair' | 'theme' | 'custom' | 'rainbow'
 export const VIZ_SOURCES: readonly VizSource[] = ['flair', 'tab', 'mic', 'system', 'demo']
 export const VIZ_STYLES: readonly VizStyle[] = ['bars', 'mirror', 'segments', 'wave', 'ribbons']
-export const VIZ_COLORS: readonly VizColor[] = ['flair', 'custom', 'rainbow']
+export const VIZ_COLORS: readonly VizColor[] = ['flair', 'theme', 'custom', 'rainbow']
 
 /** A user pack (imported .flair.json or "Save my look"). Validated again by packs.ts before use. */
 export interface StoredPack {

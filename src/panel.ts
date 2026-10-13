@@ -1510,9 +1510,11 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   const vzFlip = vz.body.lastElementChild as HTMLElement
   select(vz.body, 'Colours', 'vizColor', [
     { value: 'flair', label: 'Match my Flair Pack', sublabel: 'The glow colour and the pack’s second colour' },
+    { value: 'theme', label: 'Match current Lumiverse theme', sublabel: 'Live theme colours, including album-art palettes and extension overrides' },
     { value: 'custom', label: 'My own colours' },
     { value: 'rainbow', label: 'Rainbow' },
   ])
+  const vzTheme = hint(vz.body, '“Match current Lumiverse theme” follows the colours Lumiverse is displaying, including album-art palettes from SpotifyControls or SubsonicControls and Flair’s theme override. Lumiverse decides which override is active. If Flair’s theme hides the album palette, choose “Keep my theme” under Flair Packs → Lumiverse theme to remove Flair’s override.')
   const vzA = color(vz.body, 'Colour 1', 'vizColorA')
   const vzB = color(vz.body, 'Colour 2', 'vizColorB')
   toggle(vz.body, 'Colour runs up each bar', 'vizGradientUp')
@@ -1525,6 +1527,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     const share = s.vizSource === 'tab' || s.vizSource === 'mic' || s.vizSource === 'system'
     vzConnect.el.style.display = s.viz && share ? '' : 'none'
     vzSystem.style.display = s.vizSource === 'system' ? '' : 'none'
+    vzTheme.style.display = s.vizColor === 'theme' ? '' : 'none'
     vzConnect.setText(st.viz.state === 'live' || st.viz.state === 'quiet' ? 'Reconnect audio' : 'Connect audio')
     vzReset.el.style.display = s.viz && s.vizWindow ? '' : 'none'
     vzFlip.style.display = s.vizCenter ? '' : 'none'
