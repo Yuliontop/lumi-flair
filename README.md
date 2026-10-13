@@ -197,6 +197,9 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.6.3:** Moment Cards on phones.
+  - **The text box is no longer hidden by the keyboard:** while the keyboard is up, the Moment Card window can be scrolled so the "Text on the card" box sits above it.
+  - **Expand button:** the box has Lumiverse's own expander in its top-right corner, which opens the full-screen text editor. The card follows what you write.
 - **1.6.2:** Pauses when you're not looking.
   - **Pause when the window isn't in front:** a new switch under **General** (on by default). While another window is in front, particle scenes, the audio visualizer and the cinematic light (ray sway, neon drift, candle flicker, film grain) stop drawing, and carry on when you come back. Scenes and the visualizer keep their last picture. Turn it off to keep them moving on a second screen. Lightning flashes and send effects are unaffected.
 - **1.6.1:** Lighter on the GPU, and a Smooth motion option.

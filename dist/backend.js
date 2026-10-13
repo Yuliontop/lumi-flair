@@ -101,7 +101,7 @@ spindle.commands.onInvoked((commandId) => {
   spindle.sendToFrontend({ type: "command", id: commandId });
 });
 var VAULT_FILES = new Set(["settings", "achievements", "heartbeat", "moments"]);
-var VERSION = "1.6.2";
+var VERSION = "1.6.3";
 async function vaultLoad(req, names, userId) {
   const files = {};
   const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && VAULT_FILES.has(n)) : [];
@@ -284,6 +284,17 @@ spindle.onFrontendMessage(async (raw, userId) => {
     return queueTheme(userId, tm.spec ? cleanSpec(tm.spec) : null);
   if (tm?.type === "pin_memory")
     return void await pinsToMemory(raw, userId);
+  if (tm?.type === "edit_text") {
+    const e = raw;
+    const req = e.req;
+    try {
+      const r = await spindle.textEditor.open({ title: typeof e.title === "string" ? e.title : undefined, value: typeof e.value === "string" ? e.value : "" });
+      return spindle.sendToFrontend({ type: "edit_text_result", req, text: r.text, cancelled: r.cancelled }, userId);
+    } catch (err) {
+      spindle.log.warn(`[Lumi Flair] text editor failed: ${String(err)}`);
+      return spindle.sendToFrontend({ type: "edit_text_result", req, text: "", cancelled: true }, userId);
+    }
+  }
   const vm = raw;
   if (vm?.type === "vault_load" && typeof vm.req === "number")
     return void await vaultLoad(vm.req, vm.names, userId);

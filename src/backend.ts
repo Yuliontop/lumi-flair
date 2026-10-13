@@ -150,7 +150,7 @@ type PrefsMessage = { type: 'prefs' } & Partial<Prefs>
 // ── Config files: per-user, outside the extension folder ──
 // data/users/<userId>/extensions/lumi_flair/<name>.json — survives reinstalls.
 const VAULT_FILES = new Set(['settings', 'achievements', 'heartbeat', 'moments'])
-const VERSION = '1.6.2'
+const VERSION = '1.6.3'
 
 async function vaultLoad(req: number, names: unknown, userId: string) {
   const files: Record<string, unknown> = {}
@@ -346,6 +346,17 @@ spindle.onFrontendMessage(async (raw, userId) => {
   const tm = raw as { type?: string; spec?: unknown }
   if (tm?.type === 'ui_theme') return queueTheme(userId, tm.spec ? cleanSpec(tm.spec) : null)
   if (tm?.type === 'pin_memory') return void (await pinsToMemory(raw as { req?: unknown; chatId?: unknown; items?: unknown }, userId))
+  if (tm?.type === 'edit_text') {
+    const e = raw as { req?: unknown; title?: unknown; value?: unknown }
+    const req = e.req
+    try {
+      const r = await spindle.textEditor.open({ title: typeof e.title === 'string' ? e.title : undefined, value: typeof e.value === 'string' ? e.value : '' })
+      return spindle.sendToFrontend({ type: 'edit_text_result', req, text: r.text, cancelled: r.cancelled }, userId)
+    } catch (err) {
+      spindle.log.warn(`[Lumi Flair] text editor failed: ${String(err)}`)
+      return spindle.sendToFrontend({ type: 'edit_text_result', req, text: '', cancelled: true }, userId)
+    }
+  }
   const vm = raw as { type?: string; req?: number; names?: unknown; name?: unknown; data?: unknown }
   if (vm?.type === 'vault_load' && typeof vm.req === 'number') return void (await vaultLoad(vm.req, vm.names, userId))
   if (vm?.type === 'vault_save') return vaultSave(vm.name, vm.data, userId)

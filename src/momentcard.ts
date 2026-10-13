@@ -276,7 +276,14 @@ async function drawCard(m: MomentInput): Promise<{ canvas: HTMLCanvasElement; cu
  * Show the card in a Lumiverse modal: a live preview, the text that goes on it (pick a part of the message,
  * or edit it), and Download / Copy. `start` is what was selected in the message when the button was pressed.
  */
-export async function showMomentCard(ctx: SpindleFrontendContext, m: MomentInput, onCreated?: () => void, start?: string | null) {
+export async function showMomentCard(
+  ctx: SpindleFrontendContext,
+  m: MomentInput,
+  onCreated?: () => void,
+  start?: string | null,
+  /** Opens the host's full-screen text editor on a value; resolves to the edited text, or null if cancelled or unavailable. */
+  expand?: (value: string) => Promise<string | null>,
+) {
   const whole = plainText(m.text)
   let text = start?.trim() || whole
   let current = await renderMomentCard({ ...m, text })
@@ -315,6 +322,28 @@ export async function showMomentCard(ctx: SpindleFrontendContext, m: MomentInput
   }
   const ta = ctx.components.mountTextArea(slot, { value: text, rows: 5, ariaLabel: tr('Text on the card'), onChange: redraw })
   const field = () => slot.querySelector('textarea')
+  if (expand) {
+    // Lumiverse's own text expander: a small button in the top right of the box (its icon is Lucide's Maximize2).
+    const ex = document.createElement('button')
+    ex.type = 'button'
+    ex.className = 'lf-moment-expand'
+    ex.title = ex.ariaLabel = tr('Expand editor')
+    ex.innerHTML = EXPAND_ICON
+    ex.addEventListener('click', async () => {
+      const next = await expand(field()?.value ?? text)
+      if (next === null) return
+      ta.update({ value: next })
+      redraw(next)
+    })
+    slot.appendChild(ex)
+  }
+  // On a phone the keyboard covers the lower half. Pad the bottom by its height so the box can be scrolled above
+  // it, and bring the box into view when it is tapped.
+  const keyboard = (k: { visible: boolean; insetBottom: number }) => {
+    wrap.style.paddingBottom = k.visible ? `${k.insetBottom}px` : ''
+    if (k.visible && field() === document.activeElement) field()?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+  const offKeyboard = ctx.ui.events?.onKeyboardChange?.(keyboard)
   const paintNote = () => {
     note.textContent = current.cut
       ? tr('That is more than fits, so the card ends with “…”. Pick a shorter part for the whole of it.')
@@ -376,6 +405,7 @@ export async function showMomentCard(ctx: SpindleFrontendContext, m: MomentInput
   })
   modal.onDismiss(() => {
     unguard()
+    offKeyboard?.()
     clearTimeout(timer)
     ta.destroy()
   })
@@ -383,12 +413,25 @@ export async function showMomentCard(ctx: SpindleFrontendContext, m: MomentInput
   root.appendChild(wrap)
 }
 
+const EXPAND_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/></svg>'
+
 export const MOMENT_CSS = `
 .lf-moment { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; color: var(--lumiverse-text); }
 /* The image already has its rounded corners and shadow (it is saved that way), so the preview shows it as it is. */
 .lf-moment img { display: block; width: 100%; height: auto; }
 .lf-moment-label { margin-top: 4px; font-size: calc(13px * var(--lumiverse-font-scale, 1)); font-weight: 500; color: var(--lumiverse-text-muted); }
-.lf-moment-text > * { width: 100%; }
+.lf-moment-text { position: relative; }
+.lf-moment-text > :not(.lf-moment-expand) { width: 100%; }
+/* The host's expander (ExpandedTextEditor.module.css .expandBtn): shown on hover or focus, always on touch screens. */
+.lf-moment-expand { position: absolute; top: 5px; right: 5px; z-index: 1; display: flex; align-items: center; justify-content: center;
+  width: var(--lumiverse-btn-icon-sm, 24px); height: var(--lumiverse-btn-icon-sm, 24px); padding: 0; border-radius: 5px; cursor: pointer;
+  background: var(--lumiverse-bg, #0f0d15); border: 1px solid var(--lumiverse-border); color: var(--lumiverse-text-dim);
+  opacity: 0; transition: all 0.15s ease; }
+.lf-moment-text:hover .lf-moment-expand, .lf-moment-text:focus-within .lf-moment-expand { opacity: 1; }
+.lf-moment-expand:hover { color: var(--lumiverse-primary); border-color: var(--lumiverse-primary); }
+.lf-moment-expand svg { width: 13px; height: 13px; }
+@media (any-hover: none) { .lf-moment-expand { opacity: 0.7; } }
 .lf-moment-note { margin: 0; font-size: calc(11px * var(--lumiverse-font-scale, 1)); line-height: 1.45; color: var(--lumiverse-text-dim); }
 .lf-moment-note[data-cut="1"] { color: var(--lumiverse-warning, #e2a03f); }
 .lf-moment-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 6px;

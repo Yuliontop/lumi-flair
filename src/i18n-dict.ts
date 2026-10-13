@@ -518,6 +518,7 @@ const T: Record<string, Row> = {
   'Download PNG': ['下载 PNG', '下載 PNG', 'PNG をダウンロード', 'Télécharger le PNG', 'Scarica PNG'],
   'Copy image': ['复制图片', '複製圖片', '画像をコピー', 'Copier l’image', 'Copia immagine'],
   'Text on the card': ['卡片上的文字', '卡片上的文字', 'カードの文字', 'Texte de la carte', 'Testo della scheda'],
+  'Expand editor': ['展开编辑器', '展開編輯器', 'エディターを拡大', 'Agrandir l’éditeur', 'Espandi editor'],
   'Use selection': ['使用选中部分', '使用選取部分', '選択部分を使う', 'Utiliser la sélection', 'Usa la selezione'],
   'Whole message': ['整条消息', '整則訊息', 'メッセージ全体', 'Message entier', 'Messaggio intero'],
   'Select part of the text and press “Use selection”, or edit it. The card follows as you go.': ['选中部分文字后点“使用选中部分”，或直接编辑。卡片会随之更新。', '選取部分文字後點「使用選取部分」，或直接編輯。卡片會隨之更新。', '文字の一部を選んで「選択部分を使う」を押すか、直接編集してください。カードはその都度更新されます。', 'Sélectionnez une partie du texte puis « Utiliser la sélection », ou modifiez-le. La carte suit au fur et à mesure.', 'Seleziona una parte del testo e premi «Usa la selezione», oppure modificalo. La scheda si aggiorna man mano.'],

@@ -108,6 +108,7 @@ type BackendMessage =
   | { type: 'command'; id: string }
   | { type: 'tint_result'; ok: boolean; reason?: string }
   | { type: 'pin_memory_result'; req: number; ok: boolean; saved: number; reason?: string }
+  | { type: 'edit_text_result'; req: number; text: string; cancelled: boolean }
 
 /** The host implements this on ctx.ui at runtime; it is not in the published types yet. */
 type DomDecoratorApi = {
@@ -1574,6 +1575,7 @@ export function setup(ctx: SpindleFrontendContext) {
       { name, text: plainText(text), avatarSrc, portraitSrc, color: aura?.color ?? rgbCss(charColor()), date: new Date() },
       () => unlock(['shutterbug']),
       picked,
+      (value) => editText(tr('Text on the card'), value),
     )
   }
 
@@ -1662,6 +1664,19 @@ export function setup(ctx: SpindleFrontendContext) {
     notifyStatus()
   }
   disposers.push(() => memoryWaits.clear())
+  /** Ask the backend to open Lumiverse's own full-screen text editor (the frontend API has no way to). Null when cancelled. */
+  const editWaits = new Map<number, (text: string | null) => void>()
+  let editReq = 0
+  const editText = (title: string, value: string) =>
+    new Promise<string | null>((resolve) => {
+      const req = ++editReq
+      editWaits.set(req, (t) => {
+        editWaits.delete(req)
+        resolve(t)
+      })
+      ctx.sendToBackend({ type: 'edit_text', req, title, value })
+    })
+  disposers.push(() => editWaits.clear())
   async function jumpToPin(pin: { id: string }) {
     const res = await storyNav.jump(pin.id)
     if (res === 'missing' && state.chatId) {
@@ -1782,6 +1797,7 @@ export function setup(ctx: SpindleFrontendContext) {
       const tr2 = raw as { type?: string; ok?: boolean; reason?: string }
       if (tr2?.type === 'theme_result' && !tr2.ok) console.warn('[Lumi Flair] Lumiverse theme matching unavailable:', tr2.reason)
       if (msg?.type === 'pin_memory_result') memoryWaits.get(msg.req)?.(msg)
+      if (msg?.type === 'edit_text_result') editWaits.get(msg.req)?.(msg.cancelled ? null : msg.text)
       if (msg?.type === 'tint_result' && !msg.ok) {
         console.warn('[Lumi Flair] Mood UI tint unavailable:', msg.reason)
       }
