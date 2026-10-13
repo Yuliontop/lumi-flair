@@ -212,6 +212,7 @@ var DEFAULT_SETTINGS = {
   soundWidgetCollapsed: null,
   viz: false,
   vizSource: "flair",
+  vizStereo: false,
   vizSensitivity: 1.3,
   vizSmoothing: 0.6,
   vizStyle: "bars",
@@ -414,6 +415,7 @@ function normalize(raw) {
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === "boolean" ? r.soundWidgetCollapsed : null,
     viz: bool(r.viz, d.viz),
     vizSource: pick(r.vizSource, VIZ_SOURCES, d.vizSource),
+    vizStereo: bool(r.vizStereo, d.vizStereo),
     vizSensitivity: clamp(r.vizSensitivity, 0.3, 4, d.vizSensitivity),
     vizSmoothing: clamp(r.vizSmoothing, 0, 0.95, d.vizSmoothing),
     vizStyle: pick(r.vizStyle, VIZ_STYLES, d.vizStyle),
@@ -4488,6 +4490,7 @@ var T = {
   "Typewriter key": ["打字机按键", "打字機按鍵", "タイプライターのキー", "Touche de machine à écrire", "Tasto della macchina da scrivere"],
   "Audio visualizer": ["音频可视化", "音訊視覺化", "オーディオビジュアライザー", "Visualiseur audio", "Visualizzatore audio"],
   "Show the visualizer": ["显示可视化", "顯示視覺化", "ビジュアライザーを表示", "Afficher le visualiseur", "Mostra il visualizzatore"],
+  "Show stereo channels": ["显示立体声双声道", "顯示立體聲雙聲道", "ステレオチャンネルを表示", "Afficher les canaux stéréo", "Mostra i canali stereo"],
   "Listen to": ["声音来源", "聲音來源", "音の入力元", "Écouter", "Ascolta"],
   "Flair’s own sound": ["Flair 自己的声音", "Flair 自己的聲音", "Flair 自身のサウンド", "Le son de Flair", "Il suono di Flair"],
   "A tab or screen": ["标签页或屏幕", "分頁或螢幕", "タブまたは画面", "Un onglet ou l’écran", "Una scheda o lo schermo"],
@@ -4792,6 +4795,8 @@ class Visualizer {
   configured = new WeakSet;
   feed = null;
   sys = null;
+  systemAttempted = false;
+  destroyed = false;
   error = null;
   raf = 0;
   poll;
@@ -4876,6 +4881,8 @@ class Visualizer {
     return !!navigator.mediaDevices?.getDisplayMedia;
   }
   sync(onChat) {
+    if (this.destroyed)
+      return;
     this.onChat = onChat;
     const s = this.deps.settings();
     this.active = s.enabled && s.viz && this.deps.motionOk() && !this.coarse;
@@ -4886,6 +4893,12 @@ class Visualizer {
       this.disconnect();
     if (!this.active && (this.feed || this.sys))
       this.disconnect();
+    if (!this.active || s.vizSource !== "system")
+      this.systemAttempted = false;
+    if (on && s.vizSource === "system" && (!this.sys && !this.systemAttempted || this.sys && this.sys.stereoSetting !== s.vizStereo)) {
+      this.systemAttempted = true;
+      this.connectSystem(true);
+    }
     if (this.active && s.vizWindow && this.deps.panels())
       this.openWindow();
     else
@@ -4972,10 +4985,22 @@ class Visualizer {
     this.sync(this.onChat);
     this.deps.onState();
   }
-  async connectSystem() {
+  async connectSystem(automatic = false) {
+    if (this.destroyed)
+      return;
     this.disconnect();
     this.error = null;
-    const holder = { session: null, bands: new Float32Array(SYS_BANDS), ready: false };
+    this.systemAttempted = true;
+    const holder = {
+      session: null,
+      bands: new Float32Array(SYS_BANDS),
+      left: null,
+      right: null,
+      hasStereo: false,
+      stereoSetting: this.deps.settings().vizStereo,
+      ready: false
+    };
+    this.sys = holder;
     try {
       const api = this.ctx.systemAudio;
       if (!api || (this.ctx.host?.capabilities?.["system-audio-v1"] ?? 0) < 1)
@@ -4983,17 +5008,29 @@ class Visualizer {
       const status = api.isAvailable();
       if (!status.available)
         throw new Error(`sys:${status.unavailableReason ?? "unsupported"}`);
-      if (!(await this.ctx.permissions.getGranted()).includes("system_audio")) {
+      const permissions = await this.ctx.permissions.getGranted();
+      if (this.sys !== holder)
+        return;
+      if (!permissions.includes("system_audio")) {
+        if (automatic)
+          throw new Error("sys:denied");
         const granted = await this.ctx.permissions.request(["system_audio"], {
-          reason: tr("Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself, and Lumiverse asks you each time and shows when it is listening.")
+          reason: tr("Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself. Lumiverse can remember your approval on this device and always shows when it is listening.")
         });
+        if (this.sys !== holder)
+          return;
         if (!granted.includes("system_audio"))
           throw new Error("sys:denied");
       }
-      this.sys = holder;
+      const stereo = holder.stereoSetting && (this.ctx.host?.capabilities?.["system-audio-stereo-v1"] ?? 0) >= 1 && status.stereoSupported === true;
+      if (stereo) {
+        holder.left = new Float32Array(SYS_BANDS);
+        holder.right = new Float32Array(SYS_BANDS);
+      }
       holder.session = api.start({
         bands: SYS_BANDS,
         maxFps: this.deps.saver() ? 15 : 30,
+        ...stereo ? { stereo: true } : {},
         onFrame: (frame) => this.onSystemFrame(holder, frame),
         onEnd: (reason) => this.onSystemEnd(holder, reason)
       });
@@ -5002,12 +5039,11 @@ class Visualizer {
         return;
       holder.ready = true;
     } catch (err) {
-      if (this.sys === holder) {
-        holder.session?.stop();
-        this.sys = null;
-      } else if (this.sys)
+      if (this.sys !== holder)
         return;
-      this.error = systemError(err);
+      holder.session?.stop();
+      this.sys = null;
+      this.error = automatic ? null : systemError(err);
     }
     this.sync(this.onChat);
     this.deps.onState();
@@ -5015,14 +5051,21 @@ class Visualizer {
   onSystemFrame(holder, frame) {
     if (this.sys !== holder)
       return;
-    const bands = holder.bands;
-    const src = frame.frequencies;
     let loudest = 0;
-    for (let i = 0;i < bands.length; i++) {
-      const x = i < src.length && Number.isFinite(src[i]) ? src[i] : 0;
-      bands[i] = x;
-      if (x > loudest)
-        loudest = x;
+    const copy = (src, bands) => {
+      for (let i = 0;i < bands.length; i++) {
+        const x = i < src.length && Number.isFinite(src[i]) ? Math.max(0, Math.min(1, src[i])) : 0;
+        bands[i] = x;
+        if (x > loudest)
+          loudest = x;
+      }
+    };
+    copy(frame.frequencies, holder.bands);
+    const stereo = frame.stereo;
+    holder.hasStereo = !!(stereo && holder.left && holder.right);
+    if (stereo && holder.left && holder.right) {
+      copy(stereo.left.frequencies, holder.left);
+      copy(stereo.right.frequencies, holder.right);
     }
     if (this.quiet && loudest > 0.25)
       this.wake();
@@ -5038,6 +5081,7 @@ class Visualizer {
   disconnect() {
     const sys = this.sys;
     this.sys = null;
+    this.clearAll();
     try {
       sys?.session?.stop();
     } catch {}
@@ -5142,10 +5186,11 @@ class Visualizer {
       this.bytes = new Uint8Array(node.frequencyBinCount);
     return this.bytes;
   }
-  lane(n) {
-    let l = this.lanes.get(n);
+  lane(n, channel = "mono") {
+    const key = `${channel}:${n}`;
+    let l = this.lanes.get(key);
     if (!l)
-      this.lanes.set(n, l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) });
+      this.lanes.set(key, l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) });
     return l;
   }
   frame = (now) => {
@@ -5169,7 +5214,8 @@ class Visualizer {
     }
     const demo = s.vizSource === "demo";
     const a = demo ? null : this.analyser();
-    const spectrum = !demo && s.vizSource === "system" && this.sys?.ready ? this.sys.bands : null;
+    const system = s.vizSource === "system" && this.sys?.ready ? this.sys : null;
+    const stereo = s.vizStereo && (demo || !!system?.hasStereo);
     let data = null;
     if (a) {
       data = this.buffer(a.node);
@@ -5182,16 +5228,19 @@ class Visualizer {
     const t = (now - this.t0) / 1000;
     const looks = this.look(s, saver);
     let energy = 0;
-    const sizes = new Set;
-    for (const tg of this.targets())
-      if (tg.visible && tg.n)
-        sizes.add(tg.n);
-    for (const n of sizes) {
-      const lane = this.lane(n);
+    const readings = new Map;
+    const targets = this.targets().filter((tg) => tg.visible && tg.n);
+    const channels = (tg) => !stereo ? ["mono"] : tg.kind === "left" || tg.kind === "right" ? [tg.kind] : ["left", "right"];
+    const count = (tg) => stereo && (tg.kind === "win" || tg.kind === "bg") ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n;
+    for (const tg of targets)
+      for (const channel of channels(tg))
+        readings.set(this.lane(count(tg), channel), channel);
+    for (const [lane, channel] of readings) {
+      const n = lane.v.length;
       if (demo)
-        synth(lane.tmp, t);
-      else if (spectrum)
-        readSystemBands(spectrum, lane.tmp, gain);
+        synth(lane.tmp, t + (channel === "right" ? 0.7 : 0));
+      else if (system)
+        readSystemBands(channel === "mono" ? system.bands : system[channel], lane.tmp, gain);
       else if (data)
         readBands(data, this.edges(n, data.length, a.node.context.sampleRate), lane.tmp, gain);
       else
@@ -5204,10 +5253,10 @@ class Visualizer {
           energy = lane.v[i];
       }
     }
-    for (const tg of this.targets()) {
-      if (!tg.visible || !tg.n)
-        continue;
-      this.paint(tg, this.lane(tg.n), looks, s);
+    for (const tg of targets) {
+      const [first, second] = channels(tg);
+      const n = count(tg);
+      this.paint(tg, this.lane(n, first), looks, s, second ? this.lane(n, second) : undefined);
     }
     if (!demo && energy < 0.01) {
       this.quietFor += dt;
@@ -5280,7 +5329,7 @@ class Visualizer {
     t.h = h;
     t.dpr = dpr;
   }
-  paint(t, lane, look, s) {
+  paint(t, lane, look, s, right) {
     if (t.dirty || !t.w)
       this.fit(t);
     const g = t.g;
@@ -5301,6 +5350,20 @@ class Visualizer {
       T = t.w;
     } else if (t.kind === "bg" && s.vizBgTop)
       g.transform(1, 0, 0, -1, 0, t.h);
+    if (right) {
+      const gap = 4;
+      const half = (L - gap) / 2;
+      g.save();
+      this.paintLane(g, half, T, lane, look, s);
+      g.restore();
+      g.save();
+      g.translate(half + gap, 0);
+      this.paintLane(g, half, T, right, look, s);
+      g.restore();
+    } else
+      this.paintLane(g, L, T, lane, look, s);
+  }
+  paintLane(g, L, T, lane, look, s) {
     let v = lane.v;
     let pk = lane.pk;
     let cols = this.colours(look, lane.v.length);
@@ -5504,6 +5567,7 @@ class Visualizer {
     } catch {}
   }
   destroy() {
+    this.destroyed = true;
     this.stopLoop();
     this.disconnect();
     this.closeWindow();
@@ -10131,7 +10195,9 @@ function mountPanel(ctx, store, actions) {
     { value: "system", label: "This computer’s sound", sublabel: "Whatever your computer is playing (Lumiverse desktop app)" },
     { value: "demo", label: "Demo signal", sublabel: "Moving bars with no sound, for setting up" }
   ]);
-  const vzSystem = hint(vz.body, "Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. Lumiverse asks you each time you connect and shows while it is listening.");
+  const vzSystem = hint(vz.body, "Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. It tries to connect automatically with an existing system audio permission. Lumiverse can remember your approval on this device and always shows while it is listening. If it cannot connect, press “Connect audio”.");
+  toggle(vz.body, "Show stereo channels", "vizStereo");
+  hint(vz.body, "With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side. Works with every style, including Wave. Sources without stereo support keep the combined view; Demo signal previews both channels.");
   const vzStatus = status(vz.body, (st, el) => {
     const src = store.get().vizSource;
     const bits = {

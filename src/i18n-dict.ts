@@ -532,6 +532,7 @@ const T: Record<string, Row> = {
   'Typewriter key': ['打字机按键', '打字機按鍵', 'タイプライターのキー', 'Touche de machine à écrire', 'Tasto della macchina da scrivere'],
   'Audio visualizer': ['音频可视化', '音訊視覺化', 'オーディオビジュアライザー', 'Visualiseur audio', 'Visualizzatore audio'],
   'Show the visualizer': ['显示可视化', '顯示視覺化', 'ビジュアライザーを表示', 'Afficher le visualiseur', 'Mostra il visualizzatore'],
+  'Show stereo channels': ['显示立体声双声道', '顯示立體聲雙聲道', 'ステレオチャンネルを表示', 'Afficher les canaux stéréo', 'Mostra i canali stereo'],
   'Listen to': ['声音来源', '聲音來源', '音の入力元', 'Écouter', 'Ascolta'],
   'Flair’s own sound': ['Flair 自己的声音', 'Flair 自己的聲音', 'Flair 自身のサウンド', 'Le son de Flair', 'Il suono di Flair'],
   'A tab or screen': ['标签页或屏幕', '分頁或螢幕', 'タブまたは画面', 'Un onglet ou l’écran', 'Una scheda o lo schermo'],

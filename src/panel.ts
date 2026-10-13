@@ -1449,7 +1449,9 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     { value: 'system', label: 'This computer’s sound', sublabel: 'Whatever your computer is playing (Lumiverse desktop app)' },
     { value: 'demo', label: 'Demo signal', sublabel: 'Moving bars with no sound, for setting up' },
   ])
-  const vzSystem = hint(vz.body, 'Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. Lumiverse asks you each time you connect and shows while it is listening.')
+  const vzSystem = hint(vz.body, 'Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. It tries to connect automatically with an existing system audio permission. Lumiverse can remember your approval on this device and always shows while it is listening. If it cannot connect, press “Connect audio”.')
+  toggle(vz.body, 'Show stereo channels', 'vizStereo')
+  hint(vz.body, 'With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side. Works with every style, including Wave. Sources without stereo support keep the combined view; Demo signal previews both channels.')
   const vzStatus = status(vz.body, (st, el) => {
     const src = store.get().vizSource
     const bits: Record<string, string> = {

@@ -141,6 +141,8 @@ export interface FlairSettings {
   // v1.6 — audio visualizer
   viz: boolean
   vizSource: VizSource
+  /** Display independent left/right channels when the source supplies them. */
+  vizStereo: boolean
   /** Gain on the signal, 0.3 – 4. */
   vizSensitivity: number
   /** How slowly the bars fall, 0 – 0.95. */
@@ -334,6 +336,7 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   soundWidgetCollapsed: null,
   viz: false,
   vizSource: 'flair',
+  vizStereo: false,
   vizSensitivity: 1.3,
   vizSmoothing: 0.6,
   vizStyle: 'bars',
@@ -542,6 +545,7 @@ export function normalize(raw: unknown): FlairSettings {
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === 'boolean' ? r.soundWidgetCollapsed : null,
     viz: bool(r.viz, d.viz),
     vizSource: pick(r.vizSource, VIZ_SOURCES, d.vizSource),
+    vizStereo: bool(r.vizStereo, d.vizStereo),
     vizSensitivity: clamp(r.vizSensitivity, 0.3, 4, d.vizSensitivity),
     vizSmoothing: clamp(r.vizSmoothing, 0, 0.95, d.vizSmoothing),
     vizStyle: pick(r.vizStyle, VIZ_STYLES, d.vizStyle),
