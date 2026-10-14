@@ -106,8 +106,8 @@ function cueName(raw) {
 
 // src/settings.ts
 var VIZ_SOURCES = ["flair", "tab", "mic", "system", "demo"];
-var VIZ_STYLES = ["bars", "mirror", "segments", "wave"];
-var VIZ_COLORS = ["flair", "custom", "rainbow"];
+var VIZ_STYLES = ["bars", "mirror", "segments", "wave", "ribbons"];
+var VIZ_COLORS = ["flair", "theme", "custom", "rainbow"];
 var MAX_CUSTOM_PACKS = 24;
 var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
 var CURSOR_TRAILS = ["splash", "creamy", "petalstorm", "blackhole", "comet", "confetti", "none"];
@@ -212,6 +212,7 @@ var DEFAULT_SETTINGS = {
   soundWidgetCollapsed: null,
   viz: false,
   vizSource: "flair",
+  vizStereo: false,
   vizSensitivity: 1.3,
   vizSmoothing: 0.6,
   vizStyle: "bars",
@@ -414,6 +415,7 @@ function normalize(raw) {
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === "boolean" ? r.soundWidgetCollapsed : null,
     viz: bool(r.viz, d.viz),
     vizSource: pick(r.vizSource, VIZ_SOURCES, d.vizSource),
+    vizStereo: bool(r.vizStereo, d.vizStereo),
     vizSensitivity: clamp(r.vizSensitivity, 0.3, 4, d.vizSensitivity),
     vizSmoothing: clamp(r.vizSmoothing, 0, 0.95, d.vizSmoothing),
     vizStyle: pick(r.vizStyle, VIZ_STYLES, d.vizStyle),
@@ -752,6 +754,10 @@ function cardTransitionCss() {
 :root ${CARD} {
   transition: box-shadow .25s ease, background var(--lcs-transition-fast, 120ms ease), opacity .35s ease, filter .35s ease;
 }
+/* Pointer entry otherwise repaints the whole message throughout its background,
+   shadow and filter transitions, competing with the visualizer for every frame.
+   Keep the hover appearance and composited opacity fade while audio is drawing. */
+:root[data-lf-viz-active] ${CARD} { transition: opacity .35s ease; }
 `;
 }
 function hoverCss(s) {
@@ -4488,6 +4494,7 @@ var T = {
   "Typewriter key": ["打字机按键", "打字機按鍵", "タイプライターのキー", "Touche de machine à écrire", "Tasto della macchina da scrivere"],
   "Audio visualizer": ["音频可视化", "音訊視覺化", "オーディオビジュアライザー", "Visualiseur audio", "Visualizzatore audio"],
   "Show the visualizer": ["显示可视化", "顯示視覺化", "ビジュアライザーを表示", "Afficher le visualiseur", "Mostra il visualizzatore"],
+  "Show stereo channels": ["显示立体声双声道", "顯示立體聲雙聲道", "ステレオチャンネルを表示", "Afficher les canaux stéréo", "Mostra i canali stereo"],
   "Listen to": ["声音来源", "聲音來源", "音の入力元", "Écouter", "Ascolta"],
   "Flair’s own sound": ["Flair 自己的声音", "Flair 自己的聲音", "Flair 自身のサウンド", "Le son de Flair", "Il suono di Flair"],
   "A tab or screen": ["标签页或屏幕", "分頁或螢幕", "タブまたは画面", "Un onglet ou l’écran", "Una scheda o lo schermo"],
@@ -4518,11 +4525,15 @@ var T = {
   "Mirrored bars": ["镜像条", "鏡像條", "ミラーバー", "Barres en miroir", "Barre speculari"],
   Segments: ["分段", "分段", "セグメント", "Segments", "Segmenti"],
   Wave: ["波形", "波形", "波形", "Onde", "Onda"],
+  "Stereo ribbons": ["立体声飘带", "立體聲飄帶", "ステレオリボン", "Rubans stéréo", "Nastri stereo"],
+  "Two coloured waves and fine bars around one centre line": ["两种颜色的波形与细条围绕同一中心线", "兩種顏色的波形與細條圍繞同一中心線", "中心線を挟む2色の波形と細いバー", "Deux ondes colorées et de fines barres autour d’une ligne centrale", "Due onde colorate e barre sottili attorno a una linea centrale"],
   "Bar width": ["条宽", "條寬", "バーの太さ", "Largeur des barres", "Larghezza delle barre"],
   "Rounded corners": ["圆角", "圓角", "角の丸み", "Coins arrondis", "Angoli arrotondati"],
   "Peak caps": ["峰值帽", "峰值帽", "ピークキャップ", "Pointes de crête", "Cappucci di picco"],
   Colours: ["颜色", "顏色", "色", "Couleurs", "Colori"],
   "Match my Flair Pack": ["匹配我的 Flair 风格包", "配合我的 Flair 風格包", "Flair パックに合わせる", "Suivre mon pack Flair", "Segui il mio pacchetto Flair"],
+  "Match current Lumiverse theme": ["跟随当前 Lumiverse 主题", "跟隨目前的 Lumiverse 主題", "現在の Lumiverse テーマに合わせる", "Suivre le thème Lumiverse actuel", "Segui il tema Lumiverse attuale"],
+  "Live theme colours, including album-art palettes and extension overrides": ["当前主题颜色，包括专辑封面配色和扩展主题覆盖", "目前的主題顏色，包含專輯封面配色與擴充功能主題覆寫", "アルバムアートや拡張機能の上書きを含む現在のテーマ色", "Couleurs actuelles, y compris les palettes des pochettes et les thèmes des extensions", "Colori attuali, incluse le palette delle copertine e i temi delle estensioni"],
   "My own colours": ["我自己的颜色", "我自己的顏色", "自分で選んだ色", "Mes propres couleurs", "I miei colori"],
   "Colour 1": ["颜色 1", "顏色 1", "色 1", "Couleur 1", "Colore 1"],
   "Colour 2": ["颜色 2", "顏色 2", "色 2", "Couleur 2", "Colore 2"],
@@ -4647,6 +4658,16 @@ function shiftHue(hex, deg) {
   const { h, s, l } = hexToHsl(hex);
   return hslToHex((h + deg + 360) % 360, Math.max(s, 55), Math.min(70, Math.max(l, 48)));
 }
+function themePalette(primary, secondary) {
+  const hex = (value) => {
+    const rgb = parseComputedColor(value);
+    if (!rgb || ![rgb.r, rgb.g, rgb.b].every(Number.isFinite))
+      return null;
+    return "#" + [rgb.r, rgb.g, rgb.b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  };
+  const a = hex(primary) ?? "#9370db";
+  return [a, hex(secondary) ?? shiftHue(a, 45)];
+}
 function centerMap(n, flip) {
   const mid = (n - 1) / 2;
   return Array.from({ length: n }, (_, j) => {
@@ -4744,7 +4765,9 @@ var SIDE_MIN = 20;
 var VIZ_CSS = `
 canvas.lf-vz-bg, canvas.lf-vz-side { position: absolute; pointer-events: none; z-index: 2; display: none; }
 canvas.lf-vz-bg { left: 0; width: 100%; }
-canvas.lf-vz-side { top: 0; height: 100%; }
+/* WKWebView can flatten a 2D canvas into the surrounding paint surface. Keep the animated strips in
+   separate compositor layers so message hover repaints do not redraw them. Hidden strips allocate no layer. */
+canvas.lf-vz-side { top: 0; height: 100%; contain: paint; transform: translateZ(0); }
 .lf-vzw,.lf-vzw *{box-sizing:border-box;margin:0;padding:0;text-align:left;line-height:normal;letter-spacing:normal;text-transform:none;text-indent:0;float:none}
 .lf-vzw{position:relative;overflow:hidden;border-radius:14px;color:var(--lumiverse-text,#fff);
   background:color-mix(in srgb,var(--lumiverse-bg-elevated,#1a1626) 78%,transparent);
@@ -4792,6 +4815,8 @@ class Visualizer {
   configured = new WeakSet;
   feed = null;
   sys = null;
+  systemAttempted = false;
+  destroyed = false;
   error = null;
   raf = 0;
   poll;
@@ -4876,6 +4901,8 @@ class Visualizer {
     return !!navigator.mediaDevices?.getDisplayMedia;
   }
   sync(onChat) {
+    if (this.destroyed)
+      return;
     this.onChat = onChat;
     const s = this.deps.settings();
     this.active = s.enabled && s.viz && this.deps.motionOk() && !this.coarse;
@@ -4886,6 +4913,12 @@ class Visualizer {
       this.disconnect();
     if (!this.active && (this.feed || this.sys))
       this.disconnect();
+    if (!this.active || s.vizSource !== "system")
+      this.systemAttempted = false;
+    if (on && s.vizSource === "system" && (!this.sys && !this.systemAttempted || this.sys && this.sys.stereoSetting !== s.vizStereo)) {
+      this.systemAttempted = true;
+      this.connectSystem(true);
+    }
     if (this.active && s.vizWindow && this.deps.panels())
       this.openWindow();
     else
@@ -4972,10 +5005,22 @@ class Visualizer {
     this.sync(this.onChat);
     this.deps.onState();
   }
-  async connectSystem() {
+  async connectSystem(automatic = false) {
+    if (this.destroyed)
+      return;
     this.disconnect();
     this.error = null;
-    const holder = { session: null, bands: new Float32Array(SYS_BANDS), ready: false };
+    this.systemAttempted = true;
+    const holder = {
+      session: null,
+      bands: new Float32Array(SYS_BANDS),
+      left: null,
+      right: null,
+      hasStereo: false,
+      stereoSetting: this.deps.settings().vizStereo,
+      ready: false
+    };
+    this.sys = holder;
     try {
       const api = this.ctx.systemAudio;
       if (!api || (this.ctx.host?.capabilities?.["system-audio-v1"] ?? 0) < 1)
@@ -4983,17 +5028,29 @@ class Visualizer {
       const status = api.isAvailable();
       if (!status.available)
         throw new Error(`sys:${status.unavailableReason ?? "unsupported"}`);
-      if (!(await this.ctx.permissions.getGranted()).includes("system_audio")) {
+      const permissions = await this.ctx.permissions.getGranted();
+      if (this.sys !== holder)
+        return;
+      if (!permissions.includes("system_audio")) {
+        if (automatic)
+          throw new Error("sys:denied");
         const granted = await this.ctx.permissions.request(["system_audio"], {
-          reason: tr("Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself, and Lumiverse asks you each time and shows when it is listening.")
+          reason: tr("Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself. Lumiverse can remember your approval on this device and always shows when it is listening.")
         });
+        if (this.sys !== holder)
+          return;
         if (!granted.includes("system_audio"))
           throw new Error("sys:denied");
       }
-      this.sys = holder;
+      const stereo = holder.stereoSetting && (this.ctx.host?.capabilities?.["system-audio-stereo-v1"] ?? 0) >= 1 && status.stereoSupported === true;
+      if (stereo) {
+        holder.left = new Float32Array(SYS_BANDS);
+        holder.right = new Float32Array(SYS_BANDS);
+      }
       holder.session = api.start({
         bands: SYS_BANDS,
         maxFps: this.deps.saver() ? 15 : 30,
+        ...stereo ? { stereo: true } : {},
         onFrame: (frame) => this.onSystemFrame(holder, frame),
         onEnd: (reason) => this.onSystemEnd(holder, reason)
       });
@@ -5002,12 +5059,11 @@ class Visualizer {
         return;
       holder.ready = true;
     } catch (err) {
-      if (this.sys === holder) {
-        holder.session?.stop();
-        this.sys = null;
-      } else if (this.sys)
+      if (this.sys !== holder)
         return;
-      this.error = systemError(err);
+      holder.session?.stop();
+      this.sys = null;
+      this.error = automatic ? null : systemError(err);
     }
     this.sync(this.onChat);
     this.deps.onState();
@@ -5015,14 +5071,21 @@ class Visualizer {
   onSystemFrame(holder, frame) {
     if (this.sys !== holder)
       return;
-    const bands = holder.bands;
-    const src = frame.frequencies;
     let loudest = 0;
-    for (let i = 0;i < bands.length; i++) {
-      const x = i < src.length && Number.isFinite(src[i]) ? src[i] : 0;
-      bands[i] = x;
-      if (x > loudest)
-        loudest = x;
+    const copy = (src, bands) => {
+      for (let i = 0;i < bands.length; i++) {
+        const x = i < src.length && Number.isFinite(src[i]) ? Math.max(0, Math.min(1, src[i])) : 0;
+        bands[i] = x;
+        if (x > loudest)
+          loudest = x;
+      }
+    };
+    copy(frame.frequencies, holder.bands);
+    const stereo = frame.stereo;
+    holder.hasStereo = !!(stereo && holder.left && holder.right);
+    if (stereo && holder.left && holder.right) {
+      copy(stereo.left.frequencies, holder.left);
+      copy(stereo.right.frequencies, holder.right);
     }
     if (this.quiet && loudest > 0.25)
       this.wake();
@@ -5038,6 +5101,7 @@ class Visualizer {
   disconnect() {
     const sys = this.sys;
     this.sys = null;
+    this.clearAll();
     try {
       sys?.session?.stop();
     } catch {}
@@ -5076,6 +5140,7 @@ class Visualizer {
       return;
     this.last = 0;
     this.raf = requestAnimationFrame(this.frame);
+    document.documentElement.setAttribute("data-lf-viz-active", "");
   }
   stopLoop() {
     if (this.raf)
@@ -5084,6 +5149,7 @@ class Visualizer {
     if (this.poll)
       clearInterval(this.poll);
     this.poll = undefined;
+    document.documentElement.removeAttribute("data-lf-viz-active");
   }
   clearAll() {
     for (const t of this.targets())
@@ -5102,9 +5168,7 @@ class Visualizer {
   }
   goQuiet() {
     this.quiet = true;
-    if (this.raf)
-      cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    this.stopLoop();
     this.clearAll();
     if (this.deps.settings().vizSource === "system") {
       this.syncWindowMsg();
@@ -5142,17 +5206,20 @@ class Visualizer {
       this.bytes = new Uint8Array(node.frequencyBinCount);
     return this.bytes;
   }
-  lane(n) {
-    let l = this.lanes.get(n);
+  lane(n, channel = "mono") {
+    const key = `${channel}:${n}`;
+    let l = this.lanes.get(key);
     if (!l)
-      this.lanes.set(n, l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) });
+      this.lanes.set(key, l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) });
     return l;
   }
   frame = (now) => {
     this.raf = 0;
     const s = this.deps.settings();
-    if (!this.active || away())
+    if (!this.active || away()) {
+      this.stopLoop();
       return;
+    }
     const saver = this.deps.saver();
     const minMs = saver ? 60 : s.smoothMotion ? 0 : 30;
     if (this.last && now - this.last < minMs) {
@@ -5169,7 +5236,8 @@ class Visualizer {
     }
     const demo = s.vizSource === "demo";
     const a = demo ? null : this.analyser();
-    const spectrum = !demo && s.vizSource === "system" && this.sys?.ready ? this.sys.bands : null;
+    const system = s.vizSource === "system" && this.sys?.ready ? this.sys : null;
+    const stereo = s.vizStereo && (demo || !!system?.hasStereo);
     let data = null;
     if (a) {
       data = this.buffer(a.node);
@@ -5181,17 +5249,22 @@ class Visualizer {
     const kR = 1 - Math.pow(1 - (0.04 + (1 - s.vizSmoothing) * 0.5), dt * 60);
     const t = (now - this.t0) / 1000;
     const looks = this.look(s, saver);
+    if (looks.style === "ribbons" && !stereo)
+      looks.style = "wave";
     let energy = 0;
-    const sizes = new Set;
-    for (const tg of this.targets())
-      if (tg.visible && tg.n)
-        sizes.add(tg.n);
-    for (const n of sizes) {
-      const lane = this.lane(n);
+    const readings = new Map;
+    const targets = this.targets().filter((tg) => tg.visible && tg.n);
+    const channels = (tg) => !stereo ? ["mono"] : tg.kind === "left" || tg.kind === "right" ? [tg.kind] : ["left", "right"];
+    const count = (tg) => stereo && s.vizStyle !== "ribbons" && (tg.kind === "win" || tg.kind === "bg") ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n;
+    for (const tg of targets)
+      for (const channel of channels(tg))
+        readings.set(this.lane(count(tg), channel), channel);
+    for (const [lane, channel] of readings) {
+      const n = lane.v.length;
       if (demo)
-        synth(lane.tmp, t);
-      else if (spectrum)
-        readSystemBands(spectrum, lane.tmp, gain);
+        synth(lane.tmp, t + (channel === "right" ? 0.7 : 0));
+      else if (system)
+        readSystemBands(channel === "mono" ? system.bands : system[channel], lane.tmp, gain);
       else if (data)
         readBands(data, this.edges(n, data.length, a.node.context.sampleRate), lane.tmp, gain);
       else
@@ -5204,10 +5277,10 @@ class Visualizer {
           energy = lane.v[i];
       }
     }
-    for (const tg of this.targets()) {
-      if (!tg.visible || !tg.n)
-        continue;
-      this.paint(tg, this.lane(tg.n), looks, s);
+    for (const tg of targets) {
+      const [first, second] = channels(tg);
+      const n = count(tg);
+      this.paint(tg, this.lane(n, first), looks, s, second ? this.lane(n, second) : undefined);
     }
     if (!demo && energy < 0.01) {
       this.quietFor += dt;
@@ -5280,7 +5353,7 @@ class Visualizer {
     t.h = h;
     t.dpr = dpr;
   }
-  paint(t, lane, look, s) {
+  paint(t, lane, look, s, right) {
     if (t.dirty || !t.w)
       this.fit(t);
     const g = t.g;
@@ -5299,8 +5372,101 @@ class Visualizer {
       g.transform(0, -1, -1, 0, t.w, t.h);
       L = t.h;
       T = t.w;
-    } else if (t.kind === "bg" && s.vizBgTop)
+    } else if (t.kind === "bg" && s.vizBgTop && look.style !== "ribbons")
       g.transform(1, 0, 0, -1, 0, t.h);
+    if (look.style === "ribbons") {
+      const a = look.rainbow ? "#ff7ab6" : look.a;
+      const rgbB = rgbOf(look.b);
+      const distance = rgbOf(a).reduce((sum, value, i) => sum + Math.abs(value - rgbB[i]), 0);
+      const b = look.rainbow ? "#52d9ff" : distance < 90 ? shiftHue(a, 110) : look.b;
+      if (right) {
+        const mid = T / 2;
+        const pad = Math.min(8, T * 0.08);
+        const half = Math.max(1, mid - pad - 3);
+        const inset = Math.min(22, L * 0.08);
+        const width = Math.max(1, L - inset - pad);
+        g.save();
+        g.translate(inset, pad);
+        this.paintRibbon(g, width, half, lane, look, s, a, 300);
+        g.restore();
+        g.save();
+        g.transform(1, 0, 0, -1, inset, T - pad);
+        this.paintRibbon(g, width, half, right, look, s, b, 160);
+        g.restore();
+        g.globalAlpha = 0.18;
+        g.strokeStyle = a;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(inset, mid);
+        g.lineTo(L - pad, mid);
+        g.stroke();
+        g.globalAlpha = 0.8;
+        g.font = "600 10px sans-serif";
+        g.textBaseline = "middle";
+        g.fillStyle = a;
+        g.fillText("L", 6, mid - 11);
+        g.fillStyle = b;
+        g.fillText("R", 6, mid + 11);
+        g.globalAlpha = 1;
+      } else
+        this.paintRibbon(g, L, T, lane, look, s, t.kind === "right" ? b : a, t.kind === "right" ? 160 : 300);
+    } else if (right) {
+      const gap = 4;
+      const half = (L - gap) / 2;
+      g.save();
+      this.paintLane(g, half, T, lane, look, s);
+      g.restore();
+      g.save();
+      g.translate(half + gap, 0);
+      this.paintLane(g, half, T, right, look, s);
+      g.restore();
+    } else
+      this.paintLane(g, L, T, lane, look, s);
+  }
+  paintRibbon(g, L, T, lane, look, s, colour, hue) {
+    let v = lane.v;
+    let pk = lane.pk;
+    if (s.vizCenter) {
+      const key = `${v.length}:${s.vizCenterFlip}`;
+      let c = this.centered.get(key);
+      if (!c)
+        this.centered.set(key, c = { map: centerMap(v.length, s.vizCenterFlip), v: new Float32Array(v.length), pk: new Float32Array(v.length) });
+      for (let i = 0;i < v.length; i++) {
+        c.v[i] = v[c.map[i]];
+        c.pk[i] = pk[c.map[i]];
+      }
+      v = c.v;
+      pk = c.pk;
+    }
+    if (!v.some((value) => value > 0.002) && !pk.some((value) => value > 0.03))
+      return;
+    const grad = look.rainbow ? g.createLinearGradient(0, 0, L, 0) : g.createLinearGradient(0, T, 0, 0);
+    if (look.rainbow) {
+      for (let i = 0;i <= 2; i++)
+        grad.addColorStop(i / 2, `hsl(${hue + i * 60},85%,65%)`);
+    } else {
+      const [r, green, b] = rgbOf(colour);
+      grad.addColorStop(0, `rgba(${r},${green},${b},0.35)`);
+      grad.addColorStop(1, colour);
+    }
+    const wave = { ...look, style: "wave", peaks: false, glow: 0 };
+    g.fillStyle = g.strokeStyle = grad;
+    g.globalAlpha = 0.22;
+    shapes(g, L, T, v, pk, wave, null, 0);
+    g.globalAlpha = 0.85;
+    g.lineWidth = 1.5;
+    g.stroke();
+    const bars = { ...look, style: "bars", fill: look.fill * 0.65, a: colour, b: colour };
+    g.fillStyle = grad;
+    if (look.glow > 0) {
+      g.globalAlpha = 0.12 * look.glow;
+      shapes(g, L, T, v, pk, bars, null, 1 + look.glow * 3);
+    }
+    g.globalAlpha = 0.6;
+    shapes(g, L, T, v, pk, bars, null, 0);
+    g.globalAlpha = 1;
+  }
+  paintLane(g, L, T, lane, look, s) {
     let v = lane.v;
     let pk = lane.pk;
     let cols = this.colours(look, lane.v.length);
@@ -5504,6 +5670,7 @@ class Visualizer {
     } catch {}
   }
   destroy() {
+    this.destroyed = true;
     this.stopLoop();
     this.disconnect();
     this.closeWindow();
@@ -9163,6 +9330,7 @@ function mountPanel(ctx, store, actions) {
       if (h.getValue() !== String(s[key]))
         h.update({ value: String(s[key]) });
     });
+    return h;
   }
   function toggle(parent, label, key, before) {
     const slot = row(parent, label, "fit");
@@ -10131,7 +10299,9 @@ function mountPanel(ctx, store, actions) {
     { value: "system", label: "This computer’s sound", sublabel: "Whatever your computer is playing (Lumiverse desktop app)" },
     { value: "demo", label: "Demo signal", sublabel: "Moving bars with no sound, for setting up" }
   ]);
-  const vzSystem = hint(vz.body, "Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. Lumiverse asks you each time you connect and shows while it is listening.");
+  const vzSystem = hint(vz.body, "Needs the Lumiverse desktop app (Windows, macOS 14.2 or later, or Linux with PulseAudio or PipeWire), with “Let Extensions Analyse System Audio” ticked in its tray menu. Lumi Flair only receives a level and a spectrum, never the sound. It tries to connect automatically with an existing system audio permission. Lumiverse can remember your approval on this device and always shows while it is listening. If it cannot connect, press “Connect audio”.");
+  toggle(vz.body, "Show stereo channels", "vizStereo");
+  hint(vz.body, "With this computer’s sound on an updated Lumiverse desktop app, show the left and right channels separately. The left chat strip follows the left channel, and the right strip follows the right channel. The window and background show the channels side by side, or together with Stereo ribbons. Sources without stereo support keep the combined view; Demo signal previews both channels.");
   const vzStatus = status(vz.body, (st, el) => {
     const src = store.get().vizSource;
     const bits = {
@@ -10161,12 +10331,16 @@ function mountPanel(ctx, store, actions) {
   slider(vz.body, "Strip opacity", "vizSideOpacity", 0.05, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
   hint(vz.body, "The strips use the free space beside the chat column, so they only show when the chat is narrower than the screen.");
   hint(vz.body, "<b>Look</b>");
-  select(vz.body, "Style", "vizStyle", [
+  const vzStyleOptions = (stereo) => [
     { value: "bars", label: "Bars", sublabel: "Classic bars rising from the bottom" },
     { value: "mirror", label: "Mirrored bars", sublabel: "Bars grow both ways from the middle" },
     { value: "segments", label: "Segments", sublabel: "Stacked blocks, like a level meter" },
-    { value: "wave", label: "Wave", sublabel: "A smooth filled curve" }
-  ]);
+    { value: "wave", label: "Wave", sublabel: "A smooth filled curve" },
+    { value: "ribbons", label: "Stereo ribbons", sublabel: "Two coloured waves and fine bars around one centre line", disabled: !stereo }
+  ];
+  const vzStyle = select(vz.body, "Style", "vizStyle", vzStyleOptions(s0.vizStereo));
+  let vzStylesStereo = s0.vizStereo;
+  hint(vz.body, "Stereo ribbons brings both channels into one shape: the left channel above the centre line, the right below it, each in its own colour. Enable “Show stereo channels” to choose it. With a mono source, it falls back to Wave.");
   slider(vz.body, "Bars", "vizBars", 8, 96, 1, { decimals: 0 });
   slider(vz.body, "Bar width", "vizBarFill", 0.2, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
   slider(vz.body, "Rounded corners", "vizRound", 0, 1, 0.05, { suffix: "%", decimals: 0, scale: 100 });
@@ -10178,17 +10352,24 @@ function mountPanel(ctx, store, actions) {
   const vzFlip = vz.body.lastElementChild;
   select(vz.body, "Colours", "vizColor", [
     { value: "flair", label: "Match my Flair Pack", sublabel: "The glow colour and the pack’s second colour" },
+    { value: "theme", label: "Match current Lumiverse theme", sublabel: "Live theme colours, including album-art palettes and extension overrides" },
     { value: "custom", label: "My own colours" },
     { value: "rainbow", label: "Rainbow" }
   ]);
+  const vzTheme = hint(vz.body, "“Match current Lumiverse theme” follows the colours Lumiverse is displaying, including album-art palettes from SpotifyControls or SubsonicControls and Flair’s theme override. Lumiverse decides which override is active. If Flair’s theme hides the album palette, choose “Keep my theme” under Flair Packs → Lumiverse theme to remove Flair’s override.");
   const vzA = color(vz.body, "Colour 1", "vizColorA");
   const vzB = color(vz.body, "Colour 2", "vizColorB");
   toggle(vz.body, "Colour runs up each bar", "vizGradientUp");
   hint(vz.body, "Off: the colour runs across the row of bars instead. “No flashing” softens how fast bars jump and turns the glow off.");
   const syncViz = (s, st = actions.status()) => {
+    if (vzStylesStereo !== s.vizStereo) {
+      vzStylesStereo = s.vizStereo;
+      vzStyle.update({ options: vzStyleOptions(s.vizStereo).map((o) => ({ ...o, label: tr(o.label), sublabel: tr(o.sublabel) })) });
+    }
     const share = s.vizSource === "tab" || s.vizSource === "mic" || s.vizSource === "system";
     vzConnect.el.style.display = s.viz && share ? "" : "none";
     vzSystem.style.display = s.vizSource === "system" ? "" : "none";
+    vzTheme.style.display = s.vizColor === "theme" ? "" : "none";
     vzConnect.setText(st.viz.state === "live" || st.viz.state === "quiet" ? "Reconnect audio" : "Connect audio");
     vzReset.el.style.display = s.viz && s.vizWindow ? "" : "none";
     vzFlip.style.display = s.vizCenter ? "" : "none";
@@ -11190,7 +11371,11 @@ function setup(ctx) {
   probe.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lf-c-user, var(--lf-c, var(--lumiverse-primary, #9370db)))";
   const probeChar = ctx.dom.createElement("span");
   probeChar.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lf-c, var(--lumiverse-primary, #9370db))";
-  overlay.append(probe, probeChar);
+  const probeTheme = ctx.dom.createElement("span");
+  probeTheme.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lumiverse-primary, #9370db)";
+  const probeThemeSecondary = ctx.dom.createElement("span");
+  probeThemeSecondary.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;color:var(--lumiverse-secondary, var(--lumiverse-primary-hover, #c7b4ff))";
+  overlay.append(probe, probeChar, probeTheme, probeThemeSecondary);
   const colorStyle = ctx.dom.createElement("style");
   const composerStyle = ctx.dom.createElement("style");
   const auraStyle = ctx.dom.createElement("style");
@@ -11299,6 +11484,8 @@ function setup(ctx) {
     update: (patch) => store.update(patch),
     tap: () => scape.tap(),
     palette: () => {
+      if (store.get().vizColor === "theme")
+        return themePalette(getComputedStyle(probeTheme).color, getComputedStyle(probeThemeSecondary).color);
       const a = hexOf(charColor());
       const pack = packById(store.get().activePack);
       const b = (pack && typeof pack.theme === "object" ? pack.theme.secondary : undefined) ?? pack?.swatch[1];

@@ -24,7 +24,7 @@ import { matchTrigger, milestoneAtOrBelow, parseTriggers } from './celebrate'
 import { exportThemePack } from './themepack'
 import { DirectorState, parseDirection } from './director'
 import { Soundscape, type CustomBed } from './soundscape'
-import { Visualizer, VIZ_CSS, shiftHue } from './visualizer'
+import { Visualizer, VIZ_CSS, shiftHue, themePalette } from './visualizer'
 import { SOUND_ACCEPT, SoundLibrary, type AudioSource } from './soundlib'
 import { SoundWidget, SOUND_WIDGET_CSS } from './soundwidget'
 import { Cinematic, CINEMATIC_CSS, blackHoleWarpRule, cameraShakeRule } from './cinematic'
@@ -205,7 +205,11 @@ export function setup(ctx: SpindleFrontendContext) {
     'position:absolute;width:0;height:0;overflow:hidden;color:var(--lf-c-user, var(--lf-c, var(--lumiverse-primary, #9370db)))'
   const probeChar = ctx.dom.createElement('span')
   probeChar.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;color:var(--lf-c, var(--lumiverse-primary, #9370db))'
-  overlay.append(probe, probeChar)
+  const probeTheme = ctx.dom.createElement('span')
+  probeTheme.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;color:var(--lumiverse-primary, #9370db)'
+  const probeThemeSecondary = ctx.dom.createElement('span')
+  probeThemeSecondary.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;color:var(--lumiverse-secondary, var(--lumiverse-primary-hover, #c7b4ff))'
+  overlay.append(probe, probeChar, probeTheme, probeThemeSecondary)
   // Small dynamic stylesheets we rewrite often.
   const colorStyle = ctx.dom.createElement('style')
   const composerStyle = ctx.dom.createElement('style')
@@ -325,8 +329,9 @@ export function setup(ctx: SpindleFrontendContext) {
     settings: () => store.get(),
     update: (patch) => store.update(patch),
     tap: () => scape.tap(),
-    // The glow colour (which follows the pack, a custom colour or the speaking character) plus the pack's second colour.
+    // Read the resolved host colours to honour album palettes, mode changes and the backend's current override.
     palette: () => {
+      if (store.get().vizColor === 'theme') return themePalette(getComputedStyle(probeTheme).color, getComputedStyle(probeThemeSecondary).color)
       const a = hexOf(charColor())
       const pack = packById(store.get().activePack)
       const b = (pack && typeof pack.theme === 'object' ? pack.theme.secondary : undefined) ?? pack?.swatch[1]

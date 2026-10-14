@@ -10,7 +10,7 @@
  *   tab    a tab or the whole screen shared with its audio (getDisplayMedia; Chrome/Edge on a computer)
  *   mic    the microphone, which hears speakers; the way in on a phone
  *   system what the computer is playing, as a spectrum from the Lumiverse desktop app (`ctx.systemAudio`, needs the
- *          optional `system_audio` permission; the host asks every time and shows that it is listening)
+ *          optional `system_audio` permission; the host can remember consent and always shows that it is listening)
  *   demo   a made-up signal, for setting the look up in silence
  *
  * Desktop only: nothing is drawn or opened on a touch screen (`pointer: coarse`), whatever the synced setting says.
@@ -26,6 +26,7 @@ import type {
 } from 'lumiverse-spindle-types'
 import { VIZ_WIN_MAX, VIZ_WIN_MIN, type FlairSettings } from './settings'
 import { hexToHsl } from './palette'
+import { parseComputedColor } from './effects'
 import { tr } from './i18n'
 import { away, onPresence } from './presence'
 
@@ -37,7 +38,7 @@ export interface VizDeps {
   update(patch: Partial<FlairSettings>): void
   /** Flair's own output (the soundscape's analyser and the master gain in front of it), null before any sound has run. */
   tap(): { node: AnalyserNode; level: number } | null
-  /** The two colours of the current look, from the glow colour and the active Flair Pack. */
+  /** The selected live palette: Flair's glow/pack colours or Lumiverse's resolved theme colours. */
   palette(): [string, string]
   motionOk(): boolean
   saver(): boolean
@@ -162,6 +163,17 @@ export function shiftHue(hex: string, deg: number): string {
   return hslToHex((h + deg + 360) % 360, Math.max(s, 55), Math.min(70, Math.max(l, 48)))
 }
 
+/** Resolved theme hues include backend overrides and the current mode. Surface opacity belongs to the visualizer. */
+export function themePalette(primary: string, secondary: string): [string, string] {
+  const hex = (value: string) => {
+    const rgb = parseComputedColor(value)
+    if (!rgb || ![rgb.r, rgb.g, rgb.b].every(Number.isFinite)) return null
+    return '#' + [rgb.r, rgb.g, rgb.b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')
+  }
+  const a = hex(primary) ?? '#9370db'
+  return [a, hex(secondary) ?? shiftHue(a, 45)]
+}
+
 /**
  * For `n` bars shown symmetrically about the middle: which band each bar position shows. The lows are in the middle
  * (or on the outside when `flip`), and the two halves are mirror images.
@@ -279,6 +291,7 @@ function shapes(g: CanvasRenderingContext2D, L: number, T: number, v: Float32Arr
 // ── the visualizer ──
 
 type Kind = 'win' | 'bg' | 'left' | 'right'
+type Channel = 'mono' | 'left' | 'right'
 interface Target {
   kind: Kind
   el: HTMLCanvasElement
@@ -303,7 +316,9 @@ const SIDE_MIN = 20
 export const VIZ_CSS = `
 canvas.lf-vz-bg, canvas.lf-vz-side { position: absolute; pointer-events: none; z-index: 2; display: none; }
 canvas.lf-vz-bg { left: 0; width: 100%; }
-canvas.lf-vz-side { top: 0; height: 100%; }
+/* WKWebView can flatten a 2D canvas into the surrounding paint surface. Keep the animated strips in
+   separate compositor layers so message hover repaints do not redraw them. Hidden strips allocate no layer. */
+canvas.lf-vz-side { top: 0; height: 100%; contain: paint; transform: translateZ(0); }
 .lf-vzw,.lf-vzw *{box-sizing:border-box;margin:0;padding:0;text-align:left;line-height:normal;letter-spacing:normal;text-transform:none;text-indent:0;float:none}
 .lf-vzw{position:relative;overflow:hidden;border-radius:14px;color:var(--lumiverse-text,#fff);
   background:color-mix(in srgb,var(--lumiverse-bg-elevated,#1a1626) 78%,transparent);
@@ -343,15 +358,26 @@ export class Visualizer {
   private left: Target
   private right: Target
   private win: { w: FloatWidget; el: HTMLElement; t: Target; msg: HTMLElement; text: HTMLElement; go: HTMLButtonElement; tools: HTMLButtonElement; unDrag: () => void; ro: ResizeObserver | null } | null = null
-  private lanes = new Map<number, Lane>()
+  private lanes = new Map<string, Lane>()
   private edgeCache = new Map<string, number[]>()
   private colCache = { key: '', cols: [] as string[] }
   private centered = new Map<string, { map: number[]; v: Float32Array; pk: Float32Array }>()
   private bytes: Uint8Array<ArrayBuffer> | null = null
   private configured = new WeakSet<AnalyserNode>()
   private feed: { ac: AudioContext; an: AnalyserNode; stream: MediaStream; kind: 'tab' | 'mic' } | null = null
-  /** The desktop app's spectrum, filled by its frames. `ready` once the user has approved and analysis has begun. */
-  private sys: { session: SpindleSystemAudioSession | null; bands: Float32Array; ready: boolean } | null = null
+  /** The desktop app's spectra, filled by its frames. `ready` once consent is verified and analysis has begun. */
+  private sys: {
+    session: SpindleSystemAudioSession | null
+    bands: Float32Array
+    left: Float32Array | null
+    right: Float32Array | null
+    hasStereo: boolean
+    stereoSetting: boolean
+    ready: boolean
+  } | null = null
+  /** One automatic attempt per activation. Failure or the host's Stop leaves reconnection to the user. */
+  private systemAttempted = false
+  private destroyed = false
   private error: string | null = null
   private raf = 0
   private poll: ReturnType<typeof setInterval> | undefined
@@ -409,7 +435,7 @@ export class Visualizer {
   get lastError() {
     return this.error
   }
-  /** Sources the user has to connect by hand, because the browser or the desktop app asks first. */
+  /** Sources that need a capture session; system audio can reuse host-owned consent. */
   private needsConnection(src: FlairSettings['vizSource']) {
     return src === 'tab' || src === 'mic' || src === 'system'
   }
@@ -440,6 +466,7 @@ export class Visualizer {
    * where the background layer and side strips live. Cheap; called on every settings change.
    */
   sync(onChat: boolean) {
+    if (this.destroyed) return
     this.onChat = onChat
     const s = this.deps.settings()
     // Desktop only: on a touch screen it is clutter, and the setting follows the account onto the phone.
@@ -450,6 +477,15 @@ export class Visualizer {
     if (this.feed && this.feed.kind !== s.vizSource) this.disconnect()
     if (this.sys && s.vizSource !== 'system') this.disconnect()
     if (!this.active && (this.feed || this.sys)) this.disconnect()
+    if (!this.active || s.vizSource !== 'system') this.systemAttempted = false
+
+    // The host owns remembered consent. Do not request a new extension permission during an automatic attempt.
+    // Claim the attempt before starting: settings changes and pending permission checks must not duplicate it.
+    if (on && s.vizSource === 'system' &&
+      ((!this.sys && !this.systemAttempted) || (this.sys && this.sys.stereoSetting !== s.vizStereo))) {
+      this.systemAttempted = true
+      void this.connectSystem(true)
+    }
 
     if (this.active && s.vizWindow && this.deps.panels()) this.openWindow()
     else this.closeWindow()
@@ -546,27 +582,48 @@ export class Visualizer {
 
   /**
    * Listen to what the computer is playing, through the desktop app. Asks for the optional `system_audio` permission
-   * the first time; the host then asks again on every start and shows an indicator while it listens. Click-driven.
+   * on a manual connection. Automatic starts reuse an existing grant; Lumiverse verifies explicit or remembered
+   * consent and shows an indicator while it listens.
    */
-  private async connectSystem(): Promise<void> {
+  private async connectSystem(automatic = false): Promise<void> {
+    if (this.destroyed) return
     this.disconnect()
     this.error = null
-    const holder = { session: null as SpindleSystemAudioSession | null, bands: new Float32Array(SYS_BANDS), ready: false }
+    this.systemAttempted = true
+    const holder: NonNullable<Visualizer['sys']> = {
+      session: null,
+      bands: new Float32Array(SYS_BANDS),
+      left: null,
+      right: null,
+      hasStereo: false,
+      stereoSetting: this.deps.settings().vizStereo,
+      ready: false,
+    }
+    this.sys = holder // also tracks startup, so disconnect cancels a pending permission check
     try {
       const api = this.ctx.systemAudio
       if (!api || (this.ctx.host?.capabilities?.['system-audio-v1'] ?? 0) < 1) throw new Error('sys:unsupported')
       const status = api.isAvailable()
       if (!status.available) throw new Error(`sys:${status.unavailableReason ?? 'unsupported'}`)
-      if (!(await this.ctx.permissions.getGranted()).includes('system_audio')) {
+      const permissions = await this.ctx.permissions.getGranted()
+      if (this.sys !== holder) return
+      if (!permissions.includes('system_audio')) {
+        if (automatic) throw new Error('sys:denied')
         const granted = await this.ctx.permissions.request(['system_audio'], {
-          reason: tr('Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself, and Lumiverse asks you each time and shows when it is listening.'),
+          reason: tr('Lumi Flair listens to a level and a spectrum of what your computer is playing, to move the visualizer. It never receives the sound itself. Lumiverse can remember your approval on this device and always shows when it is listening.'),
         })
+        if (this.sys !== holder) return
         if (!granted.includes('system_audio')) throw new Error('sys:denied')
       }
-      this.sys = holder
+      const stereo = holder.stereoSetting && (this.ctx.host?.capabilities?.['system-audio-stereo-v1'] ?? 0) >= 1 && status.stereoSupported === true
+      if (stereo) {
+        holder.left = new Float32Array(SYS_BANDS)
+        holder.right = new Float32Array(SYS_BANDS)
+      }
       holder.session = api.start({
         bands: SYS_BANDS,
         maxFps: this.deps.saver() ? 15 : 30, // the host does no more work than this asks for
+        ...(stereo ? { stereo: true } : {}),
         onFrame: (frame) => this.onSystemFrame(holder, frame),
         onEnd: (reason) => this.onSystemEnd(holder, reason),
       })
@@ -574,11 +631,10 @@ export class Visualizer {
       if (this.sys !== holder) return // disconnected while the prompt was open
       holder.ready = true
     } catch (err) {
-      if (this.sys === holder) {
-        holder.session?.stop()
-        this.sys = null
-      } else if (this.sys) return // something newer took over
-      this.error = systemError(err)
+      if (this.sys !== holder) return // cancelled or something newer took over
+      holder.session?.stop()
+      this.sys = null
+      this.error = automatic ? null : systemError(err)
     }
     this.sync(this.onChat)
     this.deps.onState()
@@ -586,15 +642,22 @@ export class Visualizer {
 
   private onSystemFrame(holder: NonNullable<Visualizer['sys']>, frame: SpindleSystemAudioFrame) {
     if (this.sys !== holder) return
-    const bands = holder.bands
-    const src = frame.frequencies
     let loudest = 0
-    for (let i = 0; i < bands.length; i++) {
-      const x = i < src.length && Number.isFinite(src[i]) ? src[i] : 0
-      bands[i] = x
-      if (x > loudest) loudest = x
+    const copy = (src: ArrayLike<number>, bands: Float32Array) => {
+      for (let i = 0; i < bands.length; i++) {
+        const x = i < src.length && Number.isFinite(src[i]) ? Math.max(0, Math.min(1, src[i])) : 0
+        bands[i] = x
+        if (x > loudest) loudest = x
+      }
     }
-    // Frames only come while something is audible, so the first one after a quiet spell is the cue to draw again.
+    copy(frame.frequencies, holder.bands)
+    const stereo = frame.stereo
+    holder.hasStereo = !!(stereo && holder.left && holder.right)
+    if (stereo && holder.left && holder.right) {
+      copy(stereo.left.frequencies, holder.left)
+      copy(stereo.right.frequencies, holder.right)
+    }
+    // Check independent channels too: opposite-phase stereo can cancel entirely in the combined spectrum.
     if (this.quiet && loudest > 0.25) this.wake()
   }
 
@@ -609,6 +672,7 @@ export class Visualizer {
   disconnect() {
     const sys = this.sys
     this.sys = null
+    this.clearAll()
     try {
       sys?.session?.stop()
     } catch {
@@ -649,12 +713,14 @@ export class Visualizer {
     if (this.raf || away()) return
     this.last = 0
     this.raf = requestAnimationFrame(this.frame)
+    document.documentElement.setAttribute('data-lf-viz-active', '')
   }
   private stopLoop() {
     if (this.raf) cancelAnimationFrame(this.raf)
     this.raf = 0
     if (this.poll) clearInterval(this.poll)
     this.poll = undefined
+    document.documentElement.removeAttribute('data-lf-viz-active')
   }
   private clearAll() {
     for (const t of this.targets()) this.clear(t)
@@ -673,8 +739,7 @@ export class Visualizer {
 
   private goQuiet() {
     this.quiet = true
-    if (this.raf) cancelAnimationFrame(this.raf)
-    this.raf = 0
+    this.stopLoop()
     this.clearAll()
     // The desktop app's frames wake it themselves (they stop while nothing is audible), so there is nothing to poll.
     if (this.deps.settings().vizSource === 'system') {
@@ -710,16 +775,20 @@ export class Visualizer {
     return this.bytes
   }
 
-  private lane(n: number): Lane {
-    let l = this.lanes.get(n)
-    if (!l) this.lanes.set(n, (l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) }))
+  private lane(n: number, channel: Channel = 'mono'): Lane {
+    const key = `${channel}:${n}`
+    let l = this.lanes.get(key)
+    if (!l) this.lanes.set(key, (l = { v: new Float32Array(n), pk: new Float32Array(n), tmp: new Float32Array(n) }))
     return l
   }
 
   private frame = (now: number) => {
     this.raf = 0
     const s = this.deps.settings()
-    if (!this.active || away()) return
+    if (!this.active || away()) {
+      this.stopLoop()
+      return
+    }
     const saver = this.deps.saver()
     // About 30 fps unless Smooth motion is on: the desktop app's own frames arrive at 30 at most, and each redraw also makes the
     // browser re-blur whatever frosted glass sits behind the messages. Battery saver halves it again.
@@ -740,7 +809,8 @@ export class Visualizer {
     // One read of the analyser, then each target's own number of bands from it.
     const demo = s.vizSource === 'demo'
     const a = demo ? null : this.analyser()
-    const spectrum = !demo && s.vizSource === 'system' && this.sys?.ready ? this.sys.bands : null
+    const system = s.vizSource === 'system' && this.sys?.ready ? this.sys : null
+    const stereo = s.vizStereo && (demo || !!system?.hasStereo)
     let data: Uint8Array<ArrayBuffer> | null = null
     if (a) {
       data = this.buffer(a.node)
@@ -753,13 +823,19 @@ export class Visualizer {
     const t = (now - this.t0) / 1000
 
     const looks = this.look(s, saver)
+    if (looks.style === 'ribbons' && !stereo) looks.style = 'wave'
     let energy = 0
-    const sizes = new Set<number>()
-    for (const tg of this.targets()) if (tg.visible && tg.n) sizes.add(tg.n)
-    for (const n of sizes) {
-      const lane = this.lane(n)
-      if (demo) synth(lane.tmp, t)
-      else if (spectrum) readSystemBands(spectrum, lane.tmp, gain)
+    // Each channel/bar count is analysed once, even when several targets use it. Smoothing and peaks never cross channels.
+    const readings = new Map<Lane, Channel>()
+    const targets = this.targets().filter((tg) => tg.visible && tg.n)
+    const channels = (tg: Target): Channel[] => !stereo ? ['mono'] :
+      tg.kind === 'left' || tg.kind === 'right' ? [tg.kind] : ['left', 'right']
+    const count = (tg: Target) => stereo && s.vizStyle !== 'ribbons' && (tg.kind === 'win' || tg.kind === 'bg') ? Math.max(4, Math.ceil(tg.n / 2)) : tg.n
+    for (const tg of targets) for (const channel of channels(tg)) readings.set(this.lane(count(tg), channel), channel)
+    for (const [lane, channel] of readings) {
+      const n = lane.v.length
+      if (demo) synth(lane.tmp, t + (channel === 'right' ? 0.7 : 0))
+      else if (system) readSystemBands(channel === 'mono' ? system.bands : system[channel]!, lane.tmp, gain)
       else if (data) readBands(data, this.edges(n, data.length, a!.node.context.sampleRate), lane.tmp, gain)
       else lane.tmp.fill(0)
       for (let i = 0; i < n; i++) {
@@ -770,9 +846,10 @@ export class Visualizer {
       }
     }
 
-    for (const tg of this.targets()) {
-      if (!tg.visible || !tg.n) continue
-      this.paint(tg, this.lane(tg.n), looks, s)
+    for (const tg of targets) {
+      const [first, second] = channels(tg)
+      const n = count(tg)
+      this.paint(tg, this.lane(n, first), looks, s, second ? this.lane(n, second) : undefined)
     }
 
     if (!demo && energy < 0.01) {
@@ -851,7 +928,7 @@ export class Visualizer {
     t.dpr = dpr
   }
 
-  private paint(t: Target, lane: Lane, look: Look, s: FlairSettings) {
+  private paint(t: Target, lane: Lane, look: Look, s: FlairSettings, right?: Lane) {
     if (t.dirty || !t.w) this.fit(t)
     const g = t.g
     if (!g || !t.w) return
@@ -869,8 +946,101 @@ export class Visualizer {
       g.transform(0, -1, -1, 0, t.w, t.h)
       L = t.h
       T = t.w
-    } else if (t.kind === 'bg' && s.vizBgTop) g.transform(1, 0, 0, -1, 0, t.h)
+    } else if (t.kind === 'bg' && s.vizBgTop && look.style !== 'ribbons') g.transform(1, 0, 0, -1, 0, t.h)
 
+    if (look.style === 'ribbons') {
+      const a = look.rainbow ? '#ff7ab6' : look.a
+      const rgbB = rgbOf(look.b)
+      const distance = rgbOf(a).reduce((sum, value, i) => sum + Math.abs(value - rgbB[i]), 0)
+      const b = look.rainbow ? '#52d9ff' : distance < 90 ? shiftHue(a, 110) : look.b
+      if (right) {
+        const mid = T / 2
+        const pad = Math.min(8, T * 0.08)
+        const half = Math.max(1, mid - pad - 3)
+        const inset = Math.min(22, L * 0.08)
+        const width = Math.max(1, L - inset - pad)
+        g.save()
+        g.translate(inset, pad)
+        this.paintRibbon(g, width, half, lane, look, s, a, 300)
+        g.restore()
+        g.save()
+        g.transform(1, 0, 0, -1, inset, T - pad)
+        this.paintRibbon(g, width, half, right, look, s, b, 160)
+        g.restore()
+        g.globalAlpha = 0.18
+        g.strokeStyle = a
+        g.lineWidth = 1
+        g.beginPath()
+        g.moveTo(inset, mid)
+        g.lineTo(L - pad, mid)
+        g.stroke()
+        g.globalAlpha = 0.8
+        g.font = '600 10px sans-serif'
+        g.textBaseline = 'middle'
+        g.fillStyle = a
+        g.fillText('L', 6, mid - 11)
+        g.fillStyle = b
+        g.fillText('R', 6, mid + 11)
+        g.globalAlpha = 1
+      } else this.paintRibbon(g, L, T, lane, look, s, t.kind === 'right' ? b : a, t.kind === 'right' ? 160 : 300)
+    } else if (right) {
+      const gap = 4
+      const half = (L - gap) / 2
+      g.save()
+      this.paintLane(g, half, T, lane, look, s)
+      g.restore()
+      g.save()
+      g.translate(half + gap, 0)
+      this.paintLane(g, half, T, right, look, s)
+      g.restore()
+    } else this.paintLane(g, L, T, lane, look, s)
+  }
+
+  /** A soft spectral contour with fine bars inside it; channels share frequencies, never their levels or peaks. */
+  private paintRibbon(g: CanvasRenderingContext2D, L: number, T: number, lane: Lane, look: Look, s: FlairSettings, colour: string, hue: number) {
+    let v = lane.v
+    let pk = lane.pk
+    if (s.vizCenter) {
+      const key = `${v.length}:${s.vizCenterFlip}`
+      let c = this.centered.get(key)
+      if (!c) this.centered.set(key, (c = { map: centerMap(v.length, s.vizCenterFlip), v: new Float32Array(v.length), pk: new Float32Array(v.length) }))
+      for (let i = 0; i < v.length; i++) {
+        c.v[i] = v[c.map[i]]
+        c.pk[i] = pk[c.map[i]]
+      }
+      v = c.v
+      pk = c.pk
+    }
+    if (!v.some((value) => value > 0.002) && !pk.some((value) => value > 0.03)) return
+
+    const grad = look.rainbow ? g.createLinearGradient(0, 0, L, 0) : g.createLinearGradient(0, T, 0, 0)
+    if (look.rainbow) {
+      for (let i = 0; i <= 2; i++) grad.addColorStop(i / 2, `hsl(${hue + i * 60},85%,65%)`)
+    } else {
+      const [r, green, b] = rgbOf(colour)
+      grad.addColorStop(0, `rgba(${r},${green},${b},0.35)`)
+      grad.addColorStop(1, colour)
+    }
+    const wave: Look = { ...look, style: 'wave', peaks: false, glow: 0 }
+    g.fillStyle = g.strokeStyle = grad
+    g.globalAlpha = 0.22
+    shapes(g, L, T, v, pk, wave, null, 0)
+    g.globalAlpha = 0.85
+    g.lineWidth = 1.5
+    g.stroke()
+
+    const bars: Look = { ...look, style: 'bars', fill: look.fill * 0.65, a: colour, b: colour }
+    g.fillStyle = grad
+    if (look.glow > 0) {
+      g.globalAlpha = 0.12 * look.glow
+      shapes(g, L, T, v, pk, bars, null, 1 + look.glow * 3)
+    }
+    g.globalAlpha = 0.6
+    shapes(g, L, T, v, pk, bars, null, 0)
+    g.globalAlpha = 1
+  }
+
+  private paintLane(g: CanvasRenderingContext2D, L: number, T: number, lane: Lane, look: Look, s: FlairSettings) {
     // Centre mirror: reorder what is drawn (not what is measured), so the colours follow the frequency too.
     let v = lane.v
     let pk = lane.pk
@@ -1103,6 +1273,7 @@ export class Visualizer {
   }
 
   destroy() {
+    this.destroyed = true
     this.stopLoop()
     this.disconnect()
     this.closeWindow()

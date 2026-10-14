@@ -17,12 +17,12 @@ export type UiThemeDepth = 'accent' | 'full'
 export type SoundUnfocused = 'keep' | 'dim' | 'mute'
 /** Where the audio visualizer listens: Flair's own sound, a shared tab or screen, the microphone, or a made-up demo signal. */
 export type VizSource = 'flair' | 'tab' | 'mic' | 'system' | 'demo'
-export type VizStyle = 'bars' | 'mirror' | 'segments' | 'wave'
-/** Flair Pack colours, two colours of your own, or a rainbow. */
-export type VizColor = 'flair' | 'custom' | 'rainbow'
+export type VizStyle = 'bars' | 'mirror' | 'segments' | 'wave' | 'ribbons'
+/** Flair Pack colours, the resolved Lumiverse theme, two colours of your own, or a rainbow. */
+export type VizColor = 'flair' | 'theme' | 'custom' | 'rainbow'
 export const VIZ_SOURCES: readonly VizSource[] = ['flair', 'tab', 'mic', 'system', 'demo']
-export const VIZ_STYLES: readonly VizStyle[] = ['bars', 'mirror', 'segments', 'wave']
-export const VIZ_COLORS: readonly VizColor[] = ['flair', 'custom', 'rainbow']
+export const VIZ_STYLES: readonly VizStyle[] = ['bars', 'mirror', 'segments', 'wave', 'ribbons']
+export const VIZ_COLORS: readonly VizColor[] = ['flair', 'theme', 'custom', 'rainbow']
 
 /** A user pack (imported .flair.json or "Save my look"). Validated again by packs.ts before use. */
 export interface StoredPack {
@@ -141,6 +141,8 @@ export interface FlairSettings {
   // v1.6 — audio visualizer
   viz: boolean
   vizSource: VizSource
+  /** Display independent left/right channels when the source supplies them. */
+  vizStereo: boolean
   /** Gain on the signal, 0.3 – 4. */
   vizSensitivity: number
   /** How slowly the bars fall, 0 – 0.95. */
@@ -334,6 +336,7 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   soundWidgetCollapsed: null,
   viz: false,
   vizSource: 'flair',
+  vizStereo: false,
   vizSensitivity: 1.3,
   vizSmoothing: 0.6,
   vizStyle: 'bars',
@@ -542,6 +545,7 @@ export function normalize(raw: unknown): FlairSettings {
     soundWidgetCollapsed: typeof r.soundWidgetCollapsed === 'boolean' ? r.soundWidgetCollapsed : null,
     viz: bool(r.viz, d.viz),
     vizSource: pick(r.vizSource, VIZ_SOURCES, d.vizSource),
+    vizStereo: bool(r.vizStereo, d.vizStereo),
     vizSensitivity: clamp(r.vizSensitivity, 0.3, 4, d.vizSensitivity),
     vizSmoothing: clamp(r.vizSmoothing, 0, 0.95, d.vizSmoothing),
     vizStyle: pick(r.vizStyle, VIZ_STYLES, d.vizStyle),
