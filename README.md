@@ -209,6 +209,11 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.6.5:** Stereo visualizer, theme colours and a smoother sidebar (thanks to prolix-oc).
+  - **Stereo channels:** a new *Show stereo channels* option. The left sidebar shows the left channel and the right sidebar the right; the floating window and background split them too, and there's a new stereo ribbons style. Sources without stereo keep the combined view.
+  - **Automatic system audio:** the visualizer tries one connection when enabled, using the permission and consent you already gave. If it fails, *Connect audio* stays for a manual retry.
+  - **Theme colours:** *Match current Lumiverse theme* follows the host's live primary and secondary colours.
+  - **Smoother sidebar:** the sidebar bars no longer stutter when the pointer crosses chat messages in WKWebView.
 - **1.6.4:** Fixes the Moment Card expand button.
   - **Expand button works:** on installs added with Import Local (and anywhere the extension is scoped to a user), the button did nothing because the editor request wasn't tied to your account. It now opens Lumiverse's full-screen editor.
 - **1.6.3:** Moment Cards on phones.
