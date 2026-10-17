@@ -31,19 +31,21 @@ export const CHOICES_CSS = `
 @media (prefers-reduced-motion: reduce) { .lf-choice { animation: none; opacity: 1; transform: none; } }
 `
 
-function setComposer(text: string): boolean {
+export function setComposer(text: string, focus = true): boolean {
   const ta = document.querySelector<HTMLTextAreaElement>('[data-component="InputArea"] textarea')
   if (!ta) return false
   // React tracks the value through the native setter; set it that way so the composer state updates.
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter ? setter.call(ta, text) : (ta.value = text)
   ta.dispatchEvent(new Event('input', { bubbles: true }))
-  ta.focus()
-  ta.setSelectionRange(text.length, text.length)
+  if (focus) {
+    ta.focus()
+    ta.setSelectionRange(text.length, text.length)
+  }
   return true
 }
 
-function clickSend(): boolean {
+export function clickSend(): boolean {
   const btn = document.querySelector<HTMLButtonElement>('[data-component="InputArea"] button[class*="sendBtn"]:not([disabled])')
   if (!btn) return false
   btn.click()

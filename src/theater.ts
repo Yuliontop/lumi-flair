@@ -22,7 +22,7 @@ const BAR_MS = 3200
 
 const R = ':root[data-lf-theater]'
 /** The host's interface, hidden while the mode is on (stable data attributes first; the hashed class names are matched by substring). */
-const CHROME = [
+export const CHROME = [
   '[data-component="DesktopPwaTitlebar"]',
   '[data-component="QuickToolbar"]',
   '[data-component="ChatFindBar"]',

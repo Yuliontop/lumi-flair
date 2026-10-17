@@ -1251,6 +1251,19 @@ function sparkle(o: Point, c: RGB, k: number): Particle[] {
   return out
 }
 
+/** Quill (for the book): a drop of ink where the line left the pen, a few spatters that fall back, and a ring of ink spreading. */
+function quill(o: Point, c: RGB, k: number): Particle[] {
+  const ink = rgba({ r: c.r * 0.6, g: c.g * 0.6, b: c.b * 0.7 }, 0.95)
+  const out: Particle[] = []
+  for (let i = 0; i < Math.round(16 * k); i++) {
+    const a = -Math.PI / 2 + rand(-0.9, 0.9)
+    const sp = rand(90, 300) * (0.7 + k * 0.3)
+    out.push(base({ kind: 'dot', x: o.x + rand(-8, 8), y: o.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.7, 1.2), size: rand(1.6, 3.6), gravity: 640, drag: 0.35, color: Math.random() < 0.25 ? rgba(lighten(c, 0.2), 1) : ink }))
+  }
+  out.push(base({ kind: 'ring', x: o.x, y: o.y, life: 0.7, size: 2, maxR: 54 * k, color: ink }))
+  return out
+}
+
 function ripple(o: Point, c: RGB, k: number): Particle[] {
   const col = rgba(lighten(c, 0.25), 1)
   return [0, 0.11, 0.22, 0.33].slice(0, k >= 1 ? 4 : 3).map((delay, i) =>
@@ -1538,6 +1551,9 @@ export function playSendEffect(
       break
     case 'ripple':
       fx.spawn(ripple(o, color, k))
+      break
+    case 'quill':
+      fx.spawn(quill(o, color, k))
       break
     case 'comet':
       fx.spawn(comet(o, color, k, fx))

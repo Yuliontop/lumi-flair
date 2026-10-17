@@ -100,6 +100,8 @@ const KEYFRAMES = `
   92% { transform: translate(-1px, 0) skewX(4deg); clip-path: inset(30% 0 30% 0); }
   94% { transform: none; clip-path: none; }
 }
+@keyframes lf-bk-tremble { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(.4px, -.3px); } 50% { transform: translate(-.3px, .35px); } 75% { transform: translate(.3px, .3px); } }
+@keyframes lf-bk-candle { 0%, 100% { opacity: 1; } 30% { opacity: .82; } 55% { opacity: .94; } 80% { opacity: .78; } }
 @keyframes lf-flicker { 0%, 100% { opacity: 1; } 8% { opacity: .55; } 10% { opacity: 1; } 47% { opacity: .9; } 49% { opacity: .35; } 52% { opacity: 1; } 80% { opacity: .8; } }
 @keyframes lf-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 `
@@ -246,7 +248,22 @@ function textFxCss(s: FlairSettings): string {
   const picker = textFxRules(s, '.lf-fx-pick', TEXT_FX)
   if (!s.textEffects) return picker
   const on = TEXT_FX.filter((fx) => !s.textFxOff.includes(fx))
-  return picker + '\n' + textFxRules(s, ':is([data-component="BubbleMessage"],[data-component="MinimalMessage"],.lf-fx-demo)', on)
+  return picker + '\n' + textFxRules(s, ':is([data-component="BubbleMessage"],[data-component="MinimalMessage"],.lf-fx-demo,.lf-bk-flow)', on) + '\n' + bookFxRules(s, on)
+}
+
+/**
+ * In the book the same spans read differently: glow is gilded lettering, shake is ink that trembles, flicker is candle
+ * light. Slow and small, and still (no movement, a steady dim) with "No flashing".
+ */
+function bookFxRules(s: FlairSettings, only: readonly string[]): string {
+  const T = (fx: string) => `:root .lf-bk-flow [data-lf="${fx}"]`
+  const calm = s.noFlash
+  const rules: Record<string, string> = {
+    glow: `${T('glow')} { color: color-mix(in srgb, var(--bk-gilt, #c9a24a) 78%, var(--bk-ink)); text-shadow: 0 0 .55em color-mix(in srgb, var(--bk-gilt, #c9a24a) 55%, transparent); animation: none; }`,
+    shake: `${T('shake')} { display: inline-block; animation: ${calm ? 'none' : 'lf-bk-tremble .9s ease-in-out infinite'}; }`,
+    flicker: `${T('flicker')} { animation: ${calm ? 'none' : 'lf-bk-candle 2.6s ease-in-out infinite'}; opacity: ${calm ? '.85' : '1'}; }`,
+  }
+  return only.map((fx) => rules[fx] ?? '').join('\n')
 }
 
 function spotlightCss(s: FlairSettings): string {
@@ -266,6 +283,7 @@ function reducedMotionCss(s: FlairSettings): string {
   :root ${CARD}::after { animation: none !important; }
   :root ${CARD}[data-part="streaming"]::after { opacity: .8; }
   :root ${MSG} [data-lf] { animation: none !important; clip-path: none !important; }
+  :root .lf-bk-flow [data-lf] { animation: none !important; clip-path: none !important; }
   :root [data-component="InputArea"] { animation: none !important; }
 }
 `

@@ -1,3 +1,4 @@
+import { BOOK_ICON } from './book/book'
 import type { SoundMeta } from './soundlib'
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 import type { VaultStatus } from './persist'
@@ -245,6 +246,8 @@ export interface PanelActions {
   previewSpeaker(): void
   /** Close the drawer's interface and read in theater mode. */
   enterTheater(): void
+  /** Read the chat as a book. */
+  enterBook(): void
   /** Type out the text of this element (the panel's sample) at the chosen pace, with the key sounds. */
   previewTypewriter(el: HTMLElement): void
   typewriterSupported(): boolean
@@ -302,6 +305,7 @@ export const SLOT_LABEL: Record<string, { label: string; group: string }> = {
   'ui:achievement': { label: 'Achievement unlocked', group: 'Interface' },
   'ui:sparkle': { label: 'Screen effect / keyword', group: 'Interface' },
   'ui:key': { label: 'Typewriter key', group: 'Interface' },
+  'ui:pageturn': { label: 'Page turn (Book mode)', group: 'Interface' },
   ...Object.fromEntries(SFX_CUES.map((c) => [`sfx:${c.name}`, { label: c.label, group: 'Sound effects' }])),
 }
 
@@ -917,6 +921,62 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
   toggle(theaterSec.body, 'Start the gentle auto-scroll', 'theaterScroll')
   hint(theaterSec.body, 'The scroll waits while you scroll or touch the screen and carries on a moment later; it stops at the end of the chat. With “reduce motion” on, it starts paused. Inside theater mode: <b>Esc</b> leaves, <b>Space</b> pauses, <b>+</b> and <b>−</b> change the text size; on a phone, tap the screen to bring the controls back. The reply box button lets you answer without leaving.')
 
+  // ── Book mode ──
+  const bookSec = section('book', 'Book mode', BOOK_ICON)
+  hint(bookSec.body, 'Read the chat as a book: two facing pages on a computer, one page on a phone. Turn the page with the arrow keys, a click on the page edge, a swipe, or by dragging the corner. Turn past the last page to a blank page, write a reply, and that starts a new chapter. The reply box stays under the book. You can also start it from the <b>Book mode</b> item in the input bar’s Extras menu, from the book button under any message (it opens at that message), or with the command <code>Flair: Toggle book mode</code>. The atmosphere, lighting and soundscape carry on.')
+  toggle(bookSec.body, 'Show the Book mode buttons', 'bookEnabled')
+  button(buttons(bookSec.body), 'Open the book', () => actions.enterBook(), 'primary', BOOK_ICON)
+  slider(bookSec.body, 'Book size', 'bookSize', 0.8, 2, 0.05, { suffix: '×' })
+  slider(bookSec.body, 'Text size', 'bookTextScale', 0.8, 1.8, 0.05, { suffix: '×' })
+  slider(bookSec.body, 'Line spacing', 'bookLineHeight', 1.3, 2, 0.05, {})
+  select(bookSec.body, 'Margins', 'bookMargins', [
+    { value: 'narrow', label: 'Narrow' },
+    { value: 'normal', label: 'Normal' },
+    { value: 'wide', label: 'Wide' },
+  ])
+  select(bookSec.body, 'Font', 'bookFont', [
+    { value: 'serif', label: 'Book serif', sublabel: 'Palatino, Georgia' },
+    { value: 'sans', label: 'Clean sans', sublabel: 'Your system font' },
+    { value: 'readable', label: 'Readable', sublabel: 'A high-legibility sans with wider spacing' },
+  ])
+  select(bookSec.body, 'Paper', 'bookPaper', [
+    { value: 'pack', label: 'From the Flair Pack', sublabel: 'The pack’s own paper and cover; cream when it has none' },
+    { value: 'cream', label: 'Cream' },
+    { value: 'white', label: 'White' },
+    { value: 'night', label: 'Night', sublabel: 'Dark paper, warm ink' },
+  ])
+  select(bookSec.body, 'Page turn', 'bookTurn', [
+    { value: 'auto', label: 'Automatic', sublabel: 'The curl on a computer or tablet, a slide on a phone' },
+    { value: 'curl', label: 'Curl' },
+    { value: 'slide', label: 'Slide' },
+    { value: 'instant', label: 'Instant' },
+  ])
+  select(bookSec.body, 'Your lines', 'bookUser', [
+    { value: 'rule', label: 'Margin rule' },
+    { value: 'italic', label: 'Italic' },
+    { value: 'smallcaps', label: 'Small caps' },
+  ])
+  select(bookSec.body, 'Cover', 'bookCover', [
+    { value: 'once', label: 'Once for each chat', sublabel: 'The first time a chat opens as a book' },
+    { value: 'always', label: 'Every time' },
+    { value: 'never', label: 'Never' },
+  ])
+  toggle(bookSec.body, 'Large first letter at each chapter', 'bookDropCaps')
+  toggle(bookSec.body, 'New writing settles like ink', 'bookInk')
+  toggle(bookSec.body, 'Warm light on the pages', 'bookLight')
+  hint(bookSec.body, 'By candlelight, at night, dusk or dawn a soft pool of light falls on the pages. It follows the scene’s light, so it needs <b>Cinematic lighting</b> or the Scene Director to set one.')
+  toggle(bookSec.body, 'Page-turn sound', 'bookPageSound')
+  hint(bookSec.body, 'A soft paper rustle when a page turns (needs <b>Interface sounds</b> on, under Sound). To use your own, pick a file for <b>Page turn</b> under Your sounds.')
+  toggle(bookSec.body, 'Open chats as a book again', 'bookPerChat')
+  hint(bookSec.body, 'A chat you left open as a book opens as a book the next time you visit it.')
+  toggle(bookSec.body, 'Write in the book itself', 'bookWriteInBook')
+  hint(bookSec.body, 'Your next message is written on a line under the page, and the reply is written into the book as it arrives. Turn this off to use Lumiverse’s own reply box instead (it also has a button in the book’s corner).')
+  textarea(bookSec.body, 'Leave out of the book (one rule per line)', 'bookIgnore', 6, 'sim')
+  hint(bookSec.body, 'For things that are not the story, such as a tracker or a scene card. A tag as it is written in the message (<code>&lt;scenecard&gt;</code>) or a plain word (<code>sim</code>) leaves out that tag and any <code>```sim</code> block; anything else is a CSS selector for what the host draws (<code>.sc-card</code>). Silly Sim Tracker’s are listed to begin with. The quickest way: hover a styled window in the book and press its <b>×</b> (on a phone it is always showing), which adds the rule for you. Changing this reopens the book.')
+  toggle(bookSec.body, 'Running headers and page numbers', 'bookHeaders')
+  toggle(bookSec.body, 'Turn the page when a reply reaches the bottom', 'bookAutoTurn')
+  hint(bookSec.body, 'Inside the book: <b>←</b> <b>→</b>, <b>PageUp</b> <b>PageDown</b> and <b>Space</b> turn, <b>Home</b> and <b>End</b> jump, <b>Esc</b> leaves. With “reduce motion” on, pages turn instantly. Pages the host hasn’t shown yet are set from the plain text of the message, so display scripts and macros don’t apply there; they are marked “text only”.')
+
   // ── Send ──
   const send = section('send', 'When you send', I.send, true)
   select(send.body, 'Screen effect', 'sendEffect', [
@@ -928,6 +988,7 @@ export function mountPanel(ctx: SpindleFrontendContext, store: SettingsStore, ac
     { value: 'splash', label: 'Splash', sublabel: 'A hose-like gush of clear water bursts out and breaks into spray' },
     { value: 'blackhole', label: 'Black Hole ✦', sublabel: 'Overkill: a singularity swallows everything, collapses to a white dot, then detonates' },
     { value: 'petalstorm', label: 'Petal Storm ✦', sublabel: 'Overkill: blossoms burst from the button and a gale sweeps them across the screen' },
+    { value: 'quill', label: 'Quill', sublabel: 'Ink spatters and spreads where the line left the pen (made for Book mode)' },
     { value: 'none', label: 'None' },
   ])
   slider(send.body, 'Intensity', 'sendIntensity', 0.25, 2, 0.05, { suffix: '×' })

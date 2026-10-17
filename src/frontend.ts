@@ -31,8 +31,11 @@ import { Cinematic, CINEMATIC_CSS, blackHoleWarpRule, cameraShakeRule } from './
 import { AuraManager } from './aura'
 import { INTRO_CSS, IntroCard, SpeakerChip, hashColor } from './intro'
 import { THEATER_CSS, THEATER_ICON, Theater } from './theater'
+import { BOOK_CSS, BOOK_ICON, Book } from './book/book'
+import { chatReader } from './book/source'
+import { normalizeBook, type BookData } from './book/store'
 import { TYPEWRITER_CSS, Typewriter } from './typewriter'
-import { ChoiceManager, CHOICES_CSS } from './choices'
+import { ChoiceManager, CHOICES_CSS, clickSend, setComposer } from './choices'
 import { addPoint, HEARTBEAT_CSS, valenceForLabel, valenceForText, type BeatPoint, type HeartbeatData } from './heartbeat'
 import {
   ACHIEVEMENT_CSS,
@@ -140,6 +143,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const beats = createJsonStore<HeartbeatData>(vault, 'heartbeat', {})
   const badges = createJsonStore<AchievementData>(vault, 'achievements', normalizeAchievements(null))
   const pins = createJsonStore<PinData>(vault, 'moments', {})
+  const bookData = createJsonStore<BookData>(vault, 'book', {})
   const disposers: Array<() => void> = []
   let disposed = false
   const on = (event: string, fn: (payload: unknown) => void) => disposers.push(ctx.events.on(event, fn))
@@ -183,7 +187,7 @@ export function setup(ctx: SpindleFrontendContext) {
   // ── Styles ──
   disposers.push(
     ctx.dom.addStyle(
-      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS, VIZ_CSS].join('\n'),
+      [PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, BOOK_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS, VIZ_CSS].join('\n'),
     ),
   )
   let removeMainCss: (() => void) | null = null
@@ -217,6 +221,9 @@ export function setup(ctx: SpindleFrontendContext) {
   const theaterStyle = ctx.dom.createElement('style')
   overlayWrap.append(colorStyle, composerStyle, auraStyle, theaterStyle)
   const theaterWrap = ctx.dom.inject('body', '<div class="lf-th-root"></div>')
+  const bookWrap = ctx.dom.inject('body', '<div class="lf-bk-host"></div>')
+  const bookStyle = ctx.dom.createElement('style')
+  overlayWrap.append(bookStyle)
   const introCard = new IntroCard(overlay)
   const speaker = new SpeakerChip(overlay)
 
@@ -298,7 +305,9 @@ export function setup(ctx: SpindleFrontendContext) {
     introCard.destroy()
     speaker.destroy()
     theater.destroy()
+    book.destroy()
     typewriter.stop()
+    ctx.dom.uninject(bookWrap)
     ctx.dom.uninject(theaterWrap)
     ctx.dom.uninject(overlayWrap)
   })
@@ -802,6 +811,164 @@ export function setup(ctx: SpindleFrontendContext) {
     changed: () => notifyStatus(),
   })
 
+  // ── Book mode ──
+  const bookRead = chatReader(ctx)
+  const book = new Book({
+    root: bookWrap.querySelector('.lf-bk-host') as HTMLElement,
+    style: bookStyle,
+    get: () => {
+      const s = store.get()
+      return {
+        scale: s.bookTextScale,
+        lineHeight: s.bookLineHeight,
+        margins: s.bookMargins,
+        font: s.bookFont,
+        paper: s.bookPaper,
+        turn: s.bookTurn,
+        user: s.bookUser,
+        headers: s.bookHeaders,
+        autoTurn: s.bookAutoTurn,
+        dropCaps: s.bookDropCaps,
+        cover: s.bookCover,
+        ink: s.bookInk,
+        light: s.bookLight,
+        size: s.bookSize,
+        writeHere: s.bookWriteInBook,
+        ignore: s.bookIgnore,
+      }
+    },
+    set: (patch) => store.update(patch),
+    addIgnore: (rule) => {
+      const lines = store.get().bookIgnore.split('\n').map((l) => l.trim())
+      if (!lines.includes(rule)) store.update({ bookIgnore: [...lines.filter(Boolean), rule].join('\n') })
+    },
+    // The host's own reply box does the sending (so its commands, macros and generation all apply): fill it, wait for its send button to wake up, press it.
+    send: async (text) => {
+      if (!setComposer(text, false)) return false
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)))
+        if (clickSend()) return true
+      }
+      return false
+    },
+    motion: motionAllowed,
+    tr,
+    chatId: () => state.chatId,
+    characterName: () => state.characterName ?? '',
+    read: bookRead,
+    mounted: (id) => cardFor(id)?.querySelector<HTMLElement>('[data-component="MessageContent"]') ?? null,
+    mountedCards: () =>
+      [...document.querySelectorAll<HTMLElement>(CARD)]
+        .filter((c) => c.getAttribute('data-part') !== 'streaming')
+        .map((c) => ({
+          id: c.getAttribute('data-message-id') ?? '',
+          user: c.getAttribute('data-part') === 'user',
+          name: c.querySelector('[class*="_name_"]')?.textContent?.trim() ?? '',
+          el: c.querySelector('[data-component="MessageContent"]') ?? c,
+        }))
+        .filter((c) => c.id),
+    streaming: () => [...document.querySelectorAll<HTMLElement>(`${CARD}[data-part="streaming"] [data-component="MessageContent"]`)].at(-1) ?? null,
+    group: () => !!document.querySelector('[data-component="MessageList"][data-group-chat]'),
+    colorFor: (name) => auras.forSpeaker(name)?.aura.color ?? null,
+    data: () => bookData.get(),
+    save: (next) => bookData.whenLoaded(() => bookData.set(next)),
+    closeDrawer: closeHostDrawer,
+    reveal: (id) => void storyNav.jump(id),
+    lang: () => {
+      try {
+        return ctx.locale?.get?.() || 'en'
+      } catch {
+        return 'en'
+      }
+    },
+    changed: () => notifyStatus(),
+    pack: () => packById(store.get().activePack)?.book ?? null,
+    portrait: () => auras.latest()?.avatar ?? document.querySelector<HTMLImageElement>(`${CARD}:not([data-part="user"]) img[src]`)?.getAttribute('src') ?? null,
+    chatTitle: async () => {
+      const character = state.characterId
+      const chat = state.chatId
+      if (!character || !chat) return ''
+      try {
+        const api = (ctx as unknown as { chats?: { listForCharacter?: (id: string) => Promise<Array<{ id?: string; name?: string }>> } }).chats
+        const list = await api?.listForCharacter?.(character)
+        const name = list?.find((c) => c.id === chat)?.name
+        return typeof name === 'string' ? name.trim().slice(0, 80) : ''
+      } catch {
+        return ''
+      }
+    },
+    userName: () => document.querySelector<HTMLElement>(`${CARD}[data-part="user"] [class*="_name_"]`)?.textContent?.trim() ?? '',
+    pins: () => (state.chatId ? pins.get()[state.chatId] ?? [] : []),
+    togglePin: (m) => {
+      const chatId = state.chatId ?? ctx.getActiveChat()?.chatId ?? null
+      if (!chatId) return
+      const aura = auras.forMessage(m.id) ?? auras.forSpeaker(m.name || state.characterName || '')?.aura ?? null
+      pins.whenLoaded(() => {
+        const all = pins.get()
+        if (isPinned(all, chatId, m.id)) pins.set(removePins(all, chatId, new Set([m.id])))
+        else {
+          const text = excerpt(m.text)
+          if (!text) return
+          const ids = ctx.messages.listMessageIds()
+          const at = m.at >= 0 ? m.at : ids.indexOf(m.id)
+          const pin: Pin = { id: m.id, i: at < 0 ? ids.length : at, text, whole: true, who: m.name || (m.user ? '' : state.characterName ?? ''), user: m.user, color: aura?.color ?? null, t: Date.now() }
+          pins.set(setPin(all, chatId, pin))
+          if (store.get().pinMemory && state.memoriesPermission) void remember(chatId, [pin])
+        }
+        notifyStatus()
+      })
+    },
+    beats: () => (state.chatId ? beats.get()[state.chatId] ?? [] : []),
+    // The host's own swipe buttons do the flipping (never the "next" of the last draft, which would write a new one).
+    swipe: (id, dir) => {
+      const btns = cardFor(id)?.querySelectorAll<HTMLButtonElement>('[data-component="SwipeControls"] button')
+      const b = btns && btns.length >= 2 ? btns[dir < 0 ? 0 : btns.length - 1] : null
+      if (!b || b.disabled) return false
+      b.click()
+      return true
+    },
+    choices: () => ({ on: store.get().enabled && store.get().choiceChips, send: store.get().choiceSend }),
+    fill: (text) => void setComposer(text),
+    light: () => resolveLight(),
+    turnSound: () => {
+      const s = store.get()
+      if (!s.enabled || !s.sound || !s.bookPageSound || document.hidden) return
+      const away = scape.backgrounded
+      if (away === 'mute') return
+      const volume = s.soundVolume * (away === 'dim' ? s.soundUnfocusedLevel : 1)
+      const id = customFor('ui:pageturn')
+      const ac = id ? sound.context() : null
+      if (id && ac) {
+        void lib
+          .source(id, ac)
+          .then((src) => (src ? sound.playFile(src, volume, 4) : sound.rustle(volume)))
+          .catch(() => sound.rustle(volume))
+        return
+      }
+      sound.rustle(volume)
+    },
+  })
+  for (const name of ['MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED', 'CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'CHAT_SWITCHED', 'CHAT_CHANGED'])
+    on(name, (raw) => book.event(name, raw))
+  /** Open the book on the current chat (at `from`, else where the reader left off). The two reading modes never run together. */
+  function openBook(from?: string | null) {
+    if (book.on) return book.exit(true)
+    if (!store.get().bookEnabled) return
+    theater.exit()
+    book.enter(from ?? null)
+  }
+  /** A chat that was last read as a book opens as one (setting "Open chats as a book again"). */
+  function bookAuto(chatId: string) {
+    if (!store.get().bookPerChat || !store.get().bookEnabled) return
+    bookData.whenLoaded(() => {
+      if (disposed || state.chatId !== chatId || book.on || !bookData.get()[chatId]?.open) return
+      // Let the chat mount first: the book reads what the host has drawn.
+      setTimeout(() => {
+        if (!disposed && state.chatId === chatId && !book.on && store.get().bookPerChat) openBook()
+      }, 700)
+    })
+  }
+
   // ── Typewriter pacing ──
   // The reply is revealed at a steady pace (see typewriter.ts), with soft keys that follow the mood.
   let keySrc: { id: string; src: AudioSource } | null = null
@@ -1012,6 +1179,7 @@ export function setup(ctx: SpindleFrontendContext) {
       introRun++ // an intro still waiting on the old chat is off
       introCard.hide(false)
       if (chatId) startIntro(chatId)
+      if (chatId) bookAuto(chatId)
     }
     if (charChanged) {
       state.characterName = null
@@ -1031,6 +1199,7 @@ export function setup(ctx: SpindleFrontendContext) {
     store.setActiveCharacter(characterId) // emits → applyAll when a profile is involved
     if (!chatId) {
       theater.exit() // the home screen has the interface theater mode hides
+      book.exit(false, true)
       // Left the chat, so the home screen is being mounted. The atmosphere goes now; the whole-UI colour and
       // theme changes wait until the page change has settled, because restyling everything in the middle of it
       // is what a memory-starved iOS home-screen app can least afford.
@@ -1747,14 +1916,28 @@ export function setup(ctx: SpindleFrontendContext) {
         th.innerHTML = THEATER_ICON
         th.addEventListener('click', (e) => {
           e.stopPropagation()
+          if (book.on) book.exit(false)
           theater.enter(cardFor(id))
         })
-        root.append(star, b, th)
+        const bk = document.createElement('button')
+        bk.type = 'button'
+        bk.className = 'lf-moment-btn'
+        bk.title = tr('Read as a book from here')
+        bk.setAttribute('aria-label', tr('Read as a book from here'))
+        bk.innerHTML = BOOK_ICON
+        bk.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (book.on) return
+          openBook(id)
+        })
+        bk.style.display = store.get().bookEnabled ? '' : 'none'
+        root.append(star, b, th, bk)
         return () => {
           pinListeners.delete(syncStar)
           star.remove()
           b.remove()
           th.remove()
+          bk.remove()
         }
       },
     })
@@ -1778,7 +1961,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const base = store.getBase()
     const same = base.customPacks.find((p) => p.name.toLowerCase() === pack.name.toLowerCase())
     const id = same?.id ?? `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-    const stored = { id, name: pack.name, tagline: pack.tagline, swatch: pack.swatch, settings: pack.settings as Record<string, unknown>, theme: pack.theme, source, at: Date.now() }
+    const stored = { id, name: pack.name, tagline: pack.tagline, swatch: pack.swatch, settings: pack.settings as Record<string, unknown>, theme: pack.theme, ...(pack.book ? { book: pack.book } : {}), source, at: Date.now() }
     // Updating an existing pack keeps its place in the grid; new ones go at the end.
     const list = same ? base.customPacks.map((p) => (p.id === id ? stored : p)) : [...base.customPacks, stored].slice(-MAX_CUSTOM_PACKS)
     store.update({ customPacks: list })
@@ -1851,7 +2034,10 @@ export function setup(ctx: SpindleFrontendContext) {
       case 'intro':
         return previewIntro()
       case 'theater':
+        if (book.on) book.exit(false)
         return theater.toggle()
+      case 'book':
+        return openBook()
       case 'welcome':
         return openWelcome()
       case 'open':
@@ -1860,7 +2046,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   // ── Input bar (Extras) quick toggles ──
-  const inputActions: { spotlight?: SpindleInputBarActionHandle; flair?: SpindleInputBarActionHandle; theater?: SpindleInputBarActionHandle } = {}
+  const inputActions: { spotlight?: SpindleInputBarActionHandle; flair?: SpindleInputBarActionHandle; theater?: SpindleInputBarActionHandle; book?: SpindleInputBarActionHandle } = {}
   const SPOT_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
   const FLAIR_ICON =
@@ -1872,10 +2058,13 @@ export function setup(ctx: SpindleFrontendContext) {
     disposers.push(inputActions.flair.onClick(() => runCommand('toggle')))
     inputActions.theater = ctx.ui.registerInputBarAction({ id: 'theater', label: tr('Theater mode'), subtitle: tr('Hide the interface and read'), iconSvg: THEATER_ICON })
     disposers.push(inputActions.theater.onClick(() => runCommand('theater')))
+    inputActions.book = ctx.ui.registerInputBarAction({ id: 'book', label: tr('Book mode'), subtitle: tr('Read the chat as a book'), iconSvg: BOOK_ICON })
+    disposers.push(inputActions.book.onClick(() => runCommand('book')))
     disposers.push(() => {
       inputActions.spotlight?.destroy()
       inputActions.flair?.destroy()
       inputActions.theater?.destroy()
+      inputActions.book?.destroy()
     })
   } catch (err) {
     console.warn('[Lumi Flair] Input bar actions unavailable', err)
@@ -2047,6 +2236,10 @@ export function setup(ctx: SpindleFrontendContext) {
       pins.hydrate(normalizePins(saved.moments))
       if (save) pins.set(pins.get())
     }
+    if (saved.book) {
+      bookData.hydrate(normalizeBook(saved.book))
+      if (save) bookData.set(bookData.get())
+    }
     if (saved.settings) store.adopt(saved.settings, save)
     notifyStatus()
   }
@@ -2061,6 +2254,7 @@ export function setup(ctx: SpindleFrontendContext) {
       beats.hydrate(saved.heartbeat)
       badges.hydrate(normalizeAchievements(saved.achievements))
       pins.hydrate(normalizePins(saved.moments))
+      bookData.hydrate(normalizeBook(saved.book))
     })
     .then(() => {
       if (disposed) return
@@ -2068,6 +2262,7 @@ export function setup(ctx: SpindleFrontendContext) {
       applyAll()
       store.subscribe(() => applyAll())
       store.subscribe(() => theater.refresh())
+      store.subscribe(() => book.refresh())
       panel = mountPanel(ctx, store, {
         previewSend: () => fireSendEffect(true),
         previewHover: () => {
@@ -2123,7 +2318,11 @@ export function setup(ctx: SpindleFrontendContext) {
         pinLatest: () => pinMessage(ctx.messages.getLatestMessageId()),
         previewIntro,
         previewSpeaker,
-        enterTheater: () => theater.enter(),
+        enterTheater: () => {
+          if (book.on) book.exit(false)
+          theater.enter()
+        },
+        enterBook: () => openBook(),
         previewTypewriter: (el) => typewriter.preview(el),
         typewriterSupported: () => typewriter.supported,
         unpin: (id) => {
@@ -2157,7 +2356,7 @@ export function setup(ctx: SpindleFrontendContext) {
         openWelcome,
         backupSettings: () => {
           flushAll()
-          downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get(), moments: pins.get() }, ctx.manifest?.version ?? '')
+          downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get(), moments: pins.get(), book: bookData.get() }, ctx.manifest?.version ?? '')
         },
         restoreSettings: async () => {
           const saved = await pickBackup(ctx)

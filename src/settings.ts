@@ -1,7 +1,7 @@
 import type { Vault, VaultName } from './persist'
 import { SFX_CUES } from './sfx-cues'
 
-export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'splash' | 'blackhole' | 'petalstorm' | 'none'
+export type SendEffect = 'sparkle' | 'ripple' | 'comet' | 'confetti' | 'creamy' | 'splash' | 'blackhole' | 'petalstorm' | 'quill' | 'none'
 export type BurstEffect = Exclude<SendEffect, 'none'>
 /** A trail behind the mouse pointer, themed on a send effect. */
 export type CursorTrail = 'splash' | 'creamy' | 'petalstorm' | 'blackhole' | 'comet' | 'confetti' | 'none'
@@ -32,6 +32,8 @@ export interface StoredPack {
   swatch: [string, string]
   settings: Record<string, unknown>
   theme?: unknown
+  /** The pack's paper for Book mode (validated by packs.ts). */
+  book?: unknown
   source: 'imported' | 'saved'
   at: number
 }
@@ -43,13 +45,13 @@ export type SwipeTransition = 'slide' | 'fade' | 'none'
 export type TextFxFrequency = 'every' | 'often' | 'sparing'
 export type Light = 'none' | 'dawn' | 'day' | 'dusk' | 'night' | 'candle' | 'storm' | 'neon'
 
-export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm', 'none']
+export const SEND_EFFECTS: readonly SendEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm', 'quill', 'none']
 export const CURSOR_TRAILS: readonly CursorTrail[] = ['splash', 'creamy', 'petalstorm', 'blackhole', 'comet', 'confetti', 'none']
 export const BURST_EFFECTS: readonly BurstEffect[] = ['sparkle', 'ripple', 'comet', 'confetti', 'creamy', 'splash', 'blackhole', 'petalstorm']
 export const SCENES: readonly Scene[] = ['off', 'snow', 'rain', 'embers', 'fireflies', 'petals', 'stars']
 export const LIGHTS: readonly Light[] = ['none', 'dawn', 'day', 'dusk', 'night', 'candle', 'storm', 'neon']
 /** Interface sounds that can be replaced with the user's own files. */
-export const UI_SOUNDS = ['send', 'receive', 'fanfare', 'achievement', 'sparkle', 'key'] as const
+export const UI_SOUNDS = ['send', 'receive', 'fanfare', 'achievement', 'sparkle', 'key', 'pageturn'] as const
 /** Every place a custom sound file can be assigned. */
 export const SOUND_SLOTS: readonly string[] = [
   'always',
@@ -194,6 +196,42 @@ export interface FlairSettings {
   theaterSpeed: number
   /** Start the gentle auto-scroll when theater mode opens (never when motion is reduced). */
   theaterScroll: boolean
+  // v1.7 — book mode
+  /** Show Book mode's entry points. The book itself only opens on request. */
+  bookEnabled: boolean
+  /** How big the book is (1 = the widest page is 620 px and the type 17 px; the margins scale with it). */
+  bookSize: number
+  /** What the book leaves out, one rule per line: a plain word is a tag or code block name (`sim` leaves out ```sim blocks and <sim> tags), anything else is a CSS selector. Silly Sim Tracker's by default. */
+  bookIgnore: string
+  /** Write the next message in the book itself (its own writing line) instead of the host's reply box. */
+  bookWriteInBook: boolean
+  /** Text size in the book (a multiple of 17 px). */
+  bookTextScale: number
+  bookLineHeight: number
+  bookMargins: 'narrow' | 'normal' | 'wide'
+  bookFont: 'serif' | 'sans' | 'readable'
+  /** The paper: 'pack' follows the active Flair Pack's accent. */
+  bookPaper: 'pack' | 'cream' | 'white' | 'night'
+  /** auto = the curl on a computer or tablet, a flat slide on a phone. Reduced motion always means instant. */
+  bookTurn: 'auto' | 'curl' | 'slide' | 'instant'
+  /** How the reader's own lines are marked. */
+  bookUser: 'rule' | 'italic' | 'smallcaps'
+  /** Running headers and page numbers. */
+  bookHeaders: boolean
+  /** Follow a live reply onto new pages. */
+  bookAutoTurn: boolean
+  /** A chat last read as a book opens as a book. */
+  bookPerChat: boolean
+  /** A large first letter at the start of each chapter, in the speaker's colour. */
+  bookDropCaps: boolean
+  /** The cover: once for each chat, every time the book opens, or never. */
+  bookCover: 'once' | 'always' | 'never'
+  /** New writing settles onto the page like ink. */
+  bookInk: boolean
+  /** The warm pool of light on the pages at night or by candle. */
+  bookLight: boolean
+  /** A page-turn rustle (only with Flair's sound on). */
+  bookPageSound: boolean
   // v1.4 — character intro
   /** Opening a chat plays a short name card in the character's aura colour. */
   intro: boolean
@@ -243,6 +281,9 @@ export interface FlairSettings {
 /** Every inline text effect, in the order the panel shows them. */
 export const TEXT_FX = ['shake', 'glow', 'whisper', 'rainbow', 'pulse', 'big', 'typewriter', 'fade', 'glitch', 'flicker'] as const
 export type TextFx = (typeof TEXT_FX)[number]
+
+/** Silly Sim Tracker's tracker data (a ```sim block or a <tracker> tag) and the card it draws. */
+export const DEFAULT_BOOK_IGNORE = ['sim', 'tracker', '.sst-message-tracker-host', '.sim-tracker-container', '[data-sst-message-tracker-id]', '[data-sst-inline-template]'].join('\n')
 
 export const LOOK_KEYS = [
   'sendEffect',
@@ -369,6 +410,25 @@ export const DEFAULT_SETTINGS: FlairSettings = {
   theaterScale: 1.35,
   theaterSpeed: 3,
   theaterScroll: true,
+  bookEnabled: true,
+  bookSize: 1.25,
+  bookIgnore: DEFAULT_BOOK_IGNORE,
+  bookWriteInBook: true,
+  bookTextScale: 1,
+  bookLineHeight: 1.6,
+  bookMargins: 'normal',
+  bookFont: 'serif',
+  bookPaper: 'pack',
+  bookTurn: 'auto',
+  bookUser: 'rule',
+  bookHeaders: true,
+  bookAutoTurn: true,
+  bookPerChat: false,
+  bookDropCaps: true,
+  bookCover: 'once',
+  bookInk: true,
+  bookLight: true,
+  bookPageSound: true,
   intro: true,
   introGroup: true,
   introSound: '',
@@ -482,6 +542,7 @@ function normalizeStoredPacks(v: unknown): StoredPack[] {
       swatch: [HEX6.test(String(sw[0])) ? String(sw[0]) : '#9370db', HEX6.test(String(sw[1])) ? String(sw[1]) : '#c7b4ff'],
       settings: r.settings as Record<string, unknown>,
       theme: r.theme,
+      ...(r.book && typeof r.book === 'object' ? { book: r.book } : {}),
       source: r.source === 'saved' ? 'saved' : 'imported',
       at: typeof r.at === 'number' ? r.at : 0,
     })
@@ -578,6 +639,25 @@ export function normalize(raw: unknown): FlairSettings {
     theaterScale: clamp(r.theaterScale, 1, 2.2, d.theaterScale),
     theaterSpeed: Math.round(clamp(r.theaterSpeed, 1, 8, d.theaterSpeed)),
     theaterScroll: bool(r.theaterScroll, d.theaterScroll),
+    bookEnabled: bool(r.bookEnabled, d.bookEnabled),
+    bookSize: clamp(r.bookSize, 0.8, 2, d.bookSize),
+    bookIgnore: typeof r.bookIgnore === 'string' ? r.bookIgnore.slice(0, 3000) : d.bookIgnore,
+    bookWriteInBook: bool(r.bookWriteInBook, d.bookWriteInBook),
+    bookTextScale: clamp(r.bookTextScale, 0.8, 1.8, d.bookTextScale),
+    bookLineHeight: clamp(r.bookLineHeight, 1.3, 2, d.bookLineHeight),
+    bookMargins: pick(r.bookMargins, ['narrow', 'normal', 'wide'], d.bookMargins),
+    bookFont: pick(r.bookFont, ['serif', 'sans', 'readable'], d.bookFont),
+    bookPaper: pick(r.bookPaper, ['pack', 'cream', 'white', 'night'], d.bookPaper),
+    bookTurn: pick(r.bookTurn, ['auto', 'curl', 'slide', 'instant'], d.bookTurn),
+    bookUser: pick(r.bookUser, ['rule', 'italic', 'smallcaps'], d.bookUser),
+    bookHeaders: bool(r.bookHeaders, d.bookHeaders),
+    bookAutoTurn: bool(r.bookAutoTurn, d.bookAutoTurn),
+    bookPerChat: bool(r.bookPerChat, d.bookPerChat),
+    bookDropCaps: bool(r.bookDropCaps, d.bookDropCaps),
+    bookCover: pick(r.bookCover, ['once', 'always', 'never'], d.bookCover),
+    bookInk: bool(r.bookInk, d.bookInk),
+    bookLight: bool(r.bookLight, d.bookLight),
+    bookPageSound: bool(r.bookPageSound, d.bookPageSound),
     intro: bool(r.intro, d.intro),
     introGroup: bool(r.introGroup, d.introGroup),
     introSound: typeof r.introSound === 'string' && SOUND_ID.test(r.introSound) ? r.introSound : '',

@@ -48,7 +48,7 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Flair Packs** | One-click looks: Lumi Classic, Cozy Fantasy, Cyberpunk Neon, Horror, Sakura Romance, Deep Space, Noir and **Character Aware** |
 | **Lumiverse theme matching** | Packs can restyle Lumiverse itself (accent, backgrounds, dialogue colours) through Lumiverse's own theme engine, so everything stays readable in light and dark mode. Your font, UI scale and saved theme are never changed |
 | **Character Aware** | Glow and theme follow whoever is speaking, using their aura colour |
-| **Your own packs** | **Save my look** turns your setup into a pack. Import and export `.flair.json` packs to share with others |
+| **Your own packs** | **Save my look** turns your setup into a pack. Import and export `.flair.json` packs to share with others. A pack can also carry a `book` field (`paper`, `ink`, `accent`, `binding`, `ornament` and a `tex` of `plain`, `parchment`, `case`, `petals`, `holo`, `foxed` or `terminal`) that gives Book mode its paper and cover |
 | **Character profiles** | Give one character their own effects, colours, scene and text-effect choices |
 
 ### Storytelling with the AI
@@ -67,10 +67,11 @@ To update later, click **Update** on Lumi Flair in the Extensions panel. Your se
 | **Story heartbeat** | A chart of each chat's emotional arc. Click any point to jump to that message, even far back in the chat |
 | **Moment Cards** | Turn any reply, or just the lines you pick, into a wide share-ready image with the avatar, name and quote. It saves like a window capture: rounded corners and a soft shadow on a transparent background |
 | **Favourite moments** | Pin any message, or a selected line, with the ★ under it. Pins collect in a reel in the panel, show as stars on the story heartbeat and jump you back to the moment. Optionally they're saved to Lumiverse's memory so the AI remembers them |
+| **Book mode** | Read the whole chat as a book: two facing pages on a computer, one on a phone, with a page that curls as it turns. Write your next line on the page itself and the reply is written into the book as it arrives. Paper, cover and ornaments follow your Flair Pack (leather and gilt, a typed case file, a pressed-flower diary, a holo log…), chapters start with a drop cap in the speaker's colour, and there is a contents page you can rename chapters on. Fold a page corner to mark it, drag along the bottom edge to scrub the story's heartbeat, pick the AI's options at the foot of the page, flip between its other drafts, and read by candlelight with a warm pool of light on the paper. HTML windows from other extensions are kept (and can be left out with a ×) |
 | **Theater mode** | One click hides the interface and leaves the story full-screen, with larger type, long replies shown in full and a gentle auto-scroll. The atmosphere and soundscape carry on |
 | **Achievements** | 15 badges, such as Night Owl, Showstopper and a 7-day streak |
 | **Celebrations** | Confetti at message milestones, plus your own keyword triggers (`happy birthday => confetti`) |
-| **Sounds, spotlight & commands** | Soft synthesized chimes, a spotlight reading mode, and 15 `Flair: …` commands in Ctrl/Cmd+K |
+| **Sounds, spotlight & commands** | Soft synthesized chimes, a spotlight reading mode, and 16 `Flair: …` commands in Ctrl/Cmd+K |
 
 ### Comfort & compatibility
 
@@ -89,7 +90,7 @@ Every change you make is saved within a fraction of a second, to three places at
 | Where | Why |
 |---|---|
 | **Your Lumiverse account** (`ctx.settings`) | Follows you to every device and browser you sign in from |
-| **A config file on the server**: `data/users/<your id>/extensions/lumi_flair/settings.json` (plus `achievements.json`, `heartbeat.json` and `moments.json`) | A readable JSON file you can back up. It lives outside the extension folder, so it survives removing and re-importing Flair |
+| **A config file on the server**: `data/users/<your id>/extensions/lumi_flair/settings.json` (plus `achievements.json`, `heartbeat.json`, `moments.json` and `book.json`) | A readable JSON file you can back up. It lives outside the extension folder, so it survives removing and re-importing Flair |
 | **This browser** (localStorage) | Instant, and still works if the server is briefly unreachable |
 
 When Lumiverse starts, Flair reads all three copies and uses the **newest** one, then refreshes any copy that is missing or older. If the server is slow to answer, Flair waits for it before writing to the file, so a slow start can never replace your saved config with the defaults.
@@ -198,6 +199,7 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 | Message buttons (★ pin, Moment Card, theater) | Use `ctx.ui.registerDomDecorator` on the `message_actions` mount. This works in current Lumiverse but isn't in the published types yet. If a display mode has no action pill, use the panel or the commands instead |
 | Typewriter pacing | Nothing in Lumiverse's message is changed: the part not revealed yet is painted transparent with the CSS Custom Highlight API (a range from the reveal point to the end), re-hidden by a MutationObserver before the browser paints new text. Needs Chrome/Edge 105+, Safari 17.2+ or Firefox 140+ |
 | Theater mode | While it's on, one stylesheet hides Lumiverse's chrome by its stable selectors (`data-component`, `data-spindle-mount`) and enlarges message text; the auto-scroll moves the message list's `scrollTop` and only runs while there is something to scroll |
+| Book mode | A layer of its own on top of the chat, set from message text and laid out by the browser's CSS columns (`column-width`, one flow per ~40,000 characters), so a 2,000-message chat opens to its first page in about 90 ms. Older pages come from the free `ctx.chats.getMessages` read; messages on screen use the host's own rendered HTML. HTML windows are shadow-rooted islands, drawn from sanitised markup with their own `<style>`; interactive content (iframes) is never cloned. Chapters, the bookmark, the cover and "last read as a book" live in a `book` file next to the settings; folded corners are the same pins as the ★ |
 | Backend | Pushes the `{{flair_tags}}` macro, registers the commands, declares the tag-interceptor capability, and applies the optional mood palette |
 
 ## Compatibility notes
@@ -209,6 +211,16 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.7.0:** Book mode.
+  - **Read the chat as a book:** from the book button under any message, the Extras menu, the panel or `Flair: Toggle book mode`. Two facing pages on a computer, one on a phone (it re-lays out as you rotate or resize), a page curl (a slide on phones, instant with reduced motion), justified type with hyphenation, running headers and page numbers. Arrow keys, PageUp/PageDown, Space, Home/End, a click or drag on the page edge, or a swipe turn pages; Esc leaves.
+  - **Write in the book:** your next message goes on a writing line under the page, and the reply is written into the book as it streams (the book turns the page when the text reaches the bottom). Or use Lumiverse's own reply box from the book's corner.
+  - **Big and comfortable:** a size slider and buttons, text size, line spacing, margins, three fonts (including a high-legibility one), and cream, white, night or the pack's own paper. Your lines are marked with a margin rule, italics or small caps.
+  - **Paper from your Flair Pack:** leather and gilt (Cozy Fantasy), a typed case file (Noir), a pressed-flower diary (Sakura), a holo log (Deep Space), foxed pages (Horror), terminal paper (Cyberpunk), cream with the pack's accent otherwise. Imported packs can bring their own. A cover with the portrait, the chat's name and "by you & them" opens once for each chat (or every time, or never).
+  - **Chapters:** turn past the last page for a blank one, write on it and a new chapter begins; give it a title. Drop caps in the speaker's colour, chapter openers with an ornament, and a **contents page** with page numbers where you can jump or rename chapters. A bookmark remembers where you stopped.
+  - **A folded corner marks the page** (a ★ pin, saved to memory too if you chose that), **drag along the bottom edge** to scrub the story's heartbeat with chapter ticks and your marked pages, **the AI's options** sit at the foot of the page, and **other drafts** of the newest reply flip in place (‹ draft 2 of 3 ›).
+  - **Atmosphere:** the scene stays behind the book; by candlelight, at night, dusk or dawn a warm pool of light lies on the pages. New writing settles like ink, text effects have book versions (gilded glow, trembling ink, candle flicker; all still with No flashing), turning a page rustles (a sound slot of its own, `Page turn`), and a new **Quill** send effect splashes ink.
+  - **HTML inserts and windows from other extensions** (Silly Sim Tracker cards, scene cards, styled blocks) keep their own look in the book; a **×** on each leaves it out, and a list in the panel lets you leave out tags, code blocks or CSS selectors.
+  - **Open chats as a book again:** a chat you last read as a book opens as one.
 - **1.6.5:** Stereo visualizer, theme colours and a smoother sidebar (thanks to prolix-oc).
   - **Stereo channels:** a new *Show stereo channels* option. The left sidebar shows the left channel and the right sidebar the right; the floating window and background split them too, and there's a new stereo ribbons style. Sources without stereo keep the combined view.
   - **Automatic system audio:** the visualizer tries one connection when enabled, using the permission and consent you already gave. If it fails, *Connect audio* stays for a manual retry.

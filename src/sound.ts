@@ -145,6 +145,37 @@ export class SoundBoard {
     o.onended = () => out.disconnect()
   }
 
+  /** A page turning: a soft swell of filtered paper noise with a small settle at the end. */
+  rustle(volume: number) {
+    if (volume <= 0) return
+    const ac = this.ctx()
+    if (!ac || ac.state !== 'running') return // a rustle that plays late is worse than none
+    const t = ac.currentTime + 0.005
+    const dur = 0.34
+    const len = Math.floor(ac.sampleRate * dur)
+    const buf = ac.createBuffer(1, len, ac.sampleRate)
+    const d = buf.getChannelData(0)
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+    const src = ac.createBufferSource()
+    src.buffer = buf
+    const bp = ac.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.Q.value = 0.9
+    bp.frequency.setValueAtTime(1500, t)
+    bp.frequency.exponentialRampToValueAtTime(4200, t + 0.2)
+    bp.frequency.exponentialRampToValueAtTime(2400, t + dur)
+    const g = ac.createGain()
+    const level = Math.min(1, volume) * 0.2
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(level, t + 0.07)
+    g.gain.exponentialRampToValueAtTime(level * 0.35, t + 0.2)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    src.connect(bp).connect(g).connect(ac.destination)
+    src.start(t)
+    src.stop(t + dur + 0.02)
+    src.onended = () => g.disconnect()
+  }
+
   /** Play one of the user's files once (capped at `maxSeconds`, with a soft fade-out). */
   playFile(src: AudioSource, volume: number, maxSeconds = MAX_FILE_SECONDS) {
     if (volume <= 0) return

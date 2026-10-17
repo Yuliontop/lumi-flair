@@ -93,6 +93,7 @@ spindle.commands.register([
   { id: "next-pack", label: "Flair: Next Flair Pack", description: "Cycle Classic, Cozy Fantasy, Cyberpunk, Horror, Sakura, Deep Space, Noir", keywords: ["pack", "theme", "look", "preset"], scope: "global" },
   { id: "moment", label: "Flair: Moment Card of latest reply", description: "Turn the latest message into a share-ready image", keywords: ["share", "image", "card", "screenshot"], scope: "chat" },
   { id: "pin", label: "Flair: Pin the latest message as a favourite moment", description: "Add the latest message to your favourite moments, or take it off again", keywords: ["favourite", "favorite", "bookmark", "star", "save", "pin"], scope: "chat" },
+  { id: "book", label: "Flair: Toggle book mode", description: "Read the chat as a book: two facing pages, turn the page, and write on a fresh page to start a new chapter", keywords: ["book", "read", "pages", "novel", "chapter", "story", "reading"], scope: "chat" },
   { id: "theater", label: "Flair: Toggle theater mode", description: "Hide the interface and read the story full-screen, with larger type and a gentle auto-scroll", keywords: ["theater", "theatre", "reading", "fullscreen", "focus", "zen", "immersive"], scope: "chat" },
   { id: "intro", label: "Flair: Play the character intro", description: "Show the name card that plays when a chat opens", keywords: ["intro", "entrance", "name", "card", "character"], scope: "chat" },
   { id: "welcome", label: "Flair: Show welcome", description: "Pick a Flair Pack and optional extras", keywords: ["setup", "onboarding", "welcome"], scope: "global" }
@@ -100,8 +101,8 @@ spindle.commands.register([
 spindle.commands.onInvoked((commandId) => {
   spindle.sendToFrontend({ type: "command", id: commandId });
 });
-var VAULT_FILES = new Set(["settings", "achievements", "heartbeat", "moments"]);
-var VERSION = "1.6.5";
+var VAULT_FILES = new Set(["settings", "achievements", "heartbeat", "moments", "book"]);
+var VERSION = "1.7.0";
 async function vaultLoad(req, names, userId) {
   const files = {};
   const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && VAULT_FILES.has(n)) : [];

@@ -5,6 +5,7 @@
  */
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
 import { normalize, type FlairSettings, type StoredPack } from './settings'
+import { sanitizeBook, type PackBook } from './book/theme'
 
 export const PACK_KEYS = [
   'sendEffect', 'sendIntensity', 'userEntrance', 'characterEntrance',
@@ -37,6 +38,8 @@ export interface FlairPack {
   theme?: PackTheme | 'character'
   /** Settings outside PACK_KEYS this pack also needs (e.g. auras on). */
   extra?: Partial<FlairSettings>
+  /** What Book mode's paper and cover look like for this pack (none = cream with the pack's accent). */
+  book?: PackBook
   /** Set for user packs (imported or saved from the current look). */
   custom?: 'imported' | 'saved'
 }
@@ -67,6 +70,7 @@ export const PACKS: FlairPack[] = [
       lightDefault: 'candle', cinematic: true, vignette: 0.45, grain: false, swipeTransition: 'fade',
     },
     theme: { accent: '#ffb347', secondary: '#ff7a3d', bgDark: '#1d150e', bgLight: '#fbf3e8', speech: '#ffd08a', thoughts: '#e3b48c' },
+    book: { paper: '#f0dfba', ink: '#35220f', accent: '#c48a2c', binding: '#5b3419', ornament: '❦', tex: 'parchment' },
   },
   {
     id: 'cyber',
@@ -81,6 +85,7 @@ export const PACKS: FlairPack[] = [
       lightDefault: 'neon', cinematic: true, vignette: 0.4, grain: true, swipeTransition: 'slide',
     },
     theme: { accent: '#00e5ff', secondary: '#ff2bd6', bgDark: '#0b0a1a', bgLight: '#eef3fb', speech: '#5cf2ff', thoughts: '#ff7ae6' },
+    book: { paper: '#06110c', ink: '#7dffbf', accent: '#00e5ff', binding: '#0a0a14', ornament: '▮', tex: 'terminal' },
   },
   {
     id: 'horror',
@@ -95,6 +100,7 @@ export const PACKS: FlairPack[] = [
       lightDefault: 'storm', cinematic: true, vignette: 0.75, grain: true, swipeTransition: 'fade',
     },
     theme: { accent: '#c0102a', secondary: '#5a0b14', bgDark: '#120708', bgLight: '#f4ecec', speech: '#e05561', thoughts: '#a08f8f' },
+    book: { paper: '#d8c9a8', ink: '#2a1812', accent: '#a3162a', binding: '#2b0b0e', ornament: '†', tex: 'foxed' },
   },
   {
     id: 'sakura',
@@ -109,6 +115,7 @@ export const PACKS: FlairPack[] = [
       lightDefault: 'dawn', cinematic: true, vignette: 0.25, grain: false, swipeTransition: 'fade',
     },
     theme: { accent: '#ff8fc8', secondary: '#ffc2dd', bgDark: '#1e1218', bgLight: '#fff1f7', speech: '#ffb3d9', thoughts: '#d9a3c4' },
+    book: { paper: '#fcf0f4', ink: '#4a2a3a', accent: '#e0679f', binding: '#f1b3cc', ornament: '✿', tex: 'petals' },
   },
   {
     id: 'space',
@@ -123,6 +130,7 @@ export const PACKS: FlairPack[] = [
       lightDefault: 'night', cinematic: true, vignette: 0.5, grain: false, swipeTransition: 'slide',
     },
     theme: { accent: '#7c8cff', secondary: '#9ee7ff', bgDark: '#0c0e22', bgLight: '#eef0ff', speech: '#9ee7ff', thoughts: '#b6b0ff' },
+    book: { paper: '#0e1431', ink: '#d4e6ff', accent: '#7cf0ff', binding: '#111a4a', ornament: '◈', tex: 'holo' },
   },
   {
     id: 'noir',
@@ -137,6 +145,7 @@ export const PACKS: FlairPack[] = [
       lightDefault: 'storm', cinematic: true, vignette: 0.65, grain: true, swipeTransition: 'fade',
     },
     theme: { accent: '#d9d9d9', secondary: '#8a8a8a', bgDark: '#111111', bgLight: '#f2f2f2', speech: '#ececec', thoughts: '#a5a5a5' },
+    book: { paper: '#e9e4d6', ink: '#1d1d1f', accent: '#7a7a7a', binding: '#8a7a52', ornament: '■', tex: 'case' },
   },
   {
     id: 'character',
@@ -176,6 +185,7 @@ export function customPacks(): FlairPack[] {
         swatch: p.swatch,
         settings: sanitizeSettings(p.settings) ?? {},
         theme: sanitizeTheme(p.theme),
+        book: sanitizeBook(p.book),
         custom: p.source,
       })),
     }
@@ -229,6 +239,7 @@ export interface PackFile {
   swatch: [string, string]
   settings: PackSettings
   theme?: PackTheme | 'character'
+  book?: PackBook
 }
 
 /** Validate an imported pack blob; returns only safe, normalized pack data. */
@@ -244,7 +255,8 @@ export function sanitizePack(raw: unknown): PackFile | null {
   const fallbackA = settings.colorSource === 'custom' && settings.customColor ? settings.customColor : theme && theme !== 'character' ? theme.accent : '#9370db'
   const fallbackB = settings.userColor === 'custom' && settings.userCustomColor ? settings.userCustomColor : theme && theme !== 'character' ? theme.secondary ?? theme.bgDark : '#c7b4ff'
   const swatch: [string, string] = [HEX.test(String(sw[0])) ? String(sw[0]) : fallbackA, HEX.test(String(sw[1])) ? String(sw[1]) : fallbackB]
-  return { name, tagline, swatch, settings, theme }
+  const book = sanitizeBook(r.book)
+  return { name, tagline, swatch, settings, theme, ...(book ? { book } : {}) }
 }
 
 /** Turn the current look into a pack (for "Save my look" and export). */
@@ -254,7 +266,7 @@ export function packFromLook(name: string, s: FlairSettings, themeFor: (s: Flair
   const theme = themeFor(s)
   const a = s.colorSource === 'custom' ? s.customColor : active?.swatch[0] ?? (theme && theme !== 'character' ? theme.accent : '#9370db')
   const b = s.userColor === 'custom' ? s.userCustomColor : active?.swatch[1] ?? '#c7b4ff'
-  return { name, tagline: active && name === active.name ? active.tagline : '', swatch: [a, b], settings, theme }
+  return { name, tagline: active && name === active.name ? active.tagline : '', swatch: [a, b], settings, theme, ...(active?.book ? { book: active.book } : {}) }
 }
 
 export function exportPack(pack: PackFile) {

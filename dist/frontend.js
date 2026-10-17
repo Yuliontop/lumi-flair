@@ -109,12 +109,12 @@ var VIZ_SOURCES = ["flair", "tab", "mic", "system", "demo"];
 var VIZ_STYLES = ["bars", "mirror", "segments", "wave", "ribbons"];
 var VIZ_COLORS = ["flair", "theme", "custom", "rainbow"];
 var MAX_CUSTOM_PACKS = 24;
-var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "none"];
+var SEND_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm", "quill", "none"];
 var CURSOR_TRAILS = ["splash", "creamy", "petalstorm", "blackhole", "comet", "confetti", "none"];
 var BURST_EFFECTS = ["sparkle", "ripple", "comet", "confetti", "creamy", "splash", "blackhole", "petalstorm"];
 var SCENES = ["off", "snow", "rain", "embers", "fireflies", "petals", "stars"];
 var LIGHTS = ["none", "dawn", "day", "dusk", "night", "candle", "storm", "neon"];
-var UI_SOUNDS = ["send", "receive", "fanfare", "achievement", "sparkle", "key"];
+var UI_SOUNDS = ["send", "receive", "fanfare", "achievement", "sparkle", "key", "pageturn"];
 var SOUND_SLOTS = [
   "always",
   ...SCENES.filter((s) => s !== "off").map((s) => `scene:${s}`),
@@ -123,6 +123,8 @@ var SOUND_SLOTS = [
   ...SFX_CUES.map((c) => `sfx:${c.name}`)
 ];
 var TEXT_FX = ["shake", "glow", "whisper", "rainbow", "pulse", "big", "typewriter", "fade", "glitch", "flicker"];
+var DEFAULT_BOOK_IGNORE = ["sim", "tracker", ".sst-message-tracker-host", ".sim-tracker-container", "[data-sst-message-tracker-id]", "[data-sst-inline-template]"].join(`
+`);
 var LOOK_KEYS = [
   "sendEffect",
   "sendIntensity",
@@ -245,6 +247,25 @@ var DEFAULT_SETTINGS = {
   theaterScale: 1.35,
   theaterSpeed: 3,
   theaterScroll: true,
+  bookEnabled: true,
+  bookSize: 1.25,
+  bookIgnore: DEFAULT_BOOK_IGNORE,
+  bookWriteInBook: true,
+  bookTextScale: 1,
+  bookLineHeight: 1.6,
+  bookMargins: "normal",
+  bookFont: "serif",
+  bookPaper: "pack",
+  bookTurn: "auto",
+  bookUser: "rule",
+  bookHeaders: true,
+  bookAutoTurn: true,
+  bookPerChat: false,
+  bookDropCaps: true,
+  bookCover: "once",
+  bookInk: true,
+  bookLight: true,
+  bookPageSound: true,
   intro: true,
   introGroup: true,
   introSound: "",
@@ -356,6 +377,7 @@ function normalizeStoredPacks(v) {
       swatch: [HEX6.test(String(sw[0])) ? String(sw[0]) : "#9370db", HEX6.test(String(sw[1])) ? String(sw[1]) : "#c7b4ff"],
       settings: r.settings,
       theme: r.theme,
+      ...r.book && typeof r.book === "object" ? { book: r.book } : {},
       source: r.source === "saved" ? "saved" : "imported",
       at: typeof r.at === "number" ? r.at : 0
     });
@@ -448,6 +470,25 @@ function normalize(raw) {
     theaterScale: clamp(r.theaterScale, 1, 2.2, d.theaterScale),
     theaterSpeed: Math.round(clamp(r.theaterSpeed, 1, 8, d.theaterSpeed)),
     theaterScroll: bool(r.theaterScroll, d.theaterScroll),
+    bookEnabled: bool(r.bookEnabled, d.bookEnabled),
+    bookSize: clamp(r.bookSize, 0.8, 2, d.bookSize),
+    bookIgnore: typeof r.bookIgnore === "string" ? r.bookIgnore.slice(0, 3000) : d.bookIgnore,
+    bookWriteInBook: bool(r.bookWriteInBook, d.bookWriteInBook),
+    bookTextScale: clamp(r.bookTextScale, 0.8, 1.8, d.bookTextScale),
+    bookLineHeight: clamp(r.bookLineHeight, 1.3, 2, d.bookLineHeight),
+    bookMargins: pick(r.bookMargins, ["narrow", "normal", "wide"], d.bookMargins),
+    bookFont: pick(r.bookFont, ["serif", "sans", "readable"], d.bookFont),
+    bookPaper: pick(r.bookPaper, ["pack", "cream", "white", "night"], d.bookPaper),
+    bookTurn: pick(r.bookTurn, ["auto", "curl", "slide", "instant"], d.bookTurn),
+    bookUser: pick(r.bookUser, ["rule", "italic", "smallcaps"], d.bookUser),
+    bookHeaders: bool(r.bookHeaders, d.bookHeaders),
+    bookAutoTurn: bool(r.bookAutoTurn, d.bookAutoTurn),
+    bookPerChat: bool(r.bookPerChat, d.bookPerChat),
+    bookDropCaps: bool(r.bookDropCaps, d.bookDropCaps),
+    bookCover: pick(r.bookCover, ["once", "always", "never"], d.bookCover),
+    bookInk: bool(r.bookInk, d.bookInk),
+    bookLight: bool(r.bookLight, d.bookLight),
+    bookPageSound: bool(r.bookPageSound, d.bookPageSound),
     intro: bool(r.intro, d.intro),
     introGroup: bool(r.introGroup, d.introGroup),
     introSound: typeof r.introSound === "string" && SOUND_ID.test(r.introSound) ? r.introSound : "",
@@ -722,6 +763,8 @@ var KEYFRAMES = `
   92% { transform: translate(-1px, 0) skewX(4deg); clip-path: inset(30% 0 30% 0); }
   94% { transform: none; clip-path: none; }
 }
+@keyframes lf-bk-tremble { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(.4px, -.3px); } 50% { transform: translate(-.3px, .35px); } 75% { transform: translate(.3px, .3px); } }
+@keyframes lf-bk-candle { 0%, 100% { opacity: 1; } 30% { opacity: .82; } 55% { opacity: .94; } 80% { opacity: .78; } }
 @keyframes lf-flicker { 0%, 100% { opacity: 1; } 8% { opacity: .55; } 10% { opacity: 1; } 47% { opacity: .9; } 49% { opacity: .35; } 52% { opacity: 1; } 80% { opacity: .8; } }
 @keyframes lf-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 `;
@@ -845,7 +888,19 @@ function textFxCss(s) {
     return picker;
   const on = TEXT_FX.filter((fx) => !s.textFxOff.includes(fx));
   return picker + `
-` + textFxRules(s, ':is([data-component="BubbleMessage"],[data-component="MinimalMessage"],.lf-fx-demo)', on);
+` + textFxRules(s, ':is([data-component="BubbleMessage"],[data-component="MinimalMessage"],.lf-fx-demo,.lf-bk-flow)', on) + `
+` + bookFxRules(s, on);
+}
+function bookFxRules(s, only) {
+  const T = (fx) => `:root .lf-bk-flow [data-lf="${fx}"]`;
+  const calm = s.noFlash;
+  const rules = {
+    glow: `${T("glow")} { color: color-mix(in srgb, var(--bk-gilt, #c9a24a) 78%, var(--bk-ink)); text-shadow: 0 0 .55em color-mix(in srgb, var(--bk-gilt, #c9a24a) 55%, transparent); animation: none; }`,
+    shake: `${T("shake")} { display: inline-block; animation: ${calm ? "none" : "lf-bk-tremble .9s ease-in-out infinite"}; }`,
+    flicker: `${T("flicker")} { animation: ${calm ? "none" : "lf-bk-candle 2.6s ease-in-out infinite"}; opacity: ${calm ? ".85" : "1"}; }`
+  };
+  return only.map((fx) => rules[fx] ?? "").join(`
+`);
 }
 function spotlightCss(s) {
   if (!s.spotlight)
@@ -864,6 +919,7 @@ function reducedMotionCss(s) {
   :root ${CARD}::after { animation: none !important; }
   :root ${CARD}[data-part="streaming"]::after { opacity: .8; }
   :root ${MSG} [data-lf] { animation: none !important; clip-path: none !important; }
+  :root .lf-bk-flow [data-lf] { animation: none !important; clip-path: none !important; }
   :root [data-component="InputArea"] { animation: none !important; }
 }
 `;
@@ -1979,6 +2035,17 @@ function sparkle(o, c, k) {
   out.push(base({ kind: "ring", x: o.x, y: o.y, life: 0.55, size: 2.5, maxR: 70 * k, color: bright }));
   return out;
 }
+function quill(o, c, k) {
+  const ink = rgba({ r: c.r * 0.6, g: c.g * 0.6, b: c.b * 0.7 }, 0.95);
+  const out = [];
+  for (let i = 0;i < Math.round(16 * k); i++) {
+    const a = -Math.PI / 2 + rand(-0.9, 0.9);
+    const sp = rand(90, 300) * (0.7 + k * 0.3);
+    out.push(base({ kind: "dot", x: o.x + rand(-8, 8), y: o.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.7, 1.2), size: rand(1.6, 3.6), gravity: 640, drag: 0.35, color: Math.random() < 0.25 ? rgba(lighten(c, 0.2), 1) : ink }));
+  }
+  out.push(base({ kind: "ring", x: o.x, y: o.y, life: 0.7, size: 2, maxR: 54 * k, color: ink }));
+  return out;
+}
 function ripple(o, c, k) {
   const col = rgba(lighten(c, 0.25), 1);
   return [0, 0.11, 0.22, 0.33].slice(0, k >= 1 ? 4 : 3).map((delay, i) => base({
@@ -2242,6 +2309,9 @@ function playSendEffect(fx, effect, originClient, color, intensity, opts = {}) {
       break;
     case "ripple":
       fx.spawn(ripple(o, color, k));
+      break;
+    case "quill":
+      fx.spawn(quill(o, color, k));
       break;
     case "comet":
       fx.spawn(comet(o, color, k, fx));
@@ -2801,6 +2871,38 @@ class SoundBoard {
     o.start(t);
     o.stop(t + 0.08);
     o.onended = () => out.disconnect();
+  }
+  rustle(volume) {
+    if (volume <= 0)
+      return;
+    const ac = this.ctx();
+    if (!ac || ac.state !== "running")
+      return;
+    const t = ac.currentTime + 0.005;
+    const dur = 0.34;
+    const len = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0;i < len; i++)
+      d[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const bp = ac.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 0.9;
+    bp.frequency.setValueAtTime(1500, t);
+    bp.frequency.exponentialRampToValueAtTime(4200, t + 0.2);
+    bp.frequency.exponentialRampToValueAtTime(2400, t + dur);
+    const g = ac.createGain();
+    const level = Math.min(1, volume) * 0.2;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(level, t + 0.07);
+    g.gain.exponentialRampToValueAtTime(level * 0.35, t + 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp).connect(g).connect(ac.destination);
+    src.start(t);
+    src.stop(t + dur + 0.02);
+    src.onended = () => g.disconnect();
   }
   playFile(src, volume, maxSeconds = MAX_FILE_SECONDS) {
     if (volume <= 0)
@@ -4459,6 +4561,89 @@ var T = {
   "Preview speaker chip": ["预览发言标签", "預覽發言標籤", "発言者チップをプレビュー", "Aperçu de l’étiquette", "Anteprima etichetta"],
   "A conversation with": ["对话对象", "對話對象", "会話の相手", "Une conversation avec", "Una conversazione con"],
   "Your character": ["你的角色", "你的角色", "あなたのキャラクター", "Votre personnage", "Il tuo personaggio"],
+  "Ink spatters and spreads where the line left the pen (made for Book mode)": ["墨点从落笔处溅开（为书模式而作）", "墨點從落筆處濺開（為書模式而作）", "ペン先からインクが散って広がる（ブックモード向け）", "L’encre éclabousse et s’étend là où la plume a quitté la ligne (pensé pour le mode Livre)", "L’inchiostro schizza e si allarga dove la penna ha lasciato la riga (pensato per la modalità Libro)"],
+  Quill: ["羽毛笔", "羽毛筆", "羽根ペン", "Plume", "Penna d’oca"],
+  Contents: ["目录", "目錄", "目次", "Table des matières", "Indice"],
+  "Marked pages": ["已标记的页", "已標記的頁", "しおりのページ", "Pages marquées", "Pagine segnate"],
+  "Rename chapter": ["重命名章节", "重新命名章節", "章の名前を変更", "Renommer le chapitre", "Rinomina il capitolo"],
+  "Fold the corner to mark this page": ["折起这一角来标记此页", "折起這一角來標記此頁", "角を折ってこのページに印をつける", "Plier le coin pour marquer cette page", "Piega l’angolo per segnare questa pagina"],
+  "Unfold the corner": ["展开这一角", "展開這一角", "角を戻す", "Déplier le coin", "Riapri l’angolo"],
+  "Previous draft": ["上一稿", "上一稿", "前の稿", "Version précédente", "Bozza precedente"],
+  "Next draft": ["下一稿", "下一稿", "次の稿", "Version suivante", "Bozza successiva"],
+  draft: ["稿", "稿", "稿", "version", "bozza"],
+  "Ways the story could go": ["故事的走向", "故事的走向", "物語の行き先", "Les suites possibles", "Come potrebbe andare la storia"],
+  "turn the page": ["翻页", "翻頁", "ページをめくる", "tourner la page", "gira pagina"],
+  "by {user} & {character}": ["{user} 与 {character} 合著", "{user} 與 {character} 合著", "{user} と {character} の物語", "par {user} & {character}", "di {user} & {character}"],
+  "Our story": ["我们的故事", "我們的故事", "私たちの物語", "Notre histoire", "La nostra storia"],
+  Character: ["角色", "角色", "キャラクター", "Personnage", "Personaggio"],
+  "Click to open": ["点击翻开", "點擊翻開", "クリックして開く", "Cliquez pour ouvrir", "Clicca per aprire"],
+  Cover: ["封面", "封面", "表紙", "Couverture", "Copertina"],
+  "Once for each chat": ["每个聊天一次", "每個聊天一次", "チャットごとに一度", "Une fois par chat", "Una volta per chat"],
+  "Every time": ["每次", "每次", "毎回", "À chaque fois", "Ogni volta"],
+  Never: ["从不", "從不", "しない", "Jamais", "Mai"],
+  "Large first letter at each chapter": ["每章首字下沉", "每章首字下沉", "章の頭に大きな頭文字", "Lettrine à chaque chapitre", "Capolettera a ogni capitolo"],
+  "New writing settles like ink": ["新文字如墨渗入", "新文字如墨滲入", "新しい文字をインクのようになじませる", "Le nouveau texte se pose comme de l’encre", "Il nuovo testo si posa come inchiostro"],
+  "Warm light on the pages": ["书页上的暖光", "書頁上的暖光", "ページに差す暖かな光", "Lumière chaude sur les pages", "Luce calda sulle pagine"],
+  "Page-turn sound": ["翻页声", "翻頁聲", "ページをめくる音", "Bruit de page", "Suono della pagina"],
+  "Open chats as a book again": ["再次以书的形式打开聊天", "再次以書的形式開啟聊天", "チャットを再び本として開く", "Rouvrir les chats comme un livre", "Riapri le chat come libro"],
+  "Page turn (Book mode)": ["翻页（书模式）", "翻頁（書模式）", "ページめくり（ブックモード）", "Page tournée (mode Livre)", "Pagina girata (modalità Libro)"],
+  "The pack’s own paper and cover; cream when it has none": ["包自带的纸张与封面；没有时用米色", "包自帶的紙張與封面；沒有時用米色", "パック独自の紙と表紙。無ければクリーム色", "Le papier et la couverture du pack ; crème à défaut", "Carta e copertina del pack; crema se non ne ha"],
+  "Leave this out of the book": ["不在书中显示这个", "不在書中顯示這個", "これを本から省く", "Laisser cela hors du livre", "Escludi questo dal libro"],
+  "Leave out of the book (one rule per line)": ["书中略去的内容（每行一条规则）", "書中略去的內容（每行一條規則）", "本から省くもの（1行に1つ）", "À laisser hors du livre (une règle par ligne)", "Da escludere dal libro (una regola per riga)"],
+  "Book size": ["书的大小", "書的大小", "本のサイズ", "Taille du livre", "Dimensione del libro"],
+  "Write in the book itself": ["在书里直接写", "在書裡直接寫", "本の中に直接書く", "Écrire dans le livre même", "Scrivi nel libro stesso"],
+  "Smaller book": ["缩小书", "縮小書", "本を小さく", "Livre plus petit", "Libro più piccolo"],
+  "Larger book": ["放大书", "放大書", "本を大きく", "Livre plus grand", "Libro più grande"],
+  "Show the host reply box": ["显示 Lumiverse 回复框", "顯示 Lumiverse 回覆框", "Lumiverse の返信欄を表示", "Afficher la zone de réponse de Lumiverse", "Mostra la casella di risposta di Lumiverse"],
+  "Hide the host reply box": ["隐藏 Lumiverse 回复框", "隱藏 Lumiverse 回覆框", "Lumiverse の返信欄を隠す", "Masquer la zone de réponse de Lumiverse", "Nascondi la casella di risposta di Lumiverse"],
+  Send: ["发送", "傳送", "送信", "Envoyer", "Invia"],
+  "Write your next line": ["写下你的下一句", "寫下你的下一句", "次のセリフを書く", "Écrivez votre prochaine réplique", "Scrivi la tua prossima battuta"],
+  "Write your next line…": ["写下你的下一句…", "寫下你的下一句…", "次のセリフを書く…", "Écrivez votre prochaine réplique…", "Scrivi la tua prossima battuta…"],
+  "Begin this chapter…": ["开始这一章…", "開始這一章…", "この章を始める…", "Commencez ce chapitre…", "Inizia questo capitolo…"],
+  "A reply is being written…": ["正在写回复…", "正在寫回覆…", "返信を書いています…", "Une réponse s’écrit…", "Si sta scrivendo una risposta…"],
+  "It could not be sent. Try the host reply box.": ["无法发送。请试试 Lumiverse 的回复框。", "無法傳送。請試試 Lumiverse 的回覆框。", "送信できませんでした。Lumiverse の返信欄をお試しください。", "Envoi impossible. Essayez la zone de réponse de Lumiverse.", "Impossibile inviare. Prova la casella di risposta di Lumiverse."],
+  "Book mode": ["书籍模式", "書籍模式", "ブックモード", "Mode livre", "Modalità libro"],
+  "Read the chat as a book": ["像读书一样阅读聊天", "像讀書一樣閱讀聊天", "チャットを本のように読む", "Lire le chat comme un livre", "Leggi la chat come un libro"],
+  "Read as a book from here": ["从这里开始以书籍阅读", "從這裡開始以書籍閱讀", "ここから本として読む", "Lire comme un livre à partir d’ici", "Leggi come un libro da qui"],
+  "Show the Book mode buttons": ["显示书籍模式按钮", "顯示書籍模式按鈕", "ブックモードのボタンを表示", "Afficher les boutons du mode livre", "Mostra i pulsanti della modalità libro"],
+  "Open the book": ["打开书", "打開書", "本を開く", "Ouvrir le livre", "Apri il libro"],
+  "Line spacing": ["行距", "行距", "行間", "Interligne", "Interlinea"],
+  Margins: ["页边距", "頁邊距", "余白", "Marges", "Margini"],
+  Narrow: ["窄", "窄", "狭い", "Étroites", "Strette"],
+  Normal: ["标准", "標準", "標準", "Normales", "Normali"],
+  Wide: ["宽", "寬", "広い", "Larges", "Ampi"],
+  Font: ["字体", "字體", "フォント", "Police", "Carattere"],
+  "Book serif": ["书籍衬线体", "書籍襯線體", "書籍用セリフ", "Serif de livre", "Serif da libro"],
+  "Clean sans": ["简洁无衬线体", "簡潔無襯線體", "すっきりしたサンセリフ", "Sans nette", "Sans pulito"],
+  Readable: ["易读", "易讀", "読みやすい", "Lisible", "Leggibile"],
+  Paper: ["纸张", "紙張", "紙", "Papier", "Carta"],
+  "From the Flair Pack": ["随 Flair 风格包", "隨 Flair 風格包", "Flair パックに合わせる", "Selon le pack Flair", "Dal pacchetto Flair"],
+  Cream: ["米色", "米色", "クリーム", "Crème", "Crema"],
+  White: ["白色", "白色", "白", "Blanc", "Bianca"],
+  "Page turn": ["翻页方式", "翻頁方式", "ページめくり", "Tourne-page", "Sfoglia pagina"],
+  Automatic: ["自动", "自動", "自動", "Automatique", "Automatico"],
+  Curl: ["卷页", "捲頁", "カール", "Page courbée", "Curva"],
+  Instant: ["即时", "即時", "即時", "Instantané", "Istantaneo"],
+  "Your lines": ["你的台词", "你的台詞", "あなたのセリフ", "Vos répliques", "Le tue battute"],
+  "Margin rule": ["页边竖线", "頁邊豎線", "余白の線", "Filet en marge", "Filetto a margine"],
+  Italic: ["斜体", "斜體", "イタリック", "Italique", "Corsivo"],
+  "Small caps": ["小型大写", "小型大寫", "スモールキャップ", "Petites capitales", "Maiuscoletto"],
+  "Running headers and page numbers": ["页眉和页码", "頁首和頁碼", "ヘッダーとページ番号", "En-têtes et numéros de page", "Intestazioni e numeri di pagina"],
+  "Turn the page when a reply reaches the bottom": ["回复写到页底时自动翻页", "回覆寫到頁底時自動翻頁", "返信がページ下端に届いたらめくる", "Tourner la page quand une réponse atteint le bas", "Gira pagina quando una risposta arriva in fondo"],
+  Chapter: ["章节", "章節", "章", "Chapitre", "Capitolo"],
+  "Chapter title (optional)": ["章节标题（可选）", "章節標題（可選）", "章のタイトル（任意）", "Titre du chapitre (facultatif)", "Titolo del capitolo (facoltativo)"],
+  "Write in the box below to begin this chapter. Turn back to leave it blank.": ["在下方输入框写点什么来开始这一章。翻回去则保持空白。", "在下方輸入框寫點什麼來開始這一章。翻回去則保持空白。", "下の入力欄に書くと、この章が始まります。戻ると白紙のままです。", "Écrivez dans la zone ci-dessous pour commencer ce chapitre. Revenez en arrière pour le laisser vide.", "Scrivi nella casella qui sotto per iniziare questo capitolo. Torna indietro per lasciarlo vuoto."],
+  "Previous page": ["上一页", "上一頁", "前のページ", "Page précédente", "Pagina precedente"],
+  "Next page": ["下一页", "下一頁", "次のページ", "Page suivante", "Pagina successiva"],
+  "Close the book": ["合上书", "合上書", "本を閉じる", "Fermer le livre", "Chiudi il libro"],
+  "Open this page in the chat": ["在聊天中打开此页", "在聊天中打開此頁", "このページをチャットで開く", "Ouvrir cette page dans le chat", "Apri questa pagina nella chat"],
+  "Interactive content: open in chat": ["互动内容：请在聊天中打开", "互動內容：請在聊天中打開", "インタラクティブな内容：チャットで開く", "Contenu interactif : ouvrir dans le chat", "Contenuto interattivo: apri nella chat"],
+  "text only": ["仅文本", "僅文字", "テキストのみ", "texte seul", "solo testo"],
+  Page: ["第", "第", "ページ", "Page", "Pagina"],
+  of: ["页，共", "頁，共", "/", "sur", "di"],
+  "A new chapter begins on this page": ["新的一章从这一页开始", "新的一章從這一頁開始", "この見開きから新しい章が始まります", "Un nouveau chapitre commence sur cette page", "Un nuovo capitolo inizia in questa pagina"],
+  "New writing": ["有新内容", "有新內容", "新しい文章", "Nouveau texte", "Nuovo testo"],
+  "New writing on page": ["新内容在第", "新內容在第", "新しい文章：ページ", "Nouveau texte page", "Nuovo testo a pagina"],
   "Theater mode": ["剧场模式", "劇場模式", "シアターモード", "Mode théâtre", "Modalità teatro"],
   "Hide the interface and read": ["隐藏界面，专心阅读", "隱藏介面，專心閱讀", "インターフェースを隠して読む", "Masquer l’interface et lire", "Nascondi l’interfaccia e leggi"],
   "Read in theater mode": ["用剧场模式阅读", "用劇場模式閱讀", "シアターモードで読む", "Lire en mode théâtre", "Leggi in modalità teatro"],
@@ -7327,6 +7512,3225 @@ class Theater {
   };
 }
 
+// src/moments.ts
+var PIN_TEXT_MAX = 420;
+var PIN_MEMORY_MAX = 160;
+var PINS_PER_CHAT = 120;
+var CHATS = 60;
+var clampStr = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
+function excerpt(text, max = PIN_TEXT_MAX) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= max)
+    return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:.\-–—]+$/, "")}…`;
+}
+function pinOf(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const r = raw;
+  const id = clampStr(r.id, 200);
+  const text = excerpt(clampStr(r.text, PIN_TEXT_MAX * 2));
+  if (!id || !text)
+    return null;
+  const color = clampStr(r.color, 40);
+  return {
+    id,
+    i: typeof r.i === "number" && Number.isFinite(r.i) ? Math.max(0, Math.round(r.i)) : 0,
+    text,
+    whole: r.whole === true,
+    who: clampStr(r.who, 80),
+    user: r.user === true,
+    color: color || null,
+    t: typeof r.t === "number" && Number.isFinite(r.t) ? r.t : 0
+  };
+}
+function normalizePins(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object")
+    return out;
+  for (const [chat, list] of Object.entries(raw)) {
+    if (!chat || !Array.isArray(list))
+      continue;
+    const pins = [];
+    for (const item of list) {
+      const p = pinOf(item);
+      if (p && !pins.some((x) => x.id === p.id))
+        pins.push(p);
+    }
+    if (pins.length)
+      out[chat] = sortPins(pins).slice(-PINS_PER_CHAT);
+  }
+  return trimChats(out);
+}
+var sortPins = (list) => [...list].sort((a, b) => a.i - b.i || a.t - b.t);
+function trimChats(data) {
+  const chats = Object.keys(data);
+  if (chats.length <= CHATS)
+    return data;
+  const next = { ...data };
+  chats.sort((a, b) => Math.max(...next[a].map((p) => p.t)) - Math.max(...next[b].map((p) => p.t))).slice(0, chats.length - CHATS).forEach((c) => delete next[c]);
+  return next;
+}
+var isPinned = (data, chatId, id) => !!chatId && !!data[chatId]?.some((p) => p.id === id);
+function setPin(data, chatId, pin) {
+  const list = (data[chatId] ?? []).filter((p) => p.id !== pin.id);
+  list.push(pin);
+  return trimChats({ ...data, [chatId]: sortPins(list).slice(-PINS_PER_CHAT) });
+}
+function removePins(data, chatId, ids) {
+  let changed = false;
+  const next = {};
+  for (const [chat, list] of Object.entries(data)) {
+    if (chatId && chat !== chatId) {
+      next[chat] = list;
+      continue;
+    }
+    const kept = list.filter((p) => !ids.has(p.id));
+    if (kept.length !== list.length)
+      changed = true;
+    if (kept.length)
+      next[chat] = kept;
+  }
+  return changed ? next : data;
+}
+function starPoints(cx, cy, r) {
+  const pts = [];
+  for (let k = 0;k < 10; k++) {
+    const a = -Math.PI / 2 + k * Math.PI / 5;
+    const rad = k % 2 ? r * 0.46 : r;
+    pts.push(`${(cx + Math.cos(a) * rad).toFixed(2)},${(cy + Math.sin(a) * rad).toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+var STAR_SVG = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/></svg>';
+var PIN_CSS = `
+.lf-pin-btn svg { fill: none; transition: fill .15s ease, color .15s ease, transform .15s ease; }
+.lf-pin-btn[data-on="1"] { color: #f2b84b; }
+.lf-pin-btn[data-on="1"] svg { fill: currentColor; }
+.lf-pin-btn:active svg { transform: scale(.85); }
+.lf-pin-list { display: flex; flex-direction: column; gap: 8px; }
+.lf-pin { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px);
+  background: var(--lumiverse-fill); border: 1px solid var(--lumiverse-border); border-left: 3px solid var(--lf-pin-c, #f2b84b); }
+.lf-pin-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lf-pin-head > svg { flex: none; width: 13px; height: 13px; fill: #f2b84b; stroke: #f2b84b; stroke-width: 2; stroke-linejoin: round; }
+.lf-pin-who { flex: 1; min-width: 0; font-weight: 600; color: var(--lumiverse-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: calc(13px * var(--lumiverse-font-scale, 1)); }
+.lf-pin-n { flex: none; color: var(--lumiverse-text-dim); font-variant-numeric: tabular-nums; font-size: calc(11px * var(--lumiverse-font-scale, 1)); }
+.lf-pin-text { margin: 0; color: var(--lumiverse-text-muted); line-height: 1.45; font-size: calc(13px * var(--lumiverse-font-scale, 1));
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.lf-pin-text[data-whole="1"] { font-style: italic; }
+.lf-pin-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.lf-pin-acts .lf-btn { flex: 0 0 auto; padding: 5px 10px; font-size: calc(12px * var(--lumiverse-font-scale, 1)); }
+.lf-pin-empty { padding: 12px; text-align: center; border-radius: var(--lumiverse-radius, 8px); border: 1px dashed var(--lumiverse-border);
+  color: var(--lumiverse-text-dim); font-size: calc(12px * var(--lumiverse-font-scale, 1)); }
+.lf-beat-star { fill: #f2b84b; stroke: var(--lumiverse-bg, #000); stroke-width: 1; stroke-linejoin: round; cursor: pointer; transition: transform .15s ease;
+  transform-box: fill-box; transform-origin: center; }
+.lf-beat-star:hover { transform: scale(1.25); }
+`;
+
+// src/book/flow.ts
+var MIN_PAGE = 380;
+var MAX_PAGE = 620;
+var SEGMENT_CHARS = 40000;
+var MARGIN_PX = { narrow: 16, normal: 30, wide: 50 };
+function geometry(areaW, areaH, margins, size = 1) {
+  const m = Math.round(MARGIN_PX[margins] * size);
+  const vpad = m + Math.round(22 * size);
+  const minPage = MIN_PAGE * size;
+  const maxPage = MAX_PAGE * size;
+  const deskX = 24;
+  const deskY = 14;
+  const fitW = Math.max(120, areaW - deskX);
+  const paperH = Math.max(160, Math.floor(areaH - deskY));
+  const textH = Math.max(80, paperH - vpad * 2);
+  const spread = fitW >= 2 * (minPage + 2 * m);
+  const pageW = spread ? Math.min(maxPage, Math.floor(fitW / 2 - 2 * m)) : Math.min(maxPage, Math.max(100, Math.floor(fitW - 2 * m)));
+  const gap = spread ? 2 * m : 0;
+  const paperW = spread ? 2 * (pageW + 2 * m) : pageW + 2 * m;
+  return { spread, pageW, textH, gap, step: pageW + gap, m, vpad, paperW, paperH };
+}
+var pageCount = (sw, g) => Math.max(1, Math.round((sw + g.gap) / g.step));
+var viewCount = (pages, g) => g.spread ? Math.ceil(pages / 2) : pages;
+var shiftOf = (view, g) => g.spread ? view * 2 * g.step : view * g.step;
+var viewOfPage = (page, g) => g.spread ? page >> 1 : page;
+var columnAt = (x, flowLeft, g) => Math.max(0, Math.floor((x - flowLeft + 1) / g.step));
+function layoutKey(g, parts) {
+  return [g.spread ? 2 : 1, g.pageW, g.textH, g.gap, ...parts].join("|");
+}
+function orderChapters(pieces, chapters) {
+  const at = new Map(pieces.map((p, i) => [p.id, i]));
+  return chapters.filter((c) => (at.get(c.startId) ?? 0) > 0).sort((a, b) => at.get(a.startId) - at.get(b.startId));
+}
+function segments(pieces, chapters, budget = SEGMENT_CHARS, breaks) {
+  const starts = new Map;
+  orderChapters(pieces, chapters).forEach((c, n) => starts.set(c.startId, n + 1));
+  const out = [];
+  let cur = null;
+  let size = 0;
+  let chapter = 0;
+  pieces.forEach((p, i) => {
+    const opens = i === 0 || starts.has(p.id);
+    if (opens)
+      chapter = i === 0 ? 0 : starts.get(p.id);
+    if (opens || !cur || size >= budget || breaks?.has(p.id)) {
+      cur = { id: `${chapter}:${p.id}`, chapter, opens, pieces: [] };
+      out.push(cur);
+      size = 0;
+    }
+    cur.pieces.push(p);
+    size += p.len;
+  });
+  return out;
+}
+
+// src/choices.ts
+var CHOICES_CSS = `
+.lf-choices { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px 12px; }
+.lf-choice { position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: calc(13px * var(--lumiverse-font-scale, 1));
+  color: var(--lumiverse-text); text-align: left; line-height: 1.35;
+  background: color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 45%, transparent);
+  box-shadow: 0 0 0 0 transparent;
+  opacity: 0; transform: translateY(6px);
+  animation: lf-choice-in .45s cubic-bezier(.2,.9,.3,1.2) forwards;
+  transition: background .2s ease, box-shadow .25s ease, transform .15s ease; }
+.lf-choice:nth-child(2) { animation-delay: .08s; }
+.lf-choice:nth-child(3) { animation-delay: .16s; }
+.lf-choice:nth-child(4) { animation-delay: .24s; }
+.lf-choice::before { content: '✦'; font-size: .85em; color: var(--lf-c, var(--lumiverse-primary)); }
+.lf-choice:hover { background: color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 22%, transparent);
+  box-shadow: 0 0 calc(var(--lf-room, 14px) * .8) color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 45%, transparent); }
+.lf-choice:active { transform: scale(.97); }
+.lf-choice:focus-visible { outline: 1.5px solid var(--lumiverse-primary-050); outline-offset: 2px; }
+.lf-choices.lf-used .lf-choice:not(.lf-picked) { opacity: .35 !important; }
+.lf-choice.lf-picked { background: color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 30%, transparent); }
+@keyframes lf-choice-in { to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .lf-choice { animation: none; opacity: 1; transform: none; } }
+`;
+function setComposer(text, focus = true) {
+  const ta = document.querySelector('[data-component="InputArea"] textarea');
+  if (!ta)
+    return false;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  setter ? setter.call(ta, text) : ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+  if (focus) {
+    ta.focus();
+    ta.setSelectionRange(text.length, text.length);
+  }
+  return true;
+}
+function clickSend() {
+  const btn = document.querySelector('[data-component="InputArea"] button[class*="sendBtn"]:not([disabled])');
+  if (!btn)
+    return false;
+  btn.click();
+  return true;
+}
+var MAX_OPTIONS = 4;
+var TAG_RE = /<flair-choice\b[^>]*>([\s\S]*?)<\/flair-choice>/gi;
+var cleanOption = (text) => text.replace(/<[^>]*>/g, "").trim().slice(0, 160);
+var sameOptions = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+function choicesIn(content) {
+  const out = [];
+  for (const m of content.matchAll(TAG_RE)) {
+    const clean = cleanOption(m[1] ?? "");
+    if (clean && !out.includes(clean))
+      out.push(clean);
+    if (out.length >= MAX_OPTIONS)
+      break;
+  }
+  return out;
+}
+
+class ChoiceManager {
+  ctx;
+  pending = new Map;
+  rendered = null;
+  onPick = null;
+  enabled = true;
+  sendOnPick = false;
+  constructor(ctx) {
+    this.ctx = ctx;
+  }
+  add(messageId, text) {
+    const clean = cleanOption(text);
+    if (!clean)
+      return;
+    const entry = this.pending.get(messageId) ?? { options: [], fixed: false };
+    if (entry.fixed)
+      return;
+    if (!entry.options.includes(clean) && entry.options.length < MAX_OPTIONS)
+      entry.options.push(clean);
+    this.pending.set(messageId, entry);
+    queueMicrotask(() => setTimeout(() => this.renderFor(messageId), 30));
+  }
+  swiped(messageId, content) {
+    if (!this.enabled)
+      return;
+    this.pending.set(messageId, { options: choicesIn(content), fixed: true });
+    this.renderFor(messageId);
+  }
+  renderFor(messageId) {
+    if (!this.enabled)
+      return;
+    const shown = this.rendered?.messageId === messageId ? this.rendered : null;
+    if (this.ctx.messages.getLatestMessageId() !== messageId) {
+      if (shown)
+        this.hide();
+      return;
+    }
+    const options = this.pending.get(messageId)?.options ?? [];
+    if (!options.length) {
+      if (shown)
+        this.hide();
+      return;
+    }
+    if (shown && shown.el.isConnected && sameOptions(shown.options, options))
+      return;
+    const el = this.ctx.dom.findMessageElement(messageId);
+    if (!el)
+      return;
+    const isCard = el.matches(':is([data-component="BubbleMessage"],[data-component="MinimalMessage"])');
+    this.hide();
+    const html = `<div class="lf-choices" role="group" aria-label="Suggested replies">${options.map((o, i) => `<button type="button" class="lf-choice" data-lf-choice="${i}"></button>`).join("")}</div>`;
+    const wrap = this.ctx.dom.inject(el, html, isCard ? "afterend" : "beforeend");
+    wrap.querySelectorAll(".lf-choice").forEach((btn, i) => {
+      btn.textContent = options[i];
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const box = wrap.querySelector(".lf-choices");
+        box?.classList.add("lf-used");
+        btn.classList.add("lf-picked");
+        setComposer(options[i]);
+        if (this.sendOnPick)
+          setTimeout(() => clickSend(), 60);
+        this.onPick?.(options[i]);
+      });
+    });
+    this.rendered = { messageId, el: wrap, options: [...options] };
+  }
+  pause() {
+    this.hide();
+    for (const entry of this.pending.values())
+      entry.fixed = false;
+  }
+  hide() {
+    const r = this.rendered;
+    if (!r)
+      return;
+    this.rendered = null;
+    this.ctx.dom.uninject(r.el);
+    r.el.replaceChildren();
+    r.el.hidden = true;
+  }
+  clear() {
+    this.hide();
+    this.pending.clear();
+  }
+}
+
+// src/book/source.ts
+var ignoreNames = [];
+var ignoreSels = [];
+var ignoreSig = "";
+function setIgnore(text) {
+  const names = [];
+  const sels = [];
+  for (const line of text.split(`
+`)) {
+    let t = line.trim().slice(0, 200);
+    if (!t)
+      continue;
+    const tag = /^<\/?([a-z][a-z0-9_-]*)\b[^>]*>?$/i.exec(t);
+    if (tag)
+      t = tag[1];
+    if (/^[a-z][a-z0-9_-]*$/i.test(t))
+      names.push(t.toLowerCase());
+    else {
+      try {
+        document.createDocumentFragment().querySelector(t);
+        sels.push(t);
+      } catch {}
+    }
+  }
+  const sig = `${names.join(",")}|${sels.join(`
+`)}`;
+  const changed = sig !== ignoreSig;
+  ignoreNames = names;
+  ignoreSels = sels;
+  ignoreSig = sig;
+  if (changed)
+    rawCache.clear();
+  return changed;
+}
+function dropIgnored(root) {
+  let any = false;
+  const each = (sel, whole) => {
+    try {
+      root.querySelectorAll(sel).forEach((e) => {
+        (whole ? e.closest(whole) ?? e : e).remove();
+        any = true;
+      });
+    } catch {}
+  };
+  for (const s of ignoreSels)
+    each(s);
+  for (const n of ignoreNames) {
+    each(n);
+    each(`[data-code-lang="${n}" i]`, "pre");
+    each(`code.language-${n}`, "pre");
+  }
+  return any;
+}
+function dropIgnoredText(text) {
+  for (const n of ["flair", "flair-choice", ...ignoreNames]) {
+    text = text.replace(new RegExp("```[ \\t]*" + n + "\\b[\\s\\S]*?```", "gi"), "");
+    text = text.replace(new RegExp("<" + n + "\\b[^>]*>[\\s\\S]*?</" + n + "\\s*>|<" + n + "\\b[^>]*/>", "gi"), "");
+  }
+  return text;
+}
+var plateLabel = "Interactive content: open in chat";
+var setPlateLabel = (s) => {
+  plateLabel = s;
+};
+var esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var plate = () => `<div class="lf-bk-plate" role="note">${esc(plateLabel)}</div>`;
+function hash(s) {
+  let h = 2166136261;
+  for (let i = 0;i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+var textLen = (html) => html.replace(/<[^>]*>/g, "").length;
+var SAFE_IMG = /^(https?:\/\/|\/|blob:|data:image\/(png|jpe?g|gif|webp);)/i;
+function safeStyle(v) {
+  if (/expression\s*\(|javascript:|@import|behavior\s*:|-moz-binding/i.test(v))
+    return null;
+  return v.replace(/position\s*:\s*(?:fixed|sticky)\s*(?:!important)?\s*;?/gi, "").replace(/url\(\s*(['"]?)(?!https?:|data:image\/|\/|blob:)[^)]*\)/gi, "none");
+}
+var ISLAND_CSS = `
+:host { display: block; margin: .6em 0; text-indent: 0; text-align: left; hyphens: none; color: var(--bk-ink); font-family: var(--bk-font); font-size: .94em; line-height: 1.45; overflow: hidden; max-width: 100%; }
+*, *::before, *::after { box-sizing: border-box; }
+img, svg, video { max-width: 100%; height: auto; }
+img { max-height: calc(var(--bk-th) * .88); object-fit: contain; }
+table { max-width: 100%; }
+p { text-indent: 0; }
+:host { position: relative; }
+.lf-bk-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(12,12,20,.78); color: #fff; font: 15px/22px system-ui, sans-serif; text-align: center; cursor: pointer; opacity: 0; transition: opacity .15s ease; z-index: 2; }
+:host(:hover) .lf-bk-x, .lf-bk-x:focus-visible { opacity: 1; }
+@media (pointer: coarse) { .lf-bk-x { opacity: .6; width: 28px; height: 28px; line-height: 28px; } }
+`;
+function cleanIsland(html) {
+  const doc = new DOMParser().parseFromString(`<body>${html}`, "text/html");
+  const dropped = dropIgnored(doc.body);
+  for (const el of Array.from(doc.body.querySelectorAll("script,iframe,frame,frameset,object,embed,link,meta,base,form,input,textarea,select,noscript,template,canvas,video,audio,[data-lumi-island-base]")))
+    el.remove();
+  for (const el of Array.from(doc.body.querySelectorAll("*"))) {
+    for (const a of Array.from(el.attributes)) {
+      const n = a.name.toLowerCase();
+      const v = a.value.trim();
+      if (n.startsWith("on") || n === "srcdoc" || n === "action" || n === "formaction" || n === "href" || n === "xlink:href")
+        el.removeAttribute(a.name);
+      else if ((n === "src" || n === "poster") && !SAFE_IMG.test(v))
+        el.removeAttribute(a.name);
+      else if (n === "style") {
+        const st = safeStyle(a.value);
+        if (st === null)
+          el.removeAttribute(a.name);
+        else if (st !== a.value)
+          el.setAttribute(a.name, st);
+      }
+    }
+    if (el.tagName === "BUTTON") {
+      el.setAttribute("type", "button");
+      el.setAttribute("disabled", "");
+      el.setAttribute("tabindex", "-1");
+    }
+    if (el.tagName === "STYLE")
+      el.textContent = (el.textContent ?? "").replace(/@import[^;]*;?/gi, "").replace(/expression\s*\(/gi, "(").replace(/javascript:/gi, "");
+  }
+  if (dropped && !doc.body.textContent?.trim() && !doc.body.querySelector("img,svg,video,canvas,hr"))
+    return "";
+  return doc.body.innerHTML;
+}
+var ignoreLabel = "Leave this out of the book";
+var setIgnoreLabel = (s) => {
+  ignoreLabel = s;
+};
+var HASHED = /^_?[A-Za-z]+_[A-Za-z0-9]{4,}_\d+$/;
+function islandRule(html) {
+  const doc = new DOMParser().parseFromString(`<body>${html}`, "text/html");
+  const top = Array.from(doc.body.children).find((e) => e.tagName !== "STYLE");
+  if (!top)
+    return null;
+  if (top.id && /^[A-Za-z][\w-]*$/.test(top.id))
+    return `#${top.id}`;
+  const cls = Array.from(top.classList).find((c) => /^[A-Za-z][\w-]*$/.test(c) && !HASHED.test(c));
+  return cls ? `${top.tagName.toLowerCase() === "div" || top.tagName.toLowerCase() === "section" ? "" : top.tagName.toLowerCase()}.${cls}` : null;
+}
+var island = (n) => `<div class="lf-bk-island" data-i="${n}"></div>`;
+function hydrateIslands(root, find, onLoad, onIgnore) {
+  for (const ph of Array.from(root.querySelectorAll(".lf-bk-island"))) {
+    if (ph.shadowRoot)
+      continue;
+    const id = ph.closest(".lf-bk-m")?.dataset.id;
+    const html = id ? find(id)?.islands[Number(ph.dataset.i)] : undefined;
+    if (html === undefined)
+      continue;
+    const sr = ph.attachShadow({ mode: "open" });
+    sr.innerHTML = `<style>${ISLAND_CSS}</style>${html}`;
+    if (onLoad)
+      sr.addEventListener("load", onLoad, true);
+    const rule = onIgnore ? islandRule(html) : null;
+    if (onIgnore && rule) {
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "lf-bk-x";
+      x.textContent = "×";
+      x.title = x.ariaLabel = ignoreLabel;
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onIgnore(rule, ph);
+      });
+      sr.appendChild(x);
+    }
+  }
+}
+function elementEnd(text, start) {
+  const m = /^<([a-z][a-z0-9]*)\b/i.exec(text.slice(start, start + 40));
+  if (!m)
+    return -1;
+  const re = new RegExp(`<(/?)${m[1]}\\b[^>]*?(/?)>`, "gi");
+  re.lastIndex = start;
+  let depth = 0;
+  let t;
+  while (t = re.exec(text)) {
+    if (t[1]) {
+      if (--depth === 0)
+        return re.lastIndex;
+    } else if (t[2]) {
+      if (depth === 0)
+        return re.lastIndex;
+    } else
+      depth++;
+  }
+  return -1;
+}
+var ISLAND_BLOCK = "div|section|table|center|article|aside|main|header|footer|nav|figure|ul|ol|details|blockquote|p";
+function extractIslands(text, islands) {
+  const start = new RegExp(`<style\\b|<(?:${ISLAND_BLOCK})\\b[^>]*\\bstyle\\s*=`, "gi");
+  let out = "";
+  let pos = 0;
+  let m;
+  while (m = start.exec(text)) {
+    const from = m.index;
+    let to;
+    let styleOnly = false;
+    if (/^<style/i.test(m[0])) {
+      let p = from;
+      for (;; ) {
+        const e = /<\/style\s*>/i.exec(text.slice(p));
+        if (!e) {
+          p = -1;
+          break;
+        }
+        p += e.index + e[0].length;
+        const ws = /^\s*/.exec(text.slice(p))[0].length;
+        if (/^<style\b/i.test(text.slice(p + ws))) {
+          p += ws;
+          continue;
+        }
+        break;
+      }
+      if (p < 0)
+        continue;
+      const q = p + /^\s*/.exec(text.slice(p))[0].length;
+      const e = /^<[a-z]/i.test(text.slice(q)) ? elementEnd(text, q) : -1;
+      styleOnly = e < 0;
+      to = e < 0 ? p : e;
+    } else {
+      to = elementEnd(text, from);
+      if (to < 0)
+        continue;
+    }
+    out += text.slice(pos, from);
+    if (!styleOnly) {
+      const cleaned = cleanIsland(text.slice(from, to));
+      if (cleaned.trim()) {
+        out += `
+
+\x05${islands.length}\x05
+
+`;
+        islands.push(cleaned);
+      }
+    }
+    pos = to;
+    start.lastIndex = to;
+  }
+  return out + text.slice(pos);
+}
+function inline(s) {
+  let t = esc(s);
+  t = t.replace(/&lt;span data-lf=&quot;([a-z-]{1,24})&quot;&gt;/g, '<span data-lf="$1">').replace(/&lt;\/span&gt;/g, "</span>");
+  t = t.replace(/&lt;(\/?)(b|strong|i|em|u|s|del|sup|sub|small|mark)&gt;/gi, "<$1$2>");
+  t = t.replace(/&lt;br\s*\/?&gt;/gi, "<br>");
+  t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt, url) => {
+    const u = url.replace(/&amp;/g, "&");
+    return SAFE_IMG.test(u) ? `<img src="${esc(u)}" alt="${alt}">` : alt;
+  });
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  t = t.replace(/\*\*([^*\n]+?)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^*\w])\*([^*\n]+?)\*(?![*\w])/g, "$1<em>$2</em>");
+  t = t.replace(/(^|[^_\w])_([^_\n]+?)_(?![_\w])/g, "$1<em>$2</em>");
+  t = t.replace(/~~([^~\n]+?)~~/g, "<del>$1</del>");
+  return t;
+}
+function flattenTags(text) {
+  return text.replace(/<\/?p\b[^>]*>/gi, `
+
+`).replace(/<h[1-6]\b[^>]*>/gi, `
+
+## `).replace(/<\/h[1-6]\s*>/gi, `
+
+`).replace(/<li\b[^>]*>/gi, `
+- `).replace(/<\/?(?:div|section|article|aside|main|header|footer|nav|figure|figcaption|center|table|thead|tbody|tfoot|tr|ul|ol|li)\b[^>]*>/gi, `
+`).replace(/<\/?(?:td|th)\b[^>]*>/gi, " ").replace(/<\/?font\b[^>]*>/gi, "").replace(/<span\b(?![^>]*\bdata-lf=)[^>]*>/gi, "");
+}
+function convert(raw, islands) {
+  let text = dropIgnoredText(raw.replace(/\r\n?/g, `
+`));
+  text = text.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "");
+  text = text.replace(/<(iframe|object|embed|form|canvas|video|audio)\b[\s\S]*?<\/\1\s*>|<(iframe|embed)\b[^>]*\/?>/gi, `
+
+\x01
+
+`);
+  text = extractIslands(text, islands);
+  text = flattenTags(text);
+  text = text.replace(/<details\b(?![^>]*\bstyle\s*=)[^>]*>([\s\S]*?)<\/details\s*>/gi, (_m, inner) => {
+    const sum = /<summary[^>]*>([\s\S]*?)<\/summary\s*>/i.exec(inner);
+    const body = inner.replace(/<summary[\s\S]*?<\/summary\s*>/i, "");
+    const label = esc((sum?.[1] ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim());
+    return `
+
+\x02<details><summary>${label}</summary>${convert(body, islands).replace(/\n/g, "&#10;")}</details>\x03
+
+`;
+  });
+  const lines = text.split(`
+`);
+  const out = [];
+  let para = [];
+  const flush = () => {
+    if (para.length)
+      out.push(`<p>${para.map(inline).join("<br>")}</p>`);
+    para = [];
+  };
+  for (let i = 0;i < lines.length; i++) {
+    const line = lines[i];
+    const isl = /^\u0005(\d+)\u0005$/.exec(line.trim());
+    if (line.startsWith("\x02") && line.endsWith("\x03")) {
+      flush();
+      out.push(line.slice(1, -1));
+    } else if (isl) {
+      flush();
+      out.push(island(Number(isl[1])));
+    } else if (line.trim() === "\x01") {
+      flush();
+      out.push(plate());
+    } else if (/^\s*```/.test(line)) {
+      flush();
+      const code = [];
+      for (i++;i < lines.length && !/^\s*```/.test(lines[i]); i++)
+        code.push(lines[i]);
+      out.push(`<pre><code>${esc(code.join(`
+`))}</code></pre>`);
+    } else if (/^\s*(\*\s*){3,}$|^\s*(-\s*){3,}$|^\s*(_\s*){3,}$/.test(line)) {
+      flush();
+      out.push("<hr>");
+    } else if (/^\s{0,3}#{1,6}\s+\S/.test(line)) {
+      flush();
+      out.push(`<h4>${inline(line.replace(/^\s{0,3}#{1,6}\s+/, ""))}</h4>`);
+    } else if (/^\s{0,3}>/.test(line)) {
+      flush();
+      const q = [];
+      for (;i < lines.length && /^\s{0,3}>/.test(lines[i]); i++)
+        q.push(lines[i].replace(/^\s{0,3}>\s?/, ""));
+      i--;
+      out.push(`<blockquote>${q.join(`
+`).split(/\n{2,}/).map((p) => `<p>${p.split(`
+`).map(inline).join("<br>")}</p>`).join("")}</blockquote>`);
+    } else if (/^\s{0,3}([-+]|\d+[.)])\s+\S/.test(line)) {
+      flush();
+      const ordered = /^\s{0,3}\d/.test(line);
+      const items = [];
+      for (;i < lines.length && /^\s{0,3}([-+]|\d+[.)])\s+\S/.test(lines[i]); i++)
+        items.push(lines[i].replace(/^\s{0,3}([-+]|\d+[.)])\s+/, ""));
+      i--;
+      const tag = ordered ? "ol" : "ul";
+      out.push(`<${tag}>${items.map((x) => `<li>${inline(x)}</li>`).join("")}</${tag}>`);
+    } else if (line.trim() === "")
+      flush();
+    else
+      para.push(line.trim());
+  }
+  flush();
+  return out.join("");
+}
+function rawToParts(raw) {
+  const islands = [];
+  return { html: convert(raw, islands), islands };
+}
+var KEEP = new Set(["P", "BR", "EM", "STRONG", "B", "I", "U", "S", "DEL", "CODE", "PRE", "BLOCKQUOTE", "UL", "OL", "LI", "H1", "H2", "H3", "H4", "H5", "H6", "HR", "SPAN", "DIV", "IMG", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "DETAILS", "SUMMARY", "SUP", "SUB", "SMALL", "MARK"]);
+var DROP = "script,style,button,input,textarea,select,canvas,video,audio,object,embed,form,[data-spindle-extension-root],[data-lf-skip]";
+var ATTRS = { IMG: ["src", "alt"], TD: ["colspan", "rowspan"], TH: ["colspan", "rowspan"], DETAILS: ["open"], SPAN: ["data-lf"] };
+var BLOCKS = new Set(["DIV", "TABLE", "SECTION", "ARTICLE", "ASIDE", "MAIN", "HEADER", "FOOTER", "NAV", "FIGURE", "CENTER"]);
+function harvest(content) {
+  const root = content.cloneNode(true);
+  const islands = [];
+  dropIgnored(root);
+  root.querySelectorAll(".spindle-message-tag-pending").forEach((e) => e.remove());
+  const originals = Array.from(content.querySelectorAll("[data-lumiverse-html-island]"));
+  Array.from(root.querySelectorAll("[data-lumiverse-html-island]")).forEach((el, k) => {
+    const inner = originals[k]?.shadowRoot?.innerHTML ?? "";
+    const cleaned = inner ? cleanIsland(inner) : "";
+    if (!cleaned.trim())
+      return el.remove();
+    const ph = document.createElement("div");
+    ph.className = "lf-bk-island";
+    ph.dataset.i = String(islands.length);
+    islands.push(cleaned);
+    el.replaceWith(ph);
+  });
+  for (const el of Array.from(root.querySelectorAll("[style]"))) {
+    if (!el.parentNode || !BLOCKS.has(el.tagName) || el.closest(".lf-bk-island"))
+      continue;
+    const outer = el.parentElement?.closest("[style]");
+    if (outer && outer !== root)
+      continue;
+    const cleaned = cleanIsland(el.outerHTML);
+    if (!cleaned.trim())
+      continue;
+    const ph = document.createElement("div");
+    ph.className = "lf-bk-island";
+    ph.dataset.i = String(islands.length);
+    islands.push(cleaned);
+    el.replaceWith(ph);
+  }
+  for (const el of Array.from(root.querySelectorAll("iframe"))) {
+    const p = document.createElement("div");
+    p.className = "lf-bk-plate";
+    p.setAttribute("role", "note");
+    p.textContent = plateLabel;
+    el.replaceWith(p);
+  }
+  for (const el of Array.from(root.querySelectorAll(DROP)))
+    el.remove();
+  for (const el of Array.from(root.querySelectorAll("*")).reverse()) {
+    if (!el.isConnected && el.parentNode === null)
+      continue;
+    if (el.classList.contains("lf-bk-plate") || el.classList.contains("lf-bk-island"))
+      continue;
+    if (!KEEP.has(el.tagName)) {
+      el.replaceWith(...Array.from(el.childNodes));
+      continue;
+    }
+    const keep = ATTRS[el.tagName] ?? [];
+    const style = el.getAttribute("style");
+    for (const a of Array.from(el.attributes))
+      if (!keep.includes(a.name))
+        el.removeAttribute(a.name);
+    const st = style === null ? null : safeStyle(style);
+    if (st)
+      el.setAttribute("style", st);
+    if (el.tagName === "IMG") {
+      const src = el.getAttribute("src") ?? "";
+      if (!SAFE_IMG.test(src))
+        el.remove();
+      else
+        el.setAttribute("loading", "eager");
+    } else if (el.tagName === "SPAN" && !el.hasAttribute("data-lf") && !el.hasAttribute("style"))
+      el.replaceWith(...Array.from(el.childNodes));
+    else if (el.tagName === "DIV" && !el.querySelector("p, pre, blockquote, ul, ol, table, img, hr, h1, h2, h3, h4, h5, h6, .lf-bk-plate, .lf-bk-island") && !el.classList.length) {
+      const p = document.createElement("p");
+      p.append(...Array.from(el.childNodes));
+      el.replaceWith(p);
+    }
+  }
+  const html = root.innerHTML.trim();
+  return { html: html && !/^<(p|div|pre|blockquote|ul|ol|table|h\d|hr|details)\b/i.test(html) ? `<p>${html}</p>` : html, islands };
+}
+var rawCache = new Map;
+var isHidden = (m) => m.extra?.hidden === true;
+function pieceOf(m, rendered) {
+  const swipe = m.swipe_id ?? 0;
+  let parts = { html: "", islands: [] };
+  let exact = false;
+  if (rendered) {
+    parts = harvest(rendered);
+    exact = true;
+  }
+  const content = m.content ?? "";
+  if (!rendered || !parts.html) {
+    exact = false;
+    const ck = `${m.id}|${swipe}|${hash(content)}`;
+    let r = rawCache.get(ck);
+    if (!r) {
+      r = rawToParts(content);
+      if (rawCache.size > 4000)
+        rawCache.clear();
+      rawCache.set(ck, r);
+    }
+    parts = r;
+  }
+  if (!parts.html.trim())
+    return null;
+  const choices = m.is_user ? [] : choicesIn(content);
+  const n = Array.isArray(m.swipes) ? m.swipes.length : 0;
+  const draft = !m.is_user && n > 1 ? { i: Math.min(n - 1, Math.max(0, swipe)), n } : undefined;
+  const inkLen = parts.islands.reduce((n, h) => n + h.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]*>/g, "").length, 0);
+  return {
+    id: m.id,
+    user: !!m.is_user,
+    name: m.name ?? "",
+    html: parts.html,
+    islands: parts.islands,
+    exact,
+    len: textLen(parts.html) + inkLen + 40,
+    key: `${swipe}.${hash(parts.html + parts.islands.join("\x00") + choices.join("\x01"))}${exact ? "x" : ""}${draft ? `d${draft.i}/${draft.n}` : ""}`,
+    src: content ? `${swipe}|${hash(content)}` : "",
+    at: typeof m.index_in_chat === "number" ? m.index_in_chat : -1,
+    choices,
+    ...draft ? { draft } : {}
+  };
+}
+function chatReader(ctx) {
+  const fn = ctx?.chats?.getMessages;
+  return typeof fn === "function" ? fn.bind(ctx.chats) : null;
+}
+var PAGE = 200;
+async function readChat(get, chatId, onBatch, stop) {
+  const first = await get(chatId, { limit: PAGE, tail: true });
+  if (stop())
+    return;
+  const total = Math.max(first.total ?? 0, first.data.length);
+  let end = total - first.data.length;
+  onBatch(first.data, end <= 0);
+  while (end > 0 && !stop()) {
+    const start = Math.max(0, end - PAGE);
+    const page = await get(chatId, { limit: end - start, offset: start });
+    if (stop())
+      return;
+    if (!page.data.length) {
+      onBatch([], true);
+      return;
+    }
+    end = start;
+    onBatch(page.data, end <= 0);
+  }
+}
+
+// src/book/store.ts
+var CHATS2 = 60;
+var CHAPTERS_PER_CHAT = 400;
+var clampStr2 = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
+function normalizeBook(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object")
+    return out;
+  const entries = Object.entries(raw).slice(0, CHATS2);
+  for (const [chat, v] of entries) {
+    if (!chat || !v || typeof v !== "object")
+      continue;
+    const r = v;
+    const seen = new Set;
+    const chapters = [];
+    for (const c of Array.isArray(r.chapters) ? r.chapters.slice(0, CHAPTERS_PER_CHAT) : []) {
+      if (!c || typeof c !== "object")
+        continue;
+      const o = c;
+      const startId = clampStr2(o.startId, 200);
+      if (!startId || seen.has(startId))
+        continue;
+      seen.add(startId);
+      const title = clampStr2(o.title, 120).trim();
+      chapters.push({
+        id: clampStr2(o.id, 80) || `c${chapters.length}`,
+        startId,
+        ...title ? { title } : {},
+        at: typeof o.at === "number" && Number.isFinite(o.at) ? o.at : 0
+      });
+    }
+    const rb = r.ribbon && typeof r.ribbon === "object" ? r.ribbon : null;
+    const id = rb ? clampStr2(rb.id, 200) : "";
+    const entry = { chapters };
+    if (r.covered === true)
+      entry.covered = true;
+    if (r.open === true)
+      entry.open = true;
+    if (id)
+      entry.ribbon = { id, off: typeof rb.off === "number" && rb.off >= 0 ? Math.min(5000, Math.round(rb.off)) : 0 };
+    if (chapters.length || entry.ribbon || entry.covered || entry.open)
+      out[chat] = entry;
+  }
+  return out;
+}
+function addChapter(data, chatId, startId, title, now = Date.now()) {
+  const cur = data[chatId] ?? { chapters: [] };
+  if (cur.chapters.some((c) => c.startId === startId))
+    return data;
+  const t = title?.trim().slice(0, 120);
+  const chapter = { id: `c${now.toString(36)}${cur.chapters.length}`, startId, ...t ? { title: t } : {}, at: now };
+  return { ...data, [chatId]: { ...cur, chapters: [...cur.chapters, chapter] } };
+}
+function renameChapter(data, chatId, id, title) {
+  const cur = data[chatId];
+  if (!cur?.chapters.some((c) => c.id === id))
+    return data;
+  const t = title.trim().slice(0, 120);
+  return {
+    ...data,
+    [chatId]: { ...cur, chapters: cur.chapters.map((c) => c.id === id ? { id: c.id, startId: c.startId, at: c.at, ...t ? { title: t } : {} } : c) }
+  };
+}
+function setRibbon(data, chatId, id, off) {
+  const cur = data[chatId] ?? { chapters: [] };
+  if (cur.ribbon?.id === id && cur.ribbon.off === off)
+    return data;
+  return { ...data, [chatId]: { ...cur, ribbon: { id, off } } };
+}
+function setFlag(data, chatId, flag, on) {
+  const cur = data[chatId] ?? { chapters: [] };
+  if (!!cur[flag] === on)
+    return data;
+  const { [flag]: _old, ...rest } = cur;
+  return { ...data, [chatId]: on ? { ...rest, [flag]: true } : rest };
+}
+function dropMessages(data, chatId, gone, order) {
+  const cur = data[chatId];
+  if (!cur)
+    return data;
+  const next = (id) => {
+    for (let i = order.indexOf(id) + 1;i > 0 && i < order.length; i++)
+      if (!gone.has(order[i]))
+        return order[i];
+    return null;
+  };
+  let changed = false;
+  const used = new Set;
+  const chapters = [];
+  for (const c of cur.chapters) {
+    let startId = c.startId;
+    if (gone.has(c.startId)) {
+      changed = true;
+      startId = next(c.startId);
+    }
+    if (!startId || used.has(startId)) {
+      changed = true;
+      continue;
+    }
+    used.add(startId);
+    chapters.push(startId === c.startId ? c : { ...c, startId });
+  }
+  let ribbon = cur.ribbon;
+  if (ribbon && gone.has(ribbon.id)) {
+    changed = true;
+    const n = next(ribbon.id);
+    ribbon = n ? { id: n, off: 0 } : undefined;
+  }
+  if (!changed)
+    return data;
+  const { ribbon: _r, ...rest } = cur;
+  return { ...data, [chatId]: { ...rest, chapters, ...ribbon ? { ribbon } : {} } };
+}
+
+// src/book/theme.ts
+var TEXTURES = ["plain", "parchment", "case", "petals", "holo", "foxed", "terminal"];
+var HEX = /^#[0-9a-f]{6}$/i;
+var DEFAULT_ORNAMENT = "❦";
+function sanitizeBook(raw) {
+  if (!raw || typeof raw !== "object")
+    return;
+  const r = raw;
+  if (![r.paper, r.ink, r.accent, r.binding].every((v) => typeof v === "string" && HEX.test(v)))
+    return;
+  const orn = typeof r.ornament === "string" ? r.ornament.replace(/[<>&"'\\]/g, "").trim().slice(0, 3) : "";
+  return {
+    paper: String(r.paper),
+    ink: String(r.ink),
+    accent: String(r.accent),
+    binding: String(r.binding),
+    ornament: orn || DEFAULT_ORNAMENT,
+    tex: TEXTURES.includes(r.tex) ? r.tex : "plain"
+  };
+}
+var NOISE = (r, g, b, a) => `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 ${r} 0 0 0 0 ${g} 0 0 0 0 ${b} 0 0 0 ${a} 0'/%3E%3C/filter%3E%3Crect width='90' height='90' filter='url(%23n)'/%3E%3C/svg%3E")`;
+var TEX = {
+  plain: "none",
+  parchment: `radial-gradient(ellipse at 18% 14%, rgba(140,90,30,.13), transparent 55%), radial-gradient(ellipse at 86% 92%, rgba(120,70,20,.15), transparent 50%), ${NOISE(0.35, 0.22, 0.1, 0.16)}`,
+  case: `linear-gradient(90deg, transparent 9%, rgba(170,40,40,.2) 9%, rgba(170,40,40,.2) calc(9% + 1px), transparent calc(9% + 1px)), repeating-linear-gradient(0deg, transparent 0 27px, rgba(30,30,30,.07) 27px 28px)`,
+  petals: `radial-gradient(circle at 12% 18%, rgba(240,120,170,.18) 0 3%, transparent 4%), radial-gradient(circle at 90% 84%, rgba(240,150,190,.2) 0 5%, transparent 6%), radial-gradient(circle at 72% 10%, rgba(255,255,255,.4) 0 3%, transparent 4%), radial-gradient(circle at 30% 92%, rgba(240,130,175,.14) 0 2%, transparent 3%)`,
+  holo: `repeating-linear-gradient(0deg, rgba(124,240,255,.05) 0 1px, transparent 1px 4px), radial-gradient(ellipse at 50% 0%, rgba(124,240,255,.14), transparent 60%)`,
+  foxed: `radial-gradient(ellipse at 15% 25%, rgba(120,70,20,.24), transparent 30%), radial-gradient(ellipse at 82% 70%, rgba(90,40,20,.26), transparent 28%), radial-gradient(circle at 60% 12%, rgba(110,20,20,.16), transparent 14%), radial-gradient(circle at 25% 88%, rgba(100,60,20,.18), transparent 12%)`,
+  terminal: `repeating-linear-gradient(0deg, rgba(109,255,176,.07) 0 1px, transparent 1px 3px), radial-gradient(ellipse at 50% 50%, rgba(109,255,176,.06), transparent 70%)`
+};
+var lum = (h) => {
+  const c = [1, 3, 5].map((i) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+var contrast = (a, b) => {
+  const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+};
+function giltFor(book) {
+  if (contrast(book.accent, book.binding) >= 3)
+    return book.accent;
+  return contrast(book.paper, book.binding) >= contrast(book.ink, book.binding) ? book.paper : book.ink;
+}
+var FIXED = {
+  cream: { paper: "#f4ecd8", ink: "#2b2418", dim: "#7a6c52", edge: "rgba(60,40,10,.3)" },
+  white: { paper: "#fbfbf9", ink: "#1d1d1d", dim: "#6a6a6a", edge: "rgba(0,0,0,.25)" },
+  night: { paper: "#1c1a17", ink: "#e6d9bf", dim: "#a89878", edge: "rgba(230,217,191,.3)" }
+};
+function paperTheme(paper, book) {
+  if (paper === "pack" && book) {
+    return {
+      vars: {
+        "--bk-paper": book.paper,
+        "--bk-ink": book.ink,
+        "--bk-dim": `color-mix(in srgb, ${book.ink} 58%, ${book.paper})`,
+        "--bk-edge": `color-mix(in srgb, ${book.ink} 32%, transparent)`,
+        "--bk-accent": book.accent
+      },
+      tex: TEX[book.tex],
+      ornament: book.ornament,
+      binding: book.binding,
+      gilt: giltFor(book)
+    };
+  }
+  const f = FIXED[paper === "pack" ? "cream" : paper];
+  return {
+    vars: {
+      "--bk-paper": paper === "pack" ? "color-mix(in srgb, var(--lf-c, var(--lumiverse-primary, #9370db)) 7%, #f4ecd8)" : f.paper,
+      "--bk-ink": f.ink,
+      "--bk-dim": f.dim,
+      "--bk-edge": f.edge,
+      "--bk-accent": "var(--lf-c, var(--lumiverse-primary, #9370db))"
+    },
+    tex: "none",
+    ornament: book?.ornament ?? DEFAULT_ORNAMENT,
+    binding: book?.binding ?? "color-mix(in srgb, var(--lf-c, var(--lumiverse-primary, #9370db)) 45%, #2a1d12)",
+    gilt: "#d9b765"
+  };
+}
+
+// src/book/turn.ts
+function resolveStyle(e) {
+  if (!e.motion || e.setting === "instant")
+    return "instant";
+  if (e.setting === "curl" || e.setting === "slide")
+    return e.setting;
+  return e.coarse && e.width < 768 ? "slide" : "curl";
+}
+var TURN_MS = 520;
+var SLIDE_MS = 320;
+var ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+class Leaf {
+  el;
+  shadeFront;
+  shadeBack;
+  raf = 0;
+  p = 0;
+  constructor(stage, box, front, back) {
+    const el = document.createElement("div");
+    el.className = "lf-bk-leaf";
+    Object.assign(el.style, { left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px` });
+    const f = document.createElement("div");
+    f.className = "lf-bk-lf lf-bk-lf-front";
+    const b = document.createElement("div");
+    b.className = "lf-bk-lf lf-bk-lf-back";
+    this.shadeFront = document.createElement("i");
+    this.shadeBack = document.createElement("i");
+    this.shadeFront.className = this.shadeBack.className = "lf-bk-shade";
+    f.append(front, this.shadeFront);
+    b.append(back, this.shadeBack);
+    el.append(f, b);
+    stage.appendChild(el);
+    this.el = el;
+    this.set(0);
+  }
+  set(p) {
+    this.p = Math.min(1, Math.max(0, p));
+    this.el.style.transform = `rotateY(${(-180 * this.p).toFixed(2)}deg)`;
+    const s = Math.sin(Math.PI * this.p);
+    this.shadeFront.style.opacity = String((0.42 * s * (this.p < 0.5 ? 1 : 0)).toFixed(3));
+    this.shadeBack.style.opacity = String((0.42 * s * (this.p >= 0.5 ? 1 : 0)).toFixed(3));
+  }
+  play(to, ms = TURN_MS) {
+    cancelAnimationFrame(this.raf);
+    const from = this.p;
+    const t0 = performance.now();
+    const span = Math.max(80, ms * Math.abs(to - from));
+    return new Promise((done) => {
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / span);
+        this.set(from + (to - from) * ease(t));
+        if (t < 1)
+          this.raf = requestAnimationFrame(step);
+        else {
+          this.raf = 0;
+          done();
+        }
+      };
+      this.raf = requestAnimationFrame(step);
+    });
+  }
+  destroy() {
+    cancelAnimationFrame(this.raf);
+    this.el.remove();
+  }
+}
+
+// src/book/book.ts
+var FONTS = {
+  serif: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif',
+  sans: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  readable: '"Atkinson Hyperlegible", Verdana, "Trebuchet MS", system-ui, sans-serif'
+};
+var MAX_FLOWS = 3;
+var CURL_MAX_CHARS = SEGMENT_CHARS * 2;
+var svg2 = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+var BOOK_ICON = svg2('<path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v15H5.5C4.7 19 4 18.3 4 17.5zM20 5.5C20 4.7 19.3 4 18.5 4H13v15h5.5c.8 0 1.5-.7 1.5-1.5z"/>');
+var ICON2 = {
+  close: svg2('<path d="M6 6l12 12M18 6L6 18"/>'),
+  chat: svg2('<path d="M4 5h16v11H9l-5 4z"/>'),
+  smaller: svg2('<path d="M4 18l5-12 5 12M6 14h6M17 9h4"/>'),
+  larger: svg2('<path d="M3 19l6-14 6 14M5.5 14h7M18 7v6M15 10h6"/>'),
+  pen: svg2('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
+  list: svg2('<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>'),
+  send: svg2('<path d="M4 12l16-8-6 16-3-7z"/>')
+};
+var WRITE_H = 64;
+var R3 = ":root[data-lf-book]";
+function bookHideCss(writeHere) {
+  return `
+${CHROME.map((c) => `${R3} ${c}`).join(`,
+`)} { display: none !important; }
+${R3} [data-component="MessageList"] { visibility: hidden !important; pointer-events: none !important; }
+${writeHere ? `${R3}:not([data-lf-compose]) [data-component="InputArea"] { display: none !important; }` : ""}
+`;
+}
+var BOOK_CSS = `
+.lf-bk-host { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; }
+:root[data-lf-book] .lf-bk-host { background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,.08), rgba(0,0,0,.5)); }
+.lf-bk-root, .lf-bk-root * { margin: 0; padding: 0; box-sizing: border-box; line-height: 1.2; text-align: left; }
+.lf-bk-root { position: absolute; left: 0; right: 0; top: 0; bottom: var(--bk-bottom, 0px); pointer-events: none; overscroll-behavior: none;
+  --bk-accent: var(--lf-c, var(--lumiverse-primary, #9370db)); --bk-paper: #f4ecd8; --bk-ink: #2b2418; --bk-dim: #7a6c52; --bk-edge: rgba(60,40,10,.3); }
+.lf-bk-desk { position: absolute; left: 0; right: 0; top: var(--bk-top, 48px); bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.lf-bk-write { position: relative; flex: none; width: var(--bk-paperw); height: 64px; margin-top: 8px; display: flex; gap: 8px; align-items: stretch; pointer-events: auto; }
+.lf-bk-root[data-write="0"] .lf-bk-write { display: none; }
+.lf-bk-write textarea { flex: 1; min-width: 0; resize: none; font-family: var(--bk-font); font-size: calc(15px * var(--bk-z, 1)); line-height: 1.4; color: var(--bk-ink); background: var(--bk-paper); border: 1px solid var(--bk-edge); border-radius: 8px; padding: 8px 12px; outline: none; box-shadow: none; text-align: left; user-select: text; -webkit-user-select: text; }
+.lf-bk-write textarea:focus { border-color: var(--bk-accent); }
+.lf-bk-write textarea::placeholder { color: var(--bk-dim); opacity: .85; }
+.lf-bk-write[data-err="1"] textarea { border-color: #c0392b; }
+.lf-bk-send { flex: none; width: 52px; border: 0; border-radius: 8px; background: var(--bk-accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; appearance: none; -webkit-tap-highlight-color: transparent; }
+.lf-bk-send[disabled] { opacity: .4; cursor: default; }
+.lf-bk-send:focus-visible { outline: 2px solid var(--bk-ink); outline-offset: 2px; }
+.lf-bk-send svg { width: 22px; height: 22px; }
+.lf-bk-island { display: block; margin: .6em 0; overflow: hidden; max-width: 100%; text-indent: 0; }
+.lf-bk { position: relative; flex: none; width: var(--bk-paperw); height: var(--bk-paperh); pointer-events: auto; touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }
+.lf-bk-paper { position: absolute; inset: 0; display: flex; border-radius: 6px; box-shadow: 0 10px 38px rgba(0,0,0,.45); }
+.lf-bk-paper i { flex: 1; background-color: var(--bk-paper); background-image: var(--bk-tex, none); }
+.lf-bk-paper i.l { border-radius: 6px 0 0 6px; box-shadow: inset -22px 0 18px -16px rgba(0,0,0,.3); }
+.lf-bk-paper i.r { border-radius: 0 6px 6px 0; box-shadow: inset 22px 0 18px -16px rgba(0,0,0,.3); }
+.lf-bk[data-sp="0"] .lf-bk-paper i.l { border-radius: 6px; box-shadow: none; }
+.lf-bk[data-sp="0"] .lf-bk-paper i.r { display: none; }
+.lf-bk-text { position: absolute; left: var(--bk-m); top: var(--bk-vp); width: var(--bk-tw); height: var(--bk-th); overflow: hidden; }
+.lf-bk-text[data-fade="1"] { opacity: 0; transition: opacity .12s ease; }
+.lf-bk-hd, .lf-bk-no, .lf-bk-fh, .lf-bk-fn { position: absolute; width: var(--bk-pw); font: calc(11px * var(--bk-z, 1))/1 var(--bk-font); letter-spacing: .14em; text-transform: uppercase; color: var(--bk-dim);
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.lf-bk-hd, .lf-bk-fh { top: calc(var(--bk-vp) / 2 - 6px); }
+.lf-bk-no, .lf-bk-fn { bottom: calc(var(--bk-vp) / 2 - 6px); }
+.lf-bk-hd, .lf-bk-no { left: var(--bk-m); }
+.lf-bk-fh, .lf-bk-fn { left: var(--bk-m); }
+.lf-bk-hd.r, .lf-bk-no.r { left: var(--bk-rx); }
+.lf-bk[data-sp="0"] .lf-bk-hd.r, .lf-bk[data-sp="0"] .lf-bk-no.r { display: none; }
+.lf-bk-root[data-headers="0"] .lf-bk-hd, .lf-bk-root[data-headers="0"] .lf-bk-no, .lf-bk-root[data-headers="0"] .lf-bk-fh, .lf-bk-root[data-headers="0"] .lf-bk-fn { display: none; }
+.lf-bk-no i { font-style: normal; text-transform: none; letter-spacing: .06em; opacity: .75; margin-left: .8em; }
+
+/* the flow: one segment, poured into columns the width of a page */
+.lf-bk-flow { width: var(--bk-tw); height: var(--bk-th); column-width: var(--bk-pw); column-gap: var(--bk-gap); column-fill: auto; overflow: visible;
+  font-family: var(--bk-font); font-size: var(--bk-fs); line-height: var(--bk-lh); color: var(--bk-ink); text-align: justify; hyphens: auto; -webkit-hyphens: auto;
+  widows: 2; orphans: 2; overflow-wrap: break-word; }
+.lf-bk-measure { position: absolute; top: 0; left: -200vw; visibility: hidden; pointer-events: none; }
+.lf-bk-flow p { margin: 0; text-indent: 1.4em; text-align: justify; line-height: var(--bk-lh); }
+.lf-bk-flow .lf-bk-ch { text-align: center; margin: 0 0 1.1em; padding-top: .5em; break-after: avoid; break-inside: avoid; }
+.lf-bk-ch small { display: block; font-size: .7em; letter-spacing: .24em; text-transform: uppercase; color: var(--bk-dim); }
+.lf-bk-ch span { display: block; font-size: 1.35em; font-weight: 600; margin-top: .3em; line-height: 1.2; }
+.lf-bk-ch small, .lf-bk-ch span, .lf-bk-ch i { text-align: center; }
+.lf-bk-ch i { display: block; font-style: normal; font-size: 1.5em; line-height: 1; margin-top: .45em; letter-spacing: .3em; text-indent: .3em; color: var(--bk-accent); opacity: .9; }
+.lf-bk-flow .lf-bk-m { display: block; text-align: justify; }
+.lf-bk-flow .lf-bk-m + .lf-bk-m { margin-top: .55em; }
+.lf-bk-flow .lf-bk-m[data-s] { break-inside: avoid; }
+.lf-bk-flow .lf-bk-ch + .lf-bk-m > p:first-child, .lf-bk-flow .lf-bk-m > hr + p, .lf-bk-flow .lf-bk-m > .lf-bk-who + p { text-indent: 0; }
+.lf-bk-flow .lf-bk-who { font-variant: small-caps; letter-spacing: .06em; color: var(--who, var(--bk-dim)); text-align: left; break-after: avoid; }
+.lf-bk-root[data-user="rule"] .lf-bk-m[data-u="1"] { border-left: 3px solid var(--bk-accent); padding-left: .7em; }
+.lf-bk-root[data-user="italic"] .lf-bk-m[data-u="1"] { font-style: italic; }
+.lf-bk-root[data-user="smallcaps"] .lf-bk-m[data-u="1"] > p:first-of-type::first-line { font-variant: small-caps; letter-spacing: .04em; }
+.lf-bk-flow blockquote { margin: .6em 1.2em; font-style: italic; }
+.lf-bk-flow blockquote p { text-indent: 0; }
+.lf-bk-flow hr { border: 0; height: 1.2em; margin: .7em 0; text-align: center; break-inside: avoid; }
+.lf-bk-flow hr::after { content: "* * *"; letter-spacing: .5em; color: var(--bk-dim); }
+.lf-bk-flow pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .82em/1.4 ui-monospace, Menlo, Consolas, monospace; background: rgba(0,0,0,.07); padding: .5em .7em; border-radius: 6px;
+  text-align: left; hyphens: none; margin: .5em 0; }
+.lf-bk-flow code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; }
+.lf-bk-flow img { display: block; max-width: 100%; max-height: calc(var(--bk-th) * .88); width: auto; height: auto; margin: .5em auto; object-fit: contain; break-inside: avoid; }
+.lf-bk-flow table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .9em; word-break: break-word; margin: .5em 0; }
+.lf-bk-flow td, .lf-bk-flow th { border: 1px solid var(--bk-edge); padding: .2em .4em; text-align: left; }
+.lf-bk-flow ul, .lf-bk-flow ol { margin: .4em 0; padding-left: 1.4em; text-align: left; }
+.lf-bk-flow li { padding: 0; }
+.lf-bk-flow details { border-left: 2px solid var(--bk-edge); padding-left: .6em; margin: .4em 0; }
+.lf-bk-flow summary { font-style: italic; }
+.lf-bk-flow h1, .lf-bk-flow h2, .lf-bk-flow h3, .lf-bk-flow h4, .lf-bk-flow h5, .lf-bk-flow h6 { font-size: 1.1em; text-align: left; margin: .6em 0 .3em; break-after: avoid; }
+.lf-bk-flow .lf-bk-ch { font-size: inherit; margin: 0 0 1.1em; text-align: center; }
+.lf-bk-plate { border: 1px dashed var(--bk-dim); color: var(--bk-dim); font: .78em/1.3 system-ui, sans-serif; text-align: center; padding: .7em; margin: .5em 0; break-inside: avoid; text-indent: 0; border-radius: 6px; }
+
+/* a blank page: the start of a new chapter */
+.lf-bk-blank { position: absolute; left: var(--bk-m); top: var(--bk-vp); width: var(--bk-pw); height: var(--bk-th); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  font-family: var(--bk-font); color: var(--bk-ink); text-align: center; }
+.lf-bk-blank[hidden] { display: none; }
+.lf-bk-blank small { font-size: 12px; letter-spacing: .24em; text-transform: uppercase; color: var(--bk-dim); }
+.lf-bk-blank input { width: 90%; max-width: 360px; font: inherit; font-size: 1.3em; text-align: center; color: var(--bk-ink); background: transparent; border: 0; border-bottom: 1px solid var(--bk-edge); border-radius: 0; padding: 6px 4px; outline: none; box-shadow: none; }
+.lf-bk-blank input:focus { border-bottom-color: var(--bk-accent); }
+.lf-bk-blank input::placeholder { color: var(--bk-dim); opacity: .8; }
+.lf-bk-blank p { font-size: 13px; color: var(--bk-dim); max-width: 280px; line-height: 1.4; text-align: center; }
+
+/* page turning */
+.lf-bk-stage { position: absolute; inset: 0; perspective: 2400px; pointer-events: none; }
+.lf-bk-under { position: absolute; top: 0; pointer-events: none; }
+.lf-bk-leaf { position: absolute; top: 0; transform-origin: left center; transform-style: preserve-3d; pointer-events: none; }
+.lf-bk-lf { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.lf-bk-lf-back { transform: rotateY(180deg); }
+.lf-bk-face { position: absolute; inset: 0; background-color: var(--bk-paper); background-image: var(--bk-tex, none); overflow: hidden; border-radius: 3px; }
+.lf-bk-face[data-h="l"] { box-shadow: inset -22px 0 18px -16px rgba(0,0,0,.3); }
+.lf-bk-face[data-h="r"] { box-shadow: inset 22px 0 18px -16px rgba(0,0,0,.3); }
+.lf-bk-ft { position: absolute; left: var(--bk-m); top: var(--bk-vp); width: var(--bk-pw); height: var(--bk-th); overflow: hidden; }
+.lf-bk-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to left, rgba(0,0,0,.6), transparent 75%); opacity: 0; }
+.lf-bk-lf-back .lf-bk-shade { background: linear-gradient(to right, rgba(0,0,0,.6), transparent 75%); }
+
+.lf-bk-edge { position: absolute; top: 0; bottom: 0; width: 13%; border: 0; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; appearance: none; }
+.lf-bk-edge.l { left: 0; cursor: w-resize; }
+.lf-bk-edge.r { right: 0; cursor: e-resize; }
+.lf-bk-edge[disabled] { cursor: default; }
+.lf-bk-edge::after { content: ""; position: absolute; top: 50%; width: 10px; height: 10px; border: solid var(--bk-dim); border-width: 0 2px 2px 0; opacity: 0; transition: opacity .2s ease; }
+.lf-bk-edge.r::after { right: 16px; transform: translateY(-50%) rotate(-45deg); }
+.lf-bk-edge.l::after { left: 16px; transform: translateY(-50%) rotate(135deg); }
+.lf-bk-edge:hover:not([disabled])::after, .lf-bk-edge:focus-visible::after { opacity: .6; }
+.lf-bk-edge:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: -3px; }
+.lf-bk-bar { position: absolute; top: calc(var(--app-interactive-safe-top, env(safe-area-inset-top, 0px)) / var(--lumiverse-ui-scale, 1) + 6px); right: 10px; display: flex; gap: 6px; pointer-events: auto; }
+.lf-bk-btn { width: 40px; height: 40px; border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: rgba(12,12,20,.72); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; appearance: none; font: inherit; -webkit-tap-highlight-color: transparent; }
+.lf-bk-btn:hover { background: rgba(12,12,20,.9); }
+.lf-bk-btn:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 1px; }
+.lf-bk-btn svg { width: 20px; height: 20px; }
+.lf-bk-chip { position: absolute; z-index: 5; left: 50%; bottom: calc(32px * var(--bk-z, 1)); transform: translateX(-50%); max-width: 90%; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--bk-edge); background: var(--bk-ink); color: var(--bk-paper);
+  font: 12px/1.2 system-ui, sans-serif; cursor: pointer; appearance: none; white-space: nowrap; }
+.lf-bk-chip[hidden] { display: none; }
+.lf-bk-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (pointer: coarse) { .lf-bk-edge { width: 18%; } }
+@media (prefers-reduced-motion: reduce) { .lf-bk-text[data-fade="1"], .lf-bk-edge::after { transition: none; } }
+
+/* drop caps */
+.lf-bk-root[data-dropcaps="1"] .lf-bk-flow .lf-bk-m[data-dc] > p:first-of-type { text-indent: 0; }
+.lf-bk-root[data-dropcaps="1"] .lf-bk-flow .lf-bk-m[data-dc] > p:first-of-type::first-letter { float: left; font-size: calc(var(--bk-lh) * 2.49em); line-height: .78; padding: 0 .08em 0 0; font-weight: 600; color: var(--dc, var(--bk-accent)); }
+
+/* the cover */
+.lf-bk-cvw { position: absolute; inset: 0; z-index: 30; perspective: 2200px; cursor: pointer; pointer-events: auto; }
+.lf-bk-cover { position: absolute; inset: -5px; border-radius: 9px; transform-origin: left center; display: flex; align-items: center; justify-content: center; color: var(--bk-gilt, #d9b765);
+  background: linear-gradient(135deg, rgba(255,255,255,.07), transparent 40%, rgba(0,0,0,.25)), var(--bk-bind, #3a2a1c); box-shadow: 0 12px 44px rgba(0,0,0,.55), inset 0 0 70px rgba(0,0,0,.4);
+  transition: transform .62s cubic-bezier(.5,0,.3,1), opacity .22s linear .42s; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.lf-bk-cvw[data-open="1"] { pointer-events: none; }
+.lf-bk-cvw[data-open="1"] .lf-bk-cover { transform: rotateY(-104deg); opacity: 0; }
+.lf-bk-cv-frame { position: absolute; inset: 6%; border: 2px solid var(--bk-gilt, #d9b765); outline: 1px solid color-mix(in srgb, var(--bk-gilt, #d9b765) 45%, transparent); outline-offset: 5px; border-radius: 3px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(14px * var(--bk-z, 1)); padding: 4%; text-align: center; font-family: var(--bk-font); overflow: hidden; }
+.lf-bk-cv-frame > * { text-align: center; max-width: 100%; }
+.lf-bk-cv-orn { font-size: calc(22px * var(--bk-z, 1)); letter-spacing: .3em; text-indent: .3em; opacity: .9; }
+.lf-bk-cv-portrait { width: min(34%, calc(190px * var(--bk-z, 1))); aspect-ratio: 1; border-radius: 50%; border: 2px solid var(--bk-gilt, #d9b765); object-fit: cover; box-shadow: 0 0 0 4px rgba(0,0,0,.25); }
+.lf-bk-cv-title { font-size: calc(28px * var(--bk-z, 1)); font-weight: 600; letter-spacing: .05em; line-height: 1.2; overflow-wrap: anywhere; }
+.lf-bk-cv-by { font-size: calc(14px * var(--bk-z, 1)); font-style: italic; opacity: .85; }
+.lf-bk-cv-hint { font-size: calc(11px * var(--bk-z, 1)); letter-spacing: .22em; text-transform: uppercase; opacity: .6; }
+
+/* dog-ears: folding a corner marks the page */
+.lf-bk-ear { position: absolute; top: 0; z-index: 3; width: calc(36px * var(--bk-z, 1)); height: calc(36px * var(--bk-z, 1)); padding: 0; border: 0; background: transparent; cursor: pointer; appearance: none; -webkit-tap-highlight-color: transparent; }
+.lf-bk-ear.l { left: 0; }
+.lf-bk-ear.r { right: 0; }
+.lf-bk-ear::before { content: ""; position: absolute; inset: 0; background: var(--bk-accent); opacity: 0; transition: opacity .15s ease; }
+.lf-bk-ear.r::before { clip-path: polygon(0 0, 100% 100%, 0 100%); }
+.lf-bk-ear.l::before { clip-path: polygon(100% 0, 0 100%, 100% 100%); }
+.lf-bk-ear:hover:not([disabled])::before, .lf-bk-ear:focus-visible::before { opacity: .38; }
+.lf-bk-ear[data-on="1"]::before { opacity: .95; }
+.lf-bk-ear:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: -3px; }
+.lf-bk-ear[disabled] { cursor: default; }
+.lf-bk[data-sp="0"] .lf-bk-ear.l, .lf-bk[data-blank="1"] .lf-bk-ear { display: none; }
+
+/* the heartbeat scrubber along the bottom edge */
+.lf-bk-scrub { position: absolute; left: 25%; right: 25%; bottom: 0; height: calc(26px * var(--bk-z, 1)); z-index: 4; touch-action: none; cursor: pointer; }
+.lf-bk[data-blank="1"] .lf-bk-scrub { display: none; }
+.lf-bk-scrub-panel { position: absolute; left: calc(-50% + var(--bk-m)); right: calc(-50% + var(--bk-m)); bottom: calc(4px * var(--bk-z, 1)); height: calc(62px * var(--bk-z, 1)); border-radius: 10px; overflow: hidden; touch-action: none;
+  background: color-mix(in srgb, var(--bk-paper) 92%, var(--bk-ink)); border: 1px solid var(--bk-edge); box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .16s ease, transform .16s ease; }
+.lf-bk-scrub[data-open="1"] .lf-bk-scrub-panel { opacity: 1; transform: none; pointer-events: auto; }
+.lf-bk-scrub-panel svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.lf-bk-scrub-tip { position: absolute; left: 10px; top: 5px; right: 10px; font: calc(11px * var(--bk-z, 1))/1.1 var(--bk-font); letter-spacing: .08em; color: var(--bk-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.sb-line { fill: none; stroke: var(--bk-accent); stroke-width: 1.6; stroke-linejoin: round; }
+.sb-mid { stroke: var(--bk-edge); stroke-dasharray: 2 4; }
+.sb-tick { stroke: var(--bk-dim); stroke-width: 1; opacity: .55; }
+.sb-star { fill: #f2b84b; stroke: var(--bk-paper); stroke-width: 1; stroke-linejoin: round; }
+.sb-head { stroke: var(--bk-ink); stroke-width: 2; }
+
+/* the contents page */
+.lf-bk-toc { position: absolute; inset: 0; z-index: 6; border-radius: 6px; overflow: auto; padding: calc(var(--bk-vp) + 6px) var(--bk-m); pointer-events: auto; color: var(--bk-ink); font-family: var(--bk-font); font-size: calc(16px * var(--bk-z, 1));
+  background-color: var(--bk-paper); background-image: var(--bk-tex, none); box-shadow: 0 10px 38px rgba(0,0,0,.45); user-select: none; -webkit-user-select: none; }
+.lf-bk-toc[hidden] { display: none; }
+.lf-bk-toc-in { max-width: 560px; margin: 0 auto; }
+.lf-bk-toc h2 { text-align: center; font-size: 1.35em; font-weight: 600; letter-spacing: .08em; margin-bottom: .2em; }
+.lf-bk-toc .orn { display: block; text-align: center; color: var(--bk-accent); margin-bottom: .9em; letter-spacing: .3em; text-indent: .3em; }
+.lf-bk-toc h3 { font-size: .72em; letter-spacing: .24em; text-transform: uppercase; color: var(--bk-dim); margin: 1.4em 0 .4em; font-weight: 600; }
+.lf-bk-toc ol { list-style: none; }
+.lf-bk-toc li { display: flex; align-items: baseline; gap: .3em; }
+.lf-bk-toc .go { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: .55em; padding: .38em 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; appearance: none; }
+.lf-bk-toc .go:hover .t, .lf-bk-toc .go:focus-visible .t { text-decoration: underline; }
+.lf-bk-toc .go:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 2px; }
+.lf-bk-toc .n { color: var(--bk-dim); font-size: .78em; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.lf-bk-toc .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.lf-bk-toc .lead { flex: 1; min-width: .6em; border-bottom: 1px dotted var(--bk-dim); transform: translateY(-.28em); }
+.lf-bk-toc .pg { color: var(--bk-dim); font-variant-numeric: tabular-nums; min-width: 2ch; text-align: right; }
+.lf-bk-toc .ed { flex: none; width: 2em; height: 2em; border: 0; border-radius: 50%; background: none; color: var(--bk-dim); cursor: pointer; font: inherit; opacity: .55; appearance: none; }
+.lf-bk-toc .ed:hover, .lf-bk-toc .ed:focus-visible { opacity: 1; }
+.lf-bk-toc input { flex: 1; min-width: 0; font: inherit; color: var(--bk-ink); background: transparent; border: 0; border-bottom: 1px solid var(--bk-accent); border-radius: 0; padding: .3em 0; outline: none; box-shadow: none; }
+.lf-bk-toc .mk { font-style: italic; }
+.lf-bk-toc .mk::before { content: "★"; color: #f2b84b; font-style: normal; margin-right: .5em; }
+
+/* the AI's options, set at the foot of the page, and the other drafts of a reply */
+.lf-bk-flow .lf-bk-opts { display: block; margin: .9em 0 0; padding-top: .6em; border-top: 1px solid var(--bk-edge); break-inside: avoid; text-indent: 0; text-align: left; }
+.lf-bk-opts button { display: flex; width: 100%; align-items: baseline; gap: .5em; padding: .3em 0; border: 0; background: none; color: var(--bk-ink); font: inherit; text-align: left; cursor: pointer; appearance: none; hyphens: none; -webkit-tap-highlight-color: transparent; }
+.lf-bk-opts button::before { content: "▸"; color: var(--bk-accent); flex: none; }
+.lf-bk-opts button:hover .t, .lf-bk-opts button:focus-visible .t { text-decoration: underline; }
+.lf-bk-opts button:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 2px; }
+.lf-bk-opts .lead { flex: 1; min-width: .5em; align-self: end; border-bottom: 1px dotted var(--bk-dim); transform: translateY(-.3em); }
+.lf-bk-opts .pg { flex: none; font-size: .78em; color: var(--bk-dim); white-space: nowrap; }
+.lf-bk-opts[data-used] button:not([data-picked]) { opacity: .4; }
+.lf-bk-flow .lf-bk-draft { display: flex; justify-content: flex-end; align-items: center; gap: .5em; margin-top: .5em; font-size: .78em; font-style: italic; color: var(--bk-dim); break-inside: avoid; text-indent: 0; text-align: right; }
+.lf-bk-draft button { width: 2em; height: 2em; padding: 0; border: 1px solid var(--bk-edge); border-radius: 50%; background: none; color: inherit; font: inherit; line-height: 1; cursor: pointer; appearance: none; font-style: normal; }
+.lf-bk-draft button:hover:not([disabled]) { color: var(--bk-ink); border-color: var(--bk-dim); }
+.lf-bk-draft button[disabled] { opacity: .3; cursor: default; }
+.lf-bk-draft button:focus-visible { outline: 2px solid var(--bk-accent); outline-offset: 2px; }
+
+/* the desk: warm light falls on the pages */
+.lf-bk-glow { position: absolute; inset: 0; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; background: radial-gradient(ellipse at 50% 108%, var(--bk-glow, rgba(255,170,80,.3)), transparent 72%); }
+.lf-bk-glow[data-on="1"] { opacity: 1; }
+.lf-bk-glow[data-breathe="1"] { animation: lf-bk-breathe 4.4s ease-in-out infinite; }
+@keyframes lf-bk-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
+
+/* ink settling into new writing */
+.lf-bk-ink { animation: lf-bk-ink .4s ease-out both; }
+@keyframes lf-bk-ink { from { opacity: 0; color: var(--bk-dim); } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .lf-bk-ink, .lf-bk-glow[data-breathe="1"], .lf-bk-cover { animation: none; transition: none; } }
+`;
+var TAG = (s) => s.replace(/[<>&"]/g, "");
+var plainOf = (html) => (new DOMParser().parseFromString(html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, ""), "text/html").body.textContent ?? "").replace(/\s+/g, " ").trim();
+var SAFE_SRC2 = /^(https?:|\/|blob:|data:image\/)/i;
+function inkRange(root, from, to, delay) {
+  if (to <= from)
+    return;
+  const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const todo = [];
+  let pos = 0;
+  for (let n = tw.nextNode();n; n = tw.nextNode()) {
+    const a = Math.max(from, pos);
+    const b = Math.min(to, pos + n.data.length);
+    if (b > a)
+      todo.push([n, a - pos, b - pos]);
+    pos += n.data.length;
+    if (pos >= to)
+      break;
+  }
+  for (const [n, a, b] of todo) {
+    const mid = a > 0 ? n.splitText(a) : n;
+    if (b - a < mid.data.length)
+      mid.splitText(b - a);
+    const span = document.createElement("span");
+    span.className = "lf-bk-ink";
+    span.style.animationDelay = `${Math.round(delay)}ms`;
+    mid.replaceWith(span);
+    span.appendChild(mid);
+  }
+}
+var frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+var wait = (ms) => new Promise((r) => setTimeout(r, ms));
+var editable2 = (el) => {
+  const e = el;
+  return !!e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
+};
+
+class Book {
+  h;
+  on_ = false;
+  chatId = "";
+  pieces = [];
+  breaks = new Set;
+  segs = [];
+  where = new Map;
+  byId = new Map;
+  sending = false;
+  g;
+  lk = "";
+  pos = { seg: 0, view: 0 };
+  flows = new Map;
+  counts = new Map;
+  shown = null;
+  ready = false;
+  busy = false;
+  loadToken = 0;
+  countToken = 0;
+  liveId = null;
+  liveReal = null;
+  livePoll;
+  reloadTimer;
+  saveTimer;
+  resizeTimer;
+  imgTimer;
+  imgPending = new Set;
+  goAfter = null;
+  pendingTitle = "";
+  chipTarget = null;
+  stop = null;
+  full = false;
+  coverEl = null;
+  coverTimer;
+  earIds = { l: null, r: null };
+  tocOn = false;
+  scrubTimer;
+  scrubDrag = false;
+  scrubFrame = 0;
+  inkRuns = [];
+  ornament = DEFAULT_ORNAMENT;
+  glowKey = "";
+  ui;
+  constructor(h) {
+    this.h = h;
+  }
+  get on() {
+    return this.on_;
+  }
+  toggle(from) {
+    if (this.on_)
+      this.exit();
+    else
+      this.enter(from);
+  }
+  enter(from) {
+    const chat = this.h.chatId();
+    if (this.on_ || !chat)
+      return;
+    this.on_ = true;
+    this.chatId = chat;
+    this.ready = false;
+    this.h.closeDrawer();
+    setPlateLabel(this.h.tr("Interactive content: open in chat"));
+    setIgnore(this.h.get().ignore);
+    setIgnoreLabel(this.h.tr("Leave this out of the book"));
+    document.documentElement.setAttribute("data-lf-book", "1");
+    this.h.style.textContent = bookHideCss(this.h.get().writeHere);
+    this.build();
+    this.maybeCover();
+    this.listen();
+    this.h.changed(true);
+    this.h.save(setFlag(this.h.data(), chat, "open", true));
+    this.load(from ?? null);
+  }
+  exit(reveal = true, keep = false) {
+    if (!this.on_)
+      return;
+    const id = reveal && this.ready ? this.currentId() : null;
+    this.saveRibbon();
+    if (!keep && this.chatId)
+      this.h.save(setFlag(this.h.data(), this.chatId, "open", false));
+    this.on_ = false;
+    this.ready = false;
+    this.loadToken++;
+    this.countToken++;
+    this.stop?.();
+    this.stop = null;
+    clearInterval(this.livePoll);
+    clearTimeout(this.reloadTimer);
+    clearTimeout(this.saveTimer);
+    clearTimeout(this.resizeTimer);
+    clearTimeout(this.imgTimer);
+    clearTimeout(this.coverTimer);
+    clearTimeout(this.scrubTimer);
+    cancelAnimationFrame(this.scrubFrame);
+    this.coverEl = null;
+    this.tocOn = false;
+    this.scrubDrag = false;
+    this.inkRuns = [];
+    this.glowKey = "";
+    this.imgPending.clear();
+    this.livePoll = undefined;
+    this.liveId = this.liveReal = null;
+    this.flows.clear();
+    this.counts.clear();
+    this.shown = null;
+    this.pieces = [];
+    this.segs = [];
+    this.busy = false;
+    this.h.root.replaceChildren();
+    this.h.root.style.top = this.h.root.style.height = this.h.root.style.bottom = "";
+    this.sending = false;
+    this.h.style.textContent = "";
+    document.documentElement.removeAttribute("data-lf-compose");
+    document.documentElement.removeAttribute("data-lf-book");
+    this.h.changed(false);
+    if (id)
+      this.h.reveal(id);
+  }
+  destroy() {
+    this.exit(false, true);
+  }
+  refresh() {
+    if (!this.on_ || !this.ready)
+      return;
+    if (setIgnore(this.h.get().ignore)) {
+      const id = this.currentId();
+      this.exit(false, true);
+      this.enter(id);
+      return;
+    }
+    this.h.style.textContent = bookHideCss(this.h.get().writeHere);
+    this.syncBottom(true);
+    this.relayout();
+    this.syncWrite();
+    this.glowKey = "";
+    this.glow();
+    this.ears();
+  }
+  build() {
+    const t = this.h.tr;
+    const root = document.createElement("div");
+    root.className = "lf-bk-root";
+    root.setAttribute("role", "region");
+    root.setAttribute("aria-label", t("Book mode"));
+    root.innerHTML = `
+<div class="lf-bk-desk">
+  <div class="lf-bk" data-sp="1">
+    <div class="lf-bk-paper"><i class="l"></i><i class="r"></i></div>
+    <div class="lf-bk-glow"></div>
+    <div class="lf-bk-text"></div>
+    <div class="lf-bk-blank" hidden><small></small><input type="text" maxlength="120" autocomplete="off" spellcheck="false"><p></p></div>
+    <div class="lf-bk-hd l"></div><div class="lf-bk-hd r"></div>
+    <div class="lf-bk-no l"></div><div class="lf-bk-no r"></div>
+    <div class="lf-bk-stage"></div>
+    <button type="button" class="lf-bk-edge l"></button>
+    <button type="button" class="lf-bk-edge r"></button>
+    <button type="button" class="lf-bk-ear l"></button><button type="button" class="lf-bk-ear r"></button>
+    <button type="button" class="lf-bk-chip" hidden></button>
+    <div class="lf-bk-scrub" aria-hidden="true"><div class="lf-bk-scrub-panel"><div class="lf-bk-scrub-tip"></div></div></div>
+    <div class="lf-bk-toc" hidden role="region"></div>
+  </div>
+  <div class="lf-bk-write"><textarea rows="2" maxlength="20000"></textarea><button type="button" class="lf-bk-send">${ICON2.send}</button></div>
+</div>
+<div class="lf-bk-bar">
+  <button type="button" class="lf-bk-btn" data-act="contents" aria-expanded="false">${ICON2.list}</button>
+  <button type="button" class="lf-bk-btn" data-act="smaller">${ICON2.smaller}</button>
+  <button type="button" class="lf-bk-btn" data-act="larger">${ICON2.larger}</button>
+  <button type="button" class="lf-bk-btn" data-act="reply" aria-pressed="false">${ICON2.pen}</button>
+  <button type="button" class="lf-bk-btn" data-act="chat">${ICON2.chat}</button>
+  <button type="button" class="lf-bk-btn" data-act="close">${ICON2.close}</button>
+</div>
+<div class="lf-bk-measure" aria-hidden="true"></div>
+<div class="lf-bk-live" aria-live="polite"></div>`;
+    const q = (s) => root.querySelector(s);
+    const chat = q('[data-act="chat"]');
+    const close = q('[data-act="close"]');
+    chat.title = chat.ariaLabel = t("Open this page in the chat");
+    close.title = close.ariaLabel = t("Close the book");
+    chat.addEventListener("click", () => this.exit(true));
+    close.addEventListener("click", () => this.exit(true));
+    const contents = q('[data-act="contents"]');
+    contents.title = contents.ariaLabel = t("Contents");
+    contents.addEventListener("click", () => this.toggleToc());
+    const toc = q(".lf-bk-toc");
+    toc.ariaLabel = t("Contents");
+    toc.addEventListener("click", (e) => this.tocClick(e));
+    const earL = q(".lf-bk-ear.l");
+    const earR = q(".lf-bk-ear.r");
+    earL.addEventListener("click", () => this.toggleEar("l"));
+    earR.addEventListener("click", () => this.toggleEar("r"));
+    const smaller = q('[data-act="smaller"]');
+    const larger = q('[data-act="larger"]');
+    smaller.title = smaller.ariaLabel = t("Smaller book");
+    larger.title = larger.ariaLabel = t("Larger book");
+    smaller.addEventListener("click", () => this.nudgeSize(-0.1));
+    larger.addEventListener("click", () => this.nudgeSize(0.1));
+    const reply = q('[data-act="reply"]');
+    reply.addEventListener("click", () => this.toggleHostReply());
+    const write = q(".lf-bk-write");
+    const ta = write.querySelector("textarea");
+    const sendBtn = write.querySelector(".lf-bk-send");
+    sendBtn.title = sendBtn.ariaLabel = t("Send");
+    ta.setAttribute("aria-label", t("Write your next line"));
+    ta.addEventListener("input", () => write.removeAttribute("data-err"));
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
+        e.preventDefault();
+        this.submit();
+      }
+    });
+    sendBtn.addEventListener("click", () => void this.submit());
+    const edgeL = q(".lf-bk-edge.l");
+    const edgeR = q(".lf-bk-edge.r");
+    edgeL.ariaLabel = t("Previous page");
+    edgeR.ariaLabel = t("Next page");
+    this.edgeDrag(edgeL, -1);
+    this.edgeDrag(edgeR, 1);
+    const blank = q(".lf-bk-blank");
+    const blankTitle = blank.querySelector("input");
+    blankTitle.placeholder = t("Chapter title (optional)");
+    blankTitle.setAttribute("aria-label", t("Chapter title (optional)"));
+    blankTitle.addEventListener("input", () => this.pendingTitle = blankTitle.value);
+    blank.querySelector("p").textContent = t("Write in the box below to begin this chapter. Turn back to leave it blank.");
+    const chip = q(".lf-bk-chip");
+    chip.addEventListener("click", () => {
+      const to = this.chipTarget;
+      this.hideChip();
+      if (to)
+        this.jump(to);
+    });
+    this.h.root.replaceChildren(root);
+    this.ui = {
+      root,
+      desk: q(".lf-bk-desk"),
+      book: q(".lf-bk"),
+      text: q(".lf-bk-text"),
+      blank,
+      blankTitle,
+      stage: q(".lf-bk-stage"),
+      measure: q(".lf-bk-measure"),
+      live: q(".lf-bk-live"),
+      chip,
+      write,
+      ta,
+      send: sendBtn,
+      reply,
+      smaller,
+      larger,
+      edgeL,
+      edgeR,
+      hdL: q(".lf-bk-hd.l"),
+      hdR: q(".lf-bk-hd.r"),
+      noL: q(".lf-bk-no.l"),
+      noR: q(".lf-bk-no.r"),
+      glow: q(".lf-bk-glow"),
+      earL,
+      earR,
+      scrub: q(".lf-bk-scrub"),
+      scrubPanel: q(".lf-bk-scrub-panel"),
+      scrubTip: q(".lf-bk-scrub-tip"),
+      toc,
+      contents
+    };
+    this.scrubWire();
+    this.applyVars();
+  }
+  applyVars() {
+    const u = this.ui;
+    const s = this.h.get();
+    u.root.style.setProperty("--bk-top", "calc(48px + var(--app-interactive-safe-top, env(safe-area-inset-top, 0px)) / var(--lumiverse-ui-scale, 1))");
+    const areaW = u.desk.clientWidth || u.root.clientWidth || window.innerWidth;
+    const areaH = (u.desk.clientHeight || Math.max(300, window.innerHeight - 160)) - (s.writeHere ? WRITE_H + 8 : 0);
+    const z = s.size * (areaW < 600 ? 0.85 : 1);
+    const g = geometry(areaW, areaH, s.margins, z);
+    const st = u.root.style;
+    st.setProperty("--bk-pw", `${g.pageW}px`);
+    st.setProperty("--bk-tw", `${g.spread ? 2 * g.pageW + g.gap : g.pageW}px`);
+    st.setProperty("--bk-th", `${g.textH}px`);
+    st.setProperty("--bk-gap", `${g.gap}px`);
+    st.setProperty("--bk-m", `${g.m}px`);
+    st.setProperty("--bk-vp", `${g.vpad}px`);
+    st.setProperty("--bk-rx", `${g.paperW / 2 + g.m}px`);
+    st.setProperty("--bk-paperw", `${g.paperW}px`);
+    st.setProperty("--bk-paperh", `${g.paperH}px`);
+    st.setProperty("--bk-fs", `calc(17px * var(--lumiverse-font-scale, 1) * ${s.scale * z})`);
+    st.setProperty("--bk-z", String(z));
+    u.root.dataset.write = s.writeHere ? "1" : "0";
+    const th = paperTheme(s.paper, this.h.pack());
+    for (const [k, v] of Object.entries(th.vars))
+      st.setProperty(k, v);
+    st.setProperty("--bk-tex", th.tex);
+    st.setProperty("--bk-bind", th.binding);
+    st.setProperty("--bk-gilt", th.gilt);
+    this.ornament = th.ornament;
+    u.root.dataset.dropcaps = s.dropCaps ? "1" : "0";
+    u.smaller.disabled = s.size <= 0.8 + 0.001;
+    u.larger.disabled = s.size >= 2 - 0.001;
+    st.setProperty("--bk-lh", String(s.lineHeight));
+    st.setProperty("--bk-font", FONTS[s.font]);
+    u.root.dataset.paper = s.paper;
+    u.root.dataset.user = s.user;
+    u.root.dataset.headers = s.headers ? "1" : "0";
+    u.book.dataset.sp = g.spread ? "1" : "0";
+    const lk = layoutKey(g, [s.scale, z, s.lineHeight, s.font, s.margins, this.h.lang(), s.dropCaps ? 1 : 0, th.ornament]);
+    const changed = lk !== this.lk;
+    this.g = g;
+    this.lk = lk;
+    return changed;
+  }
+  syncBottom(quiet = false) {
+    if (!this.on_)
+      return;
+    const input = document.querySelector('[data-component="InputArea"]');
+    const hr = this.h.root.getBoundingClientRect();
+    let bottom = 0;
+    if (input && hr.height) {
+      const r = input.getBoundingClientRect();
+      const zoom = hr.height / (this.h.root.offsetHeight || hr.height) || 1;
+      if (r.height > 0 && r.top < hr.bottom)
+        bottom = Math.max(0, (hr.bottom - r.top) / zoom);
+    }
+    const prev = this.ui.root.style.getPropertyValue("--bk-bottom");
+    if (prev !== `${Math.round(bottom)}px`) {
+      this.ui.root.style.setProperty("--bk-bottom", `${Math.round(bottom)}px`);
+      if (!quiet)
+        this.scheduleRelayout();
+    }
+  }
+  scheduleRelayout() {
+    clearTimeout(this.resizeTimer);
+    this.resizeTimer = setTimeout(() => this.relayout(), 120);
+  }
+  relayout() {
+    if (!this.on_ || !this.ready)
+      return;
+    const a = this.anchor();
+    const changed = this.applyVars();
+    if (!changed)
+      return;
+    for (const e of this.flows.values())
+      e.el.remove();
+    this.flows.clear();
+    this.shown = null;
+    this.rebuild(a);
+  }
+  chapterList() {
+    return this.h.data()[this.chatId]?.chapters ?? [];
+  }
+  toPieces(msgs) {
+    const out = [];
+    for (const m of msgs) {
+      if (isHidden(m))
+        continue;
+      const p = pieceOf(m, this.h.mounted(m.id));
+      if (p)
+        out.push(p);
+    }
+    return out;
+  }
+  fromMounted() {
+    const out = [];
+    for (const c of this.h.mountedCards()) {
+      const p = pieceOf({ id: c.id, is_user: c.user, name: c.name, content: "" }, c.el);
+      if (p)
+        out.push(p);
+    }
+    return out;
+  }
+  async load(from) {
+    const token = ++this.loadToken;
+    const chat = this.chatId;
+    this.pieces = [];
+    this.full = false;
+    this.breaks.clear();
+    const dead = () => token !== this.loadToken || !this.on_;
+    const want = from ?? this.h.data()[chat]?.ribbon?.id ?? null;
+    let first = true;
+    let held = [];
+    const begin = (list) => {
+      first = false;
+      this.pieces = list;
+      this.ready = true;
+      this.initial(from);
+    };
+    if (this.h.read) {
+      try {
+        await readChat(this.h.read, chat, (msgs, oldest) => {
+          if (oldest)
+            this.full = true;
+          const batch = this.toPieces(msgs);
+          if (batch[0])
+            this.breaks.add(batch[0].id);
+          if (first) {
+            const all = batch.concat(held);
+            if (want && !oldest && !all.some((p) => p.id === want)) {
+              held = all;
+              return;
+            }
+            begin(all);
+          } else if (batch.length) {
+            const a = this.anchor();
+            this.pieces = batch.concat(this.pieces);
+            this.rebuild(a);
+          }
+        }, dead);
+        return;
+      } catch (err) {
+        console.warn("[Lumi Flair] Book mode: reading the whole chat failed, using the messages on screen", err);
+        if (dead())
+          return;
+        if (!first)
+          return;
+      }
+    }
+    if (!dead() && first) {
+      const list = this.fromMounted();
+      if (list[0])
+        this.breaks.add(list[0].id);
+      begin(list);
+    }
+  }
+  initial(from) {
+    this.syncBottom(true);
+    this.applyVars();
+    this.segs = segments(this.pieces, this.chapterList(), SEGMENT_CHARS, this.breaks);
+    this.indexSegs();
+    this.pos = this.startPos(from);
+    this.paint();
+    this.announce();
+    this.startCount();
+    this.syncBottom();
+    this.armCover();
+    if (this.h.streaming() && !this.liveId)
+      this.startLive(null);
+  }
+  startPos(from) {
+    const rb = this.h.data()[this.chatId]?.ribbon;
+    const want = from ? { id: from, off: 0 } : rb;
+    const p = want && this.where.has(want.id) ? this.locate(want.id, want.off) : null;
+    if (p)
+      return p;
+    const last = this.segs.length - 1;
+    return last < 0 ? { seg: 0, view: 0 } : { seg: last, view: this.viewsOf(last) - 1 };
+  }
+  indexSegs() {
+    this.byId.clear();
+    for (const p of this.pieces)
+      this.byId.set(p.id, p);
+    this.where.clear();
+    this.segs.forEach((s, i) => s.pieces.forEach((p) => this.where.set(p.id, i)));
+  }
+  chapterTitle(n) {
+    if (n === 0)
+      return this.full && this.pieces[0] ? this.chapterList().find((c) => c.startId === this.pieces[0].id)?.title ?? "" : "";
+    const c = orderChapters(this.pieces, this.chapterList())[n - 1];
+    return c?.title ?? "";
+  }
+  chapterLabel(n) {
+    return `${this.h.tr("Chapter")} ${n + 1}`;
+  }
+  segSig(s) {
+    const last = s === this.segs[this.segs.length - 1];
+    const tail = last ? `${this.liveId ? "L" : ""}${this.h.choices().on ? "c" : ""}` : "";
+    return hash(`${s.id}|${s.opens ? 1 : 0}|${s.chapter}|${this.chapterTitle(s.chapter)}|${tail}|${s.pieces.map((p) => p.key).join(",")}`);
+  }
+  sectionHtml(p, dc = false) {
+    const who = this.h.group() && !p.user && p.name ? `<div class="lf-bk-who"${this.whoStyle(p.name)}>${esc(p.name)}</div>` : "";
+    const c = dc ? this.h.colorFor(p.name || this.h.characterName()) : null;
+    const cap = dc ? ` data-dc="1"${c && /^[#a-z0-9(),.\s%-]+$/i.test(c) ? ` style="--dc:${TAG(c)}"` : ""}` : "";
+    return `<section class="lf-bk-m" data-id="${esc(p.id)}"${p.user ? ' data-u="1"' : ""}${p.exact ? "" : ' data-raw="1"'}${p.len < 260 ? ' data-s="1"' : ""}${cap}>${who}${p.html}</section>`;
+  }
+  dcPiece(s) {
+    if (!s.opens)
+      return null;
+    return (s.pieces.slice(0, 3).find((p) => !p.user) ?? s.pieces[0])?.id ?? null;
+  }
+  tailHtml(s) {
+    if (s !== this.segs[this.segs.length - 1] || this.liveId)
+      return "";
+    const last = s.pieces[s.pieces.length - 1];
+    if (!last || last.user || last.id === "live")
+      return "";
+    const t = this.h.tr;
+    let out = "";
+    const d = last.draft;
+    if (d && d.n > 1) {
+      out += `<div class="lf-bk-draft"><button type="button" data-draft="-1" aria-label="${esc(t("Previous draft"))}"${d.i <= 0 ? " disabled" : ""}>‹</button><span>${esc(t("draft"))} ${d.i + 1} ${esc(t("of"))} ${d.n}</span><button type="button" data-draft="1" aria-label="${esc(t("Next draft"))}"${d.i >= d.n - 1 ? " disabled" : ""}>›</button></div>`;
+    }
+    if (this.h.choices().on && last.choices.length) {
+      const go = esc(t("turn the page"));
+      out += `<nav class="lf-bk-opts" aria-label="${esc(t("Ways the story could go"))}">${last.choices.map((o, i) => `<button type="button" data-opt="${i}"><span class="t">${esc(o)}</span><i class="lead"></i><span class="pg">${go}</span></button>`).join("")}</nav>`;
+    }
+    return out;
+  }
+  whoStyle(name) {
+    const c = this.h.colorFor(name);
+    return c && /^[#a-z0-9(),.\s%-]+$/i.test(c) ? ` style="--who:${TAG(c)}"` : "";
+  }
+  segHtml(s) {
+    let head = "";
+    if (s.opens) {
+      const title = this.chapterTitle(s.chapter);
+      head = `<h2 class="lf-bk-ch"><small>${esc(this.chapterLabel(s.chapter))}</small>${title ? `<span>${esc(title)}</span>` : ""}<i aria-hidden="true">${esc(this.ornament)}</i></h2>`;
+    }
+    const dc = this.dcPiece(s);
+    return head + s.pieces.map((p) => this.sectionHtml(p, p.id === dc)).join("") + this.tailHtml(s);
+  }
+  buildFlow(s) {
+    const el = document.createElement("div");
+    el.className = "lf-bk-flow";
+    el.lang = this.h.lang();
+    el.innerHTML = this.segHtml(s);
+    hydrateIslands(el, (id) => this.byId.get(id), () => this.imgLoaded(el), (rule) => this.h.addIgnore(rule));
+    el.addEventListener("load", () => this.imgLoaded(el), true);
+    el.addEventListener("click", (e) => this.flowClick(e));
+    return el;
+  }
+  imgLoaded(el) {
+    this.imgPending.add(el);
+    clearTimeout(this.imgTimer);
+    this.imgTimer = setTimeout(() => {
+      if (!this.on_ || !this.ready)
+        return;
+      if (this.busy)
+        return this.imgLoaded(el);
+      const hit = [...this.imgPending];
+      this.imgPending.clear();
+      let again = false;
+      for (const f of hit) {
+        const e = [...this.flows.values()].find((x) => x.el === f);
+        if (!e)
+          continue;
+        this.counts.delete(`${e.sig}|${this.lk}`);
+        again = true;
+        if (f === this.shown)
+          this.paint();
+      }
+      if (again)
+        this.startCount();
+    }, 200);
+  }
+  flowFor(i) {
+    const s = this.segs[i];
+    const sig = this.segSig(s);
+    let e = this.flows.get(s.id);
+    if (!e || e.sig !== sig) {
+      e?.el.remove();
+      e = { el: this.buildFlow(s), sig };
+      this.ui.measure.appendChild(e.el);
+    }
+    this.flows.delete(s.id);
+    this.flows.set(s.id, e);
+    while (this.flows.size > MAX_FLOWS) {
+      const k = this.flows.keys().next().value;
+      const old = this.flows.get(k);
+      if (old.el === this.shown) {
+        this.flows.delete(k);
+        this.flows.set(k, old);
+        continue;
+      }
+      old.el.remove();
+      this.flows.delete(k);
+    }
+    return e.el;
+  }
+  cachedPages(i) {
+    return this.counts.get(`${this.segSig(this.segs[i])}|${this.lk}`);
+  }
+  pagesOf(i) {
+    const key = `${this.segSig(this.segs[i])}|${this.lk}`;
+    let n = this.counts.get(key);
+    if (n === undefined) {
+      n = pageCount(this.flowFor(i).scrollWidth, this.g);
+      this.counts.set(key, n);
+    }
+    return n;
+  }
+  countOnly(i) {
+    if (this.cachedPages(i) !== undefined)
+      return;
+    const s = this.segs[i];
+    const live = this.flows.get(s.id);
+    const el = live && live.sig === this.segSig(s) ? live.el : this.buildFlow(s);
+    if (el !== live?.el)
+      this.ui.measure.appendChild(el);
+    this.counts.set(`${this.segSig(s)}|${this.lk}`, pageCount(el.scrollWidth, this.g));
+    if (el !== live?.el)
+      el.remove();
+  }
+  startCount() {
+    const token = ++this.countToken;
+    let i = 0;
+    const step = () => {
+      if (token !== this.countToken || !this.on_)
+        return;
+      const t0 = performance.now();
+      while (i < this.segs.length && performance.now() - t0 < 8)
+        this.countOnly(i++);
+      this.chrome();
+      if (i < this.segs.length)
+        setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  }
+  viewsOf(i) {
+    return viewCount(this.pagesOf(i), this.g);
+  }
+  get blank() {
+    return this.pos.seg >= this.segs.length;
+  }
+  nextPos(p) {
+    if (p.seg >= this.segs.length)
+      return null;
+    if (p.view < this.viewsOf(p.seg) - 1)
+      return { seg: p.seg, view: p.view + 1 };
+    return p.seg < this.segs.length - 1 ? { seg: p.seg + 1, view: 0 } : { seg: this.segs.length, view: 0 };
+  }
+  prevPos(p) {
+    if (p.seg >= this.segs.length)
+      return this.segs.length ? { seg: this.segs.length - 1, view: this.viewsOf(this.segs.length - 1) - 1 } : null;
+    if (p.view > 0)
+      return { seg: p.seg, view: p.view - 1 };
+    return p.seg > 0 ? { seg: p.seg - 1, view: this.viewsOf(p.seg - 1) - 1 } : null;
+  }
+  fragments(sec) {
+    return Array.from(sec.getClientRects()).filter((r) => r.width > 1 && r.height > 1);
+  }
+  anchor() {
+    if (!this.ready || this.blank || !this.shown)
+      return this.pieces.length ? { id: this.pieces[this.pieces.length - 1].id, off: 0 } : null;
+    const flow = this.shown;
+    const fl = flow.getBoundingClientRect().left;
+    const left = this.g.spread ? this.pos.view * 2 : this.pos.view;
+    let last = null;
+    for (const sec of Array.from(flow.querySelectorAll(":scope > .lf-bk-m"))) {
+      const fr = this.fragments(sec);
+      if (!fr.length)
+        continue;
+      const first = columnAt(fr[0].left, fl, this.g);
+      const end = columnAt(fr[fr.length - 1].left, fl, this.g);
+      last = { id: sec.dataset.id ?? "", off: Math.max(0, left - first) };
+      if (end >= left)
+        return last;
+    }
+    return last;
+  }
+  locate(id, off) {
+    const si = this.where.get(id);
+    if (si === undefined)
+      return null;
+    const flow = this.flowFor(si);
+    const sec = flow.querySelector(`:scope > .lf-bk-m[data-id="${CSS.escape(id)}"]`);
+    const pages = this.pagesOf(si);
+    if (!sec)
+      return { seg: si, view: 0 };
+    const fr = this.fragments(sec);
+    const first = fr.length ? columnAt(fr[0].left, flow.getBoundingClientRect().left, this.g) : 0;
+    return { seg: si, view: viewOfPage(Math.min(pages - 1, first + off), this.g) };
+  }
+  currentId() {
+    const a = this.anchor();
+    return a?.id && a.id !== "live" ? a.id : this.liveReal;
+  }
+  rebuild(a, keepView = false) {
+    const anchor = a === undefined ? this.anchor() : a;
+    const wasBlank = this.blank && this.ready;
+    this.segs = segments(this.pieces, this.chapterList(), SEGMENT_CHARS, this.breaks);
+    this.indexSegs();
+    const live = new Set(this.segs.map((s) => s.id));
+    for (const [k, e] of this.flows) {
+      const seg = this.segs.find((s) => s.id === k);
+      if (!live.has(k) || !seg || e.sig !== this.segSig(seg)) {
+        if (e.el === this.shown)
+          this.shown = null;
+        e.el.remove();
+        this.flows.delete(k);
+      }
+    }
+    let p = null;
+    if (this.goAfter && this.where.has(this.goAfter)) {
+      p = this.locate(this.goAfter, 0);
+      this.goAfter = null;
+    } else if (wasBlank && !keepView)
+      p = { seg: this.segs.length, view: 0 };
+    else if (anchor) {
+      const id = anchor.id === "live" && this.liveReal ? this.liveReal : anchor.id;
+      p = this.locate(id, anchor.off);
+    }
+    this.pos = p ?? (this.segs.length ? { seg: this.segs.length - 1, view: this.viewsOf(this.segs.length - 1) - 1 } : { seg: 0, view: 0 });
+    this.shown = null;
+    this.paint();
+    this.startCount();
+  }
+  shiftFor(view) {
+    return `translateX(${-shiftOf(view, this.g)}px)`;
+  }
+  paint() {
+    const u = this.ui;
+    const blank = this.blank;
+    u.blank.hidden = !blank;
+    u.book.dataset.blank = blank ? "1" : "0";
+    if (blank) {
+      if (this.shown)
+        this.park(this.shown);
+      this.shown = null;
+      u.text.replaceChildren();
+      const n = this.segs.length ? this.segs[this.segs.length - 1].chapter + 2 : 1;
+      u.blank.querySelector("small").textContent = `${this.h.tr("Chapter")} ${n}`;
+      u.blankTitle.value = this.pendingTitle;
+    } else {
+      const flow = this.flowFor(this.pos.seg);
+      const views = this.viewsOf(this.pos.seg);
+      this.pos.view = Math.min(this.pos.view, views - 1);
+      if (this.shown && this.shown !== flow)
+        this.park(this.shown);
+      if (flow.parentElement !== u.text)
+        u.text.replaceChildren(flow);
+      this.shown = flow;
+      flow.style.transition = "";
+      flow.style.transform = this.shiftFor(this.pos.view);
+    }
+    this.chrome();
+    this.edges();
+    this.syncWrite();
+    this.ears();
+  }
+  park(el) {
+    el.style.transition = "";
+    el.style.transform = "";
+    this.ui.measure.appendChild(el);
+  }
+  offsetOf(i) {
+    let n = 0;
+    for (let k = 0;k < i; k++) {
+      const c = this.cachedPages(k);
+      if (c === undefined)
+        return null;
+      n += c;
+    }
+    return n;
+  }
+  chrome() {
+    if (!this.on_ || !this.ready)
+      return;
+    const u = this.ui;
+    const g = this.g;
+    this.glow();
+    if (this.tocOn)
+      this.tocPages();
+    u.book.dataset.seg = String(this.pos.seg);
+    u.book.dataset.view = String(this.pos.view);
+    if (this.blank) {
+      for (const el of [u.hdL, u.hdR, u.noL, u.noR])
+        el.textContent = "";
+      u.book.dataset.pages = "0";
+      return;
+    }
+    const s = this.segs[this.pos.seg];
+    const pages = this.pagesOf(this.pos.seg);
+    const off = this.offsetOf(this.pos.seg);
+    const total = off === null ? null : this.offsetOf(this.segs.length);
+    const lp = g.spread ? this.pos.view * 2 : this.pos.view;
+    const no = (page) => page >= pages ? "" : off === null ? "" : String(off + page + 1);
+    const title = this.chapterTitle(s.chapter) || this.chapterLabel(s.chapter);
+    u.hdL.textContent = title;
+    u.hdR.textContent = this.h.characterName();
+    const raw = this.viewHasRaw();
+    const mark = raw ? `<i>${esc(this.h.tr("text only"))}</i>` : "";
+    u.noL.innerHTML = esc(no(lp));
+    u.noR.innerHTML = esc(no(lp + 1)) + (g.spread ? mark : "");
+    if (!g.spread)
+      u.noL.innerHTML = esc(no(lp)) + mark;
+    u.book.dataset.pages = String(pages);
+    u.book.dataset.page = String(off === null ? lp + 1 : off + lp + 1);
+    if (total !== null)
+      u.book.dataset.total = String(total);
+    else
+      delete u.book.dataset.total;
+  }
+  viewHasRaw() {
+    const flow = this.shown;
+    if (!flow)
+      return false;
+    const secs = flow.querySelectorAll(":scope > .lf-bk-m[data-raw]");
+    if (!secs.length)
+      return false;
+    const fl = flow.getBoundingClientRect().left;
+    const lo = this.g.spread ? this.pos.view * 2 : this.pos.view;
+    const hi = lo + (this.g.spread ? 1 : 0);
+    for (const sec of Array.from(secs)) {
+      for (const r of this.fragments(sec)) {
+        const c = columnAt(r.left, fl, this.g);
+        if (c >= lo && c <= hi)
+          return true;
+      }
+    }
+    return false;
+  }
+  edges() {
+    const u = this.ui;
+    u.edgeL.disabled = !this.prevPos(this.pos);
+    u.edgeR.disabled = !this.nextPos(this.pos);
+  }
+  announce() {
+    const d = this.ui.book.dataset;
+    const t = this.h.tr;
+    this.ui.live.textContent = this.blank ? t("A new chapter begins on this page") : d.total ? `${t("Page")} ${d.page} ${t("of")} ${d.total}` : `${t("Page")} ${d.page ?? ""}`;
+  }
+  styleNow() {
+    return resolveStyle({ setting: this.h.get().turn, motion: this.h.motion(), coarse: window.matchMedia("(pointer: coarse)").matches, width: window.innerWidth });
+  }
+  async turn(dir) {
+    if (!this.on_ || !this.ready || this.busy)
+      return;
+    const to = dir > 0 ? this.nextPos(this.pos) : this.prevPos(this.pos);
+    if (to)
+      await this.moveTo(to, dir);
+  }
+  async jump(to) {
+    if (!this.on_ || !this.ready || this.busy)
+      return;
+    this.pos = to;
+    this.paint();
+    this.after();
+  }
+  after() {
+    this.hideChip();
+    this.announce();
+    this.queueRibbon();
+  }
+  async moveTo(to, dir) {
+    this.busy = true;
+    this.hideChip();
+    this.h.turnSound();
+    try {
+      const style = this.styleNow();
+      const bigChars = [this.pos.seg, to.seg].some((i) => i < this.segs.length && this.segs[i].pieces.reduce((n, p) => n + p.len, 0) > CURL_MAX_CHARS);
+      if (style === "curl" && !bigChars)
+        await this.curl(this.pos, to, dir);
+      else if (style !== "instant")
+        await this.slide(this.pos, to);
+      this.pos = to;
+      this.paint();
+    } finally {
+      this.busy = false;
+    }
+    this.after();
+  }
+  async slide(from, to) {
+    if (from.seg === to.seg && !this.blank && this.shown) {
+      const f = this.shown;
+      f.style.transition = `transform ${SLIDE_MS}ms ease`;
+      f.style.transform = this.shiftFor(to.view);
+      await wait(SLIDE_MS + 40);
+      f.style.transition = "";
+      return;
+    }
+    const t = this.ui.text;
+    t.dataset.fade = "1";
+    await wait(130);
+    this.pos = to;
+    this.paint();
+    delete t.dataset.fade;
+    await wait(130);
+  }
+  face(p, half) {
+    const g = this.g;
+    const f = document.createElement("div");
+    f.className = "lf-bk-face";
+    f.dataset.h = g.spread ? half : "l";
+    if (p.seg >= this.segs.length) {
+      if (half === "l") {
+        const n = this.segs.length ? this.segs[this.segs.length - 1].chapter + 2 : 1;
+        f.innerHTML = `<div class="lf-bk-blank" style="left:var(--bk-m);top:var(--bk-vp)"><small>${esc(this.h.tr("Chapter"))} ${n}</small></div>`;
+      }
+      return f;
+    }
+    const s = this.segs[p.seg];
+    const pages = this.pagesOf(p.seg);
+    const page = (g.spread ? p.view * 2 : p.view) + (half === "r" ? 1 : 0);
+    if (page < pages) {
+      const ft = document.createElement("div");
+      ft.className = "lf-bk-ft";
+      const clone = this.flowFor(p.seg).cloneNode(true);
+      hydrateIslands(clone, (id) => this.byId.get(id));
+      clone.style.transform = `translateX(${-(shiftOf(p.view, g) + (half === "r" ? g.step : 0))}px)`;
+      ft.appendChild(clone);
+      const off = this.offsetOf(p.seg);
+      const hd = document.createElement("div");
+      hd.className = "lf-bk-fh";
+      hd.textContent = half === "l" || !g.spread ? this.chapterTitle(s.chapter) || this.chapterLabel(s.chapter) : this.h.characterName();
+      const no = document.createElement("div");
+      no.className = "lf-bk-fn";
+      no.textContent = off === null ? "" : String(off + page + 1);
+      f.append(ft, hd, no);
+    }
+    return f;
+  }
+  layers(a, b, dir) {
+    const g = this.g;
+    const stage = this.ui.stage;
+    const halfW = g.spread ? g.paperW / 2 : g.paperW;
+    const place = (left, face) => {
+      const u = document.createElement("div");
+      u.className = "lf-bk-under";
+      Object.assign(u.style, { left: `${left}px`, width: `${halfW}px`, height: `${g.paperH}px` });
+      u.appendChild(face);
+      stage.appendChild(u);
+    };
+    const spineX = g.spread ? halfW : 0;
+    let front;
+    let back;
+    if (g.spread) {
+      if (dir > 0)
+        place(spineX, this.face(b, "r"));
+      else
+        place(0, this.face(a, "l"));
+      front = this.face(a, "r");
+      back = this.face(b, "l");
+    } else {
+      if (dir > 0)
+        place(0, this.face(b, "l"));
+      front = this.face(a, "l");
+      back = document.createElement("div");
+      back.className = "lf-bk-face";
+    }
+    return new Leaf(stage, { left: spineX, width: halfW, height: g.paperH }, front, back);
+  }
+  clearStage() {
+    this.ui.stage.replaceChildren();
+  }
+  async curl(from, to, dir) {
+    const [a, b] = dir > 0 ? [from, to] : [to, from];
+    const leaf = this.layers(a, b, dir);
+    try {
+      if (dir > 0) {
+        leaf.set(0);
+        await frame();
+        await leaf.play(1);
+      } else {
+        leaf.set(1);
+        await frame();
+        await leaf.play(0);
+      }
+      this.pos = to;
+      this.paint();
+      await frame();
+    } finally {
+      this.clearStage();
+    }
+  }
+  edgeDrag(btn, dir) {
+    let x0 = 0;
+    let id = -1;
+    let leaf = null;
+    let target = null;
+    let started = false;
+    const half = () => this.g.spread ? this.g.paperW / 2 : this.g.paperW;
+    const progress = (x) => {
+      const d = dir > 0 ? x0 - x : x - x0;
+      const p = Math.min(1, Math.max(0, d / half()));
+      return dir > 0 ? p : 1 - p;
+    };
+    btn.addEventListener("pointerdown", (e) => {
+      if (btn.disabled || this.busy || e.button !== 0)
+        return;
+      x0 = e.clientX / this.zoom();
+      id = e.pointerId;
+      started = false;
+      btn.setPointerCapture(e.pointerId);
+    });
+    btn.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== id)
+        return;
+      const x = e.clientX / this.zoom();
+      if (!started && Math.abs(x - x0) > 6 && e.pointerType !== "touch" && this.styleNow() === "curl") {
+        target = dir > 0 ? this.nextPos(this.pos) : this.prevPos(this.pos);
+        if (!target)
+          return;
+        started = true;
+        this.busy = true;
+        const [a, b] = dir > 0 ? [this.pos, target] : [target, this.pos];
+        leaf = this.layers(a, b, dir);
+      }
+      if (started && leaf)
+        leaf.set(progress(x));
+    });
+    const end = async (e, cancel) => {
+      if (e.pointerId !== id)
+        return;
+      id = -1;
+      if (!started) {
+        if (!cancel && Math.abs(e.clientX / this.zoom() - x0) <= 6)
+          this.turn(dir);
+        return;
+      }
+      started = false;
+      const l = leaf;
+      const to = target;
+      leaf = null;
+      target = null;
+      if (!l || !to)
+        return;
+      const forward = dir > 0 ? l.p > 0.4 : l.p < 0.6;
+      const done = forward && !cancel;
+      if (done)
+        this.h.turnSound();
+      await l.play(dir > 0 ? done ? 1 : 0 : done ? 0 : 1);
+      if (done)
+        this.pos = to;
+      this.paint();
+      await frame();
+      this.clearStage();
+      this.busy = false;
+      if (done)
+        this.after();
+    };
+    btn.addEventListener("click", (e) => {
+      if (e.detail === 0)
+        this.turn(dir);
+    });
+    btn.addEventListener("pointerup", (e) => void end(e, false));
+    btn.addEventListener("pointercancel", (e) => void end(e, true));
+  }
+  zoom() {
+    const r = this.ui.root.getBoundingClientRect();
+    return r.width / (this.ui.root.offsetWidth || r.width) || 1;
+  }
+  listen() {
+    let sx = 0;
+    let sy = 0;
+    let sid = -1;
+    const key = (e) => {
+      if (e.key === "Escape") {
+        const tgt = e.target;
+        if (tgt?.closest?.(".lf-bk-toc input")) {
+          tgt.dataset.cancel = "1";
+          tgt.blur();
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if (tgt?.closest?.(".lf-bk-blank, .lf-bk-write")) {
+          tgt.blur();
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.tocOn)
+          this.toggleToc(false);
+        else
+          this.exit(true);
+        return;
+      }
+      if (editable2(e.target) || e.ctrlKey || e.metaKey || e.altKey)
+        return;
+      if (this.coverEl) {
+        this.openCover();
+        e.preventDefault();
+        return;
+      }
+      if (this.tocOn)
+        return;
+      const k = e.key;
+      const btn = e.target?.closest?.('button, a, [role="button"]');
+      if (k === "ArrowRight" || k === "PageDown" || k === " " && !btn)
+        this.turn(1);
+      else if (k === "ArrowLeft" || k === "PageUp")
+        this.turn(-1);
+      else if (k === "Home")
+        this.jump(this.segs.length ? { seg: 0, view: 0 } : this.pos);
+      else if (k === "End")
+        this.jump(this.segs.length ? { seg: this.segs.length - 1, view: this.viewsOf(this.segs.length - 1) - 1 } : this.pos);
+      else
+        return;
+      e.preventDefault();
+    };
+    const down = (e) => {
+      if (e.pointerType !== "touch")
+        return;
+      sid = e.pointerId;
+      sx = e.clientX;
+      sy = e.clientY;
+    };
+    const up = (e) => {
+      if (e.pointerId !== sid)
+        return;
+      sid = -1;
+      const dx = e.clientX - sx;
+      const dy = e.clientY - sy;
+      if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5)
+        this.turn(dx < 0 ? 1 : -1);
+    };
+    const resize = () => {
+      this.syncViewport();
+      this.syncBottom();
+      this.scheduleRelayout();
+    };
+    const book = this.ui.book;
+    document.addEventListener("keydown", key, true);
+    book.addEventListener("pointerdown", down);
+    book.addEventListener("pointerup", up);
+    window.addEventListener("resize", resize);
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", resize);
+    vv?.addEventListener("scroll", resize);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
+    ro?.observe(this.ui.desk);
+    const input = document.querySelector('[data-component="InputArea"]');
+    if (input)
+      ro?.observe(input);
+    this.stop = () => {
+      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("resize", resize);
+      vv?.removeEventListener("resize", resize);
+      vv?.removeEventListener("scroll", resize);
+      ro?.disconnect();
+    };
+  }
+  nudgeSize(by) {
+    const next = Math.round((this.h.get().size + by) * 100) / 100;
+    this.h.set({ bookSize: Math.min(2, Math.max(0.8, next)) });
+  }
+  toggleHostReply() {
+    const root = document.documentElement;
+    if (root.hasAttribute("data-lf-compose"))
+      root.removeAttribute("data-lf-compose");
+    else
+      root.setAttribute("data-lf-compose", "1");
+    this.ui.reply.setAttribute("aria-pressed", String(root.hasAttribute("data-lf-compose")));
+    const shown = root.hasAttribute("data-lf-compose");
+    this.ui.reply.title = this.ui.reply.ariaLabel = this.h.tr(shown ? "Hide the host reply box" : "Show the host reply box");
+    requestAnimationFrame(() => this.syncBottom());
+  }
+  syncWrite() {
+    if (!this.on_ || !this.ui)
+      return;
+    const u = this.ui;
+    const t = this.h.tr;
+    u.send.disabled = this.sending || !!this.liveId;
+    u.ta.placeholder = this.liveId ? t("A reply is being written…") : this.blank ? t("Begin this chapter…") : t("Write your next line…");
+    const shown = document.documentElement.hasAttribute("data-lf-compose");
+    u.reply.title = u.reply.ariaLabel = t(shown ? "Hide the host reply box" : "Show the host reply box");
+  }
+  async submit() {
+    const u = this.ui;
+    const text = u.ta.value.trim();
+    if (!text || this.sending || this.liveId)
+      return;
+    this.sending = true;
+    this.syncWrite();
+    let ok = false;
+    try {
+      ok = await this.h.send(text);
+    } catch {
+      ok = false;
+    }
+    if (!this.on_)
+      return;
+    this.sending = false;
+    if (ok) {
+      u.ta.value = "";
+      u.write.removeAttribute("data-err");
+      if (window.matchMedia("(pointer: coarse)").matches)
+        u.ta.blur();
+    } else {
+      u.write.dataset.err = "1";
+      u.ta.title = this.h.tr("It could not be sent. Try the host reply box.");
+    }
+    this.syncWrite();
+  }
+  syncViewport() {
+    const vv = window.visualViewport;
+    const host = this.h.root;
+    if (!vv)
+      return;
+    if (window.innerHeight - vv.height > 120) {
+      host.style.top = `${vv.offsetTop}px`;
+      host.style.height = `${vv.height}px`;
+      host.style.bottom = "auto";
+    } else
+      host.style.top = host.style.height = host.style.bottom = "";
+  }
+  queueRibbon() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.saveRibbon(), 700);
+  }
+  saveRibbon() {
+    if (!this.ready || !this.chatId)
+      return;
+    const a = this.anchor();
+    if (!a || a.id === "live")
+      return;
+    const next = setRibbon(this.h.data(), this.chatId, a.id, a.off);
+    if (next !== this.h.data())
+      this.h.save(next);
+  }
+  showChip(to, text) {
+    this.chipTarget = to;
+    this.ui.chip.textContent = text;
+    this.ui.chip.hidden = false;
+  }
+  hideChip() {
+    this.chipTarget = null;
+    if (this.on_)
+      this.ui.chip.hidden = true;
+  }
+  event(name, raw) {
+    if (!this.on_)
+      return;
+    const p = raw ?? {};
+    if (name === "CHAT_SWITCHED" || name === "CHAT_CHANGED") {
+      setTimeout(() => {
+        if (this.on_ && this.h.chatId() !== this.chatId)
+          this.exit(false, true);
+      }, 60);
+      return;
+    }
+    if (p.chatId && p.chatId !== this.chatId)
+      return;
+    if (!this.ready)
+      return;
+    switch (name) {
+      case "GENERATION_STARTED":
+        if (p.generationType !== "impersonate")
+          this.startLive(p.generationType === "continue" ? p.targetMessageId ?? null : null);
+        break;
+      case "GENERATION_ENDED":
+        this.liveReal = p.messageId ?? this.liveReal;
+        if (!this.endLive())
+          this.reloadSoon(300);
+        break;
+      case "GENERATION_STOPPED":
+        if (!this.endLive())
+          this.reloadSoon(300);
+        break;
+      case "MESSAGE_SENT":
+        this.sent(p.message);
+        break;
+      case "MESSAGE_DELETED":
+        this.deleted(new Set([...p.messageIds ?? [], ...p.messageId ? [p.messageId] : []]));
+        break;
+      case "MESSAGE_EDITED":
+      case "MESSAGE_SWIPED":
+        this.changed(p.message);
+        this.reloadSoon();
+        break;
+      case "CHARACTER_MESSAGE_RENDERED":
+      case "USER_MESSAGE_RENDERED":
+        this.reloadSoon();
+        break;
+    }
+  }
+  changed(m) {
+    if (!m?.id || typeof m.content !== "string")
+      return;
+    const i = this.pieces.findIndex((p) => p.id === m.id);
+    if (i < 0)
+      return;
+    const old = this.pieces[i];
+    const piece = pieceOf({ ...m, is_user: m.is_user ?? old.user, name: m.name ?? old.name }, this.h.mounted(m.id));
+    if (!piece || piece.key === old.key)
+      return;
+    const a = this.anchor();
+    this.pieces[i] = piece;
+    this.rebuild(a);
+  }
+  sent(m) {
+    if (!m?.id)
+      return;
+    if (this.blank) {
+      const title = this.pendingTitle.trim();
+      this.pendingTitle = "";
+      this.h.save(addChapter(this.h.data(), this.chatId, m.id, title));
+    }
+    if (!this.pieces.some((p) => p.id === m.id)) {
+      const piece = pieceOf({ ...m, is_user: m.is_user ?? true }, this.h.mounted(m.id));
+      if (piece) {
+        this.pieces.push(piece);
+        this.rebuildAt(m.id);
+      }
+    }
+    this.goAfter = m.id;
+    this.reloadSoon(200, 3);
+  }
+  rebuildAt(id) {
+    this.goAfter = id;
+    this.rebuild(null);
+  }
+  deleted(gone) {
+    if (!gone.size)
+      return;
+    const order = this.pieces.map((p) => p.id);
+    const a = this.anchor();
+    this.pieces = this.pieces.filter((p) => !gone.has(p.id));
+    const next = dropMessages(this.h.data(), this.chatId, gone, order);
+    if (next !== this.h.data())
+      this.h.save(next);
+    let anchor = a;
+    if (a && gone.has(a.id)) {
+      let id = "";
+      for (let i = order.indexOf(a.id) + 1;i > 0 && i < order.length; i++)
+        if (!gone.has(order[i])) {
+          id = order[i];
+          break;
+        }
+      anchor = id ? { id, off: 0 } : this.pieces.length ? { id: this.pieces[this.pieces.length - 1].id, off: 0 } : null;
+    }
+    this.rebuild(anchor);
+  }
+  reloadSoon(ms = 260, tries = 1) {
+    clearTimeout(this.reloadTimer);
+    this.reloadTimer = setTimeout(() => void this.reload(tries), ms);
+  }
+  async reload(tries = 1) {
+    if (!this.on_ || !this.ready || this.liveId)
+      return;
+    const chat = this.chatId;
+    let fresh;
+    let msgs = [];
+    try {
+      if (this.h.read) {
+        msgs = (await this.h.read(chat, { limit: PAGE, tail: true })).data;
+        fresh = this.toPieces(msgs);
+      } else
+        fresh = this.fromMounted();
+    } catch {
+      return;
+    }
+    if (!this.on_ || chat !== this.chatId || this.liveId)
+      return;
+    if (this.goAfter && !fresh.some((p) => p.id === this.goAfter) && tries > 1)
+      return this.reloadSoon(500, tries - 1);
+    const known = new Map(this.pieces.map((p) => [p.id, p]));
+    fresh = fresh.map((f) => {
+      const old = known.get(f.id);
+      return old && old.exact && !f.exact && old.src && old.src === f.src ? old : f;
+    });
+    const firstFresh = fresh[0]?.id;
+    const at = firstFresh ? this.pieces.findIndex((p) => p.id === firstFresh) : -1;
+    const head = at >= 0 ? this.pieces.slice(0, at) : this.pieces.filter((p) => p.id !== "live" && !fresh.some((f) => f.id === p.id));
+    const next = head.concat(fresh);
+    const same = next.length === this.pieces.length && next.every((p, i) => p.id === this.pieces[i].id && p.key === this.pieces[i].key);
+    if (same && !this.goAfter)
+      return;
+    const a = this.anchor();
+    this.pieces = next;
+    this.rebuild(a);
+    this.goAfter = null;
+  }
+  startLive(target) {
+    if (this.liveId)
+      return;
+    const id = target && this.pieces.some((p) => p.id === target) ? target : "live";
+    this.liveId = id;
+    this.liveReal = target;
+    if (id === "live") {
+      this.inkRuns = [];
+      this.pieces.push({ id: "live", user: false, name: this.h.characterName(), html: "", islands: [], exact: true, len: 40, key: "live", src: "", at: -1, choices: [] });
+      const a = this.anchor();
+      this.rebuild(a);
+    }
+    clearInterval(this.livePoll);
+    this.livePoll = setInterval(() => this.pollLive(), 125);
+    this.syncWrite();
+  }
+  pollLive() {
+    if (!this.on_ || !this.liveId)
+      return;
+    const el = this.h.streaming();
+    if (el)
+      this.updateLive(harvest(el));
+  }
+  endPage(sec, flow) {
+    const fr = this.fragments(sec);
+    const r = fr.length ? fr[fr.length - 1] : sec.getBoundingClientRect();
+    return columnAt(r.left, flow.getBoundingClientRect().left, this.g);
+  }
+  updateLive(h) {
+    const id = this.liveId;
+    const p = id ? this.pieces.find((x) => x.id === id) : null;
+    if (!p || p.html === h.html && JSON.stringify(p.islands) === JSON.stringify(h.islands))
+      return;
+    const si = this.where.get(p.id);
+    p.html = h.html;
+    p.islands = h.islands;
+    p.len = h.html.replace(/<[^>]*>/g, "").length + 40;
+    p.key = `l${hash(h.html + JSON.stringify(h.islands))}`;
+    if (si === undefined)
+      return;
+    const seg = this.segs[si];
+    const entry = this.flows.get(seg.id);
+    const flow = this.shown;
+    const sec = flow && entry?.el === flow ? flow.querySelector(`:scope > .lf-bk-m[data-id="${CSS.escape(p.id)}"]`) : null;
+    if (!flow || !sec || this.blank || this.pos.seg !== si) {
+      if (entry) {
+        entry.el.remove();
+        this.flows.delete(seg.id);
+      }
+      if (this.shown && !this.shown.isConnected)
+        this.shown = null;
+      if (this.pos.seg !== si && !this.busy)
+        this.showChip({ seg: si, view: this.liveView(si) }, this.h.tr("New writing"));
+      return;
+    }
+    const before = this.endPage(sec, flow);
+    const wasFollowing = viewOfPage(before, this.g) === this.pos.view;
+    const prevLen = sec.textContent?.length ?? 0;
+    const body = this.sectionHtml(p, this.dcPiece(seg) === p.id);
+    const tmp = document.createElement("template");
+    tmp.innerHTML = body;
+    sec.replaceChildren(...Array.from(tmp.content.firstElementChild.childNodes));
+    hydrateIslands(sec, (i) => this.byId.get(i), () => this.imgLoaded(flow), (rule) => this.h.addIgnore(rule));
+    this.ink(sec, prevLen);
+    if (p.len >= 260)
+      sec.removeAttribute("data-s");
+    entry.sig = this.segSig(seg);
+    const pages = pageCount(flow.scrollWidth, this.g);
+    this.counts.set(`${entry.sig}|${this.lk}`, pages);
+    const after = this.endPage(sec, flow);
+    const toView = viewOfPage(after, this.g);
+    if (toView > this.pos.view && !this.busy) {
+      if (this.h.get().autoTurn && wasFollowing)
+        this.moveTo({ seg: si, view: toView }, 1);
+      else
+        this.showChip({ seg: si, view: toView }, `${this.h.tr("New writing on page")} ${this.pageNumber(si, after)}`);
+    }
+    this.chrome();
+    this.edges();
+  }
+  liveView(si) {
+    return Math.max(0, this.viewsOf(si) - 1);
+  }
+  pageNumber(si, page) {
+    const off = this.offsetOf(si);
+    return String(off === null ? page + 1 : off + page + 1);
+  }
+  endLive() {
+    clearInterval(this.livePoll);
+    this.livePoll = undefined;
+    if (!this.liveId)
+      return false;
+    const id = this.liveId;
+    this.liveId = null;
+    this.inkRuns = [];
+    if (id === "live")
+      this.pieces = this.pieces.filter((p) => p.id !== "live");
+    this.reloadSoon(300);
+    this.syncWrite();
+    return true;
+  }
+  ink(sec, prevLen) {
+    if (!this.h.get().ink || !this.h.motion())
+      return;
+    const now = performance.now();
+    const len = sec.textContent?.length ?? 0;
+    this.inkRuns = this.inkRuns.filter((r) => now - r.t < 420);
+    if (len > prevLen)
+      this.inkRuns.push({ from: prevLen, to: len, t: now });
+    for (const r of this.inkRuns)
+      inkRange(sec, r.from, r.to, r.t - now);
+  }
+  glow() {
+    if (!this.on_ || !this.ui)
+      return;
+    const s = this.h.get();
+    const light = s.light ? this.h.light() : "none";
+    const map = {
+      candle: "rgba(255,160,70,.34)",
+      night: "rgba(255,200,130,.2)",
+      dusk: "rgba(255,150,90,.22)",
+      dawn: "rgba(255,190,170,.22)",
+      neon: "color-mix(in srgb, var(--bk-accent) 24%, transparent)"
+    };
+    const c = map[light];
+    const breathe = !!c && light === "candle" && this.h.motion();
+    const key = `${c ?? ""}|${breathe ? 1 : 0}`;
+    if (key === this.glowKey)
+      return;
+    this.glowKey = key;
+    const g = this.ui.glow;
+    if (c)
+      g.style.setProperty("--bk-glow", c);
+    g.dataset.on = c ? "1" : "0";
+    g.dataset.breathe = breathe ? "1" : "0";
+  }
+  maybeCover() {
+    const s = this.h.get();
+    if (s.cover === "never" || !this.h.motion())
+      return;
+    const seen = !!this.h.data()[this.chatId]?.covered;
+    if (s.cover === "once" && seen)
+      return;
+    const t = this.h.tr;
+    const el = document.createElement("div");
+    el.className = "lf-bk-cvw";
+    const cover = document.createElement("div");
+    cover.className = "lf-bk-cover";
+    const frame = document.createElement("div");
+    frame.className = "lf-bk-cv-frame";
+    const mk = (cls, text) => {
+      const d = document.createElement("div");
+      d.className = cls;
+      d.textContent = text;
+      return d;
+    };
+    const name = this.h.characterName();
+    const title = mk("lf-bk-cv-title", name || t("Our story"));
+    frame.append(mk("lf-bk-cv-orn", this.ornament));
+    const src = this.h.portrait();
+    if (src && SAFE_SRC2.test(src)) {
+      const img = document.createElement("img");
+      img.className = "lf-bk-cv-portrait";
+      img.alt = "";
+      img.src = src;
+      frame.append(img);
+    }
+    frame.append(title, mk("lf-bk-cv-by", t("by {user} & {character}").replace("{user}", this.h.userName() || t("You")).replace("{character}", name || t("Character"))), mk("lf-bk-cv-orn", this.ornament), mk("lf-bk-cv-hint", t("Click to open")));
+    cover.append(frame);
+    el.append(cover);
+    el.addEventListener("click", () => this.openCover());
+    this.ui.book.appendChild(el);
+    this.coverEl = el;
+    this.h.chatTitle().then((n) => {
+      if (n && this.coverEl === el)
+        title.textContent = n;
+    });
+    if (!seen)
+      this.h.save(setFlag(this.h.data(), this.chatId, "covered", true));
+  }
+  armCover() {
+    clearTimeout(this.coverTimer);
+    if (this.coverEl)
+      this.coverTimer = setTimeout(() => this.openCover(), 1500);
+  }
+  openCover() {
+    const el = this.coverEl;
+    if (!el)
+      return;
+    this.coverEl = null;
+    clearTimeout(this.coverTimer);
+    el.dataset.open = "1";
+    setTimeout(() => el.remove(), 800);
+  }
+  idAtColumn(col) {
+    const flow = this.shown;
+    if (!flow)
+      return null;
+    const fl = flow.getBoundingClientRect().left;
+    for (const sec of Array.from(flow.querySelectorAll(":scope > .lf-bk-m"))) {
+      const fr = this.fragments(sec);
+      if (!fr.length)
+        continue;
+      if (columnAt(fr[fr.length - 1].left, fl, this.g) < col)
+        continue;
+      const id = sec.dataset.id ?? "";
+      return columnAt(fr[0].left, fl, this.g) <= col && id !== "live" ? id : null;
+    }
+    return null;
+  }
+  ears() {
+    if (!this.on_ || !this.ready || !this.ui)
+      return;
+    const u = this.ui;
+    let ids = { l: null, r: null };
+    if (!this.blank && this.shown) {
+      const pages = this.pagesOf(this.pos.seg);
+      const lp = this.g.spread ? this.pos.view * 2 : this.pos.view;
+      const at = (page) => page < pages ? this.idAtColumn(page) : null;
+      ids = this.g.spread ? { l: at(lp), r: at(lp + 1) } : { l: null, r: at(lp) };
+    }
+    this.earIds = ids;
+    const pinned = new Set(this.h.pins().map((p) => p.id));
+    for (const [btn, id] of [[u.earL, ids.l], [u.earR, ids.r]]) {
+      const on = !!id && pinned.has(id);
+      btn.disabled = !id;
+      btn.dataset.on = on ? "1" : "0";
+      btn.setAttribute("aria-pressed", String(on));
+      btn.title = btn.ariaLabel = this.h.tr(on ? "Unfold the corner" : "Fold the corner to mark this page");
+    }
+  }
+  toggleEar(side) {
+    const id = this.earIds[side];
+    const p = id ? this.byId.get(id) : null;
+    if (!p)
+      return;
+    this.h.togglePin({ id: p.id, text: plainOf(p.html), user: p.user, name: p.name, at: p.at });
+    this.ears();
+    if (this.tocOn)
+      this.renderToc();
+  }
+  toggleToc(force) {
+    const on = force ?? !this.tocOn;
+    if (on && !this.ready)
+      return;
+    this.tocOn = on;
+    this.ui.toc.hidden = !on;
+    this.ui.contents.setAttribute("aria-expanded", String(on));
+    if (on) {
+      this.renderToc();
+      this.ui.toc.querySelector(".go")?.focus();
+    }
+  }
+  renderToc() {
+    const t = this.h.tr;
+    const rows = this.segs.map((s, i) => ({ s, i })).filter((x) => x.s.opens);
+    const items = rows.map(({ s, i }) => {
+      const n = s.chapter;
+      const edit = n > 0 || this.full;
+      return `<li data-ch="${n}"><button type="button" class="go" data-seg="${i}"><span class="n">${esc(this.chapterLabel(n))}</span><span class="t">${esc(this.chapterTitle(n))}</span><i class="lead"></i><span class="pg"></span></button>${edit ? `<button type="button" class="ed" aria-label="${esc(t("Rename chapter"))}" title="${esc(t("Rename chapter"))}">✎</button>` : ""}</li>`;
+    }).join("");
+    const marks = this.h.pins().filter((p) => this.byId.has(p.id)).slice(0, 40).map((p) => `<li><button type="button" class="go mk" data-pin="${esc(p.id)}"><span class="t">${esc(p.text.slice(0, 120))}</span></button></li>`).join("");
+    this.ui.toc.innerHTML = `<div class="lf-bk-toc-in"><h2>${esc(t("Contents"))}</h2><i class="orn" aria-hidden="true">${esc(this.ornament)}</i><ol>${items}</ol>${marks ? `<h3>${esc(t("Marked pages"))}</h3><ol>${marks}</ol>` : ""}</div>`;
+    this.tocPages();
+  }
+  tocPages() {
+    for (const go of Array.from(this.ui.toc.querySelectorAll(".go[data-seg]"))) {
+      const off = this.offsetOf(+(go.dataset.seg ?? 0));
+      const pg = go.querySelector(".pg");
+      if (pg)
+        pg.textContent = off === null ? "…" : String(off + 1);
+    }
+  }
+  tocClick(e) {
+    const b = e.target?.closest?.("button");
+    if (!b)
+      return;
+    if (b.classList.contains("ed"))
+      return this.renameRow(b.closest("li"));
+    if (b.dataset.seg !== undefined) {
+      const seg = +b.dataset.seg;
+      this.toggleToc(false);
+      this.jump({ seg, view: 0 });
+    } else if (b.dataset.pin) {
+      const p = this.locate(b.dataset.pin, 0);
+      this.toggleToc(false);
+      if (p)
+        this.jump(p);
+    }
+  }
+  renameRow(li) {
+    const n = +(li.dataset.ch ?? 0);
+    const go = li.querySelector(".go");
+    if (!go)
+      return;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 120;
+    input.value = this.chapterTitle(n);
+    input.setAttribute("aria-label", this.h.tr("Chapter title (optional)"));
+    go.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = (save) => {
+      if (done)
+        return;
+      done = true;
+      if (save)
+        this.setTitle(n, input.value);
+      if (this.tocOn)
+        this.renderToc();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing) {
+        e.preventDefault();
+        finish(true);
+      }
+    });
+    input.addEventListener("blur", () => finish(input.dataset.cancel !== "1"));
+  }
+  setTitle(n, title) {
+    const data = this.h.data();
+    let next = data;
+    if (n === 0) {
+      const first = this.pieces[0];
+      if (!first)
+        return;
+      const stored = this.chapterList().find((c) => c.startId === first.id);
+      next = stored ? renameChapter(data, this.chatId, stored.id, title) : title.trim() ? addChapter(data, this.chatId, first.id, title) : data;
+    } else {
+      const c = orderChapters(this.pieces, this.chapterList())[n - 1];
+      if (!c)
+        return;
+      next = renameChapter(data, this.chatId, c.id, title);
+    }
+    if (next === data)
+      return;
+    this.h.save(next);
+    this.rebuild(undefined);
+  }
+  flowClick(e) {
+    const el = e.target?.closest?.("[data-opt], [data-draft]");
+    if (!el || el.disabled)
+      return;
+    if (el.dataset.opt !== undefined)
+      this.pickOption(+el.dataset.opt, el);
+    else
+      this.flipDraft(+(el.dataset.draft ?? 0) < 0 ? -1 : 1);
+  }
+  pickOption(i, btn) {
+    const last = this.pieces[this.pieces.length - 1];
+    const text = last && !last.user ? last.choices[i] : undefined;
+    if (!text)
+      return;
+    const nav = btn.closest(".lf-bk-opts");
+    nav?.setAttribute("data-used", "1");
+    btn.setAttribute("data-picked", "1");
+    const c = this.h.choices();
+    if (this.h.get().writeHere) {
+      this.ui.ta.value = text;
+      if (c.send)
+        this.submit();
+      else
+        this.ui.ta.focus();
+    } else {
+      this.h.fill(text);
+      if (c.send)
+        this.h.send(text);
+    }
+  }
+  flipDraft(dir) {
+    const last = this.pieces[this.pieces.length - 1];
+    if (!last || last.user || last.id === "live")
+      return;
+    this.h.swipe(last.id, dir);
+  }
+  scrubWire() {
+    const { scrub, scrubPanel } = this.ui;
+    const open = (on) => {
+      clearTimeout(this.scrubTimer);
+      if (on) {
+        this.drawScrub();
+        scrub.dataset.open = "1";
+      } else
+        delete scrub.dataset.open;
+    };
+    const later = (ms) => {
+      clearTimeout(this.scrubTimer);
+      this.scrubTimer = setTimeout(() => !this.scrubDrag && open(false), ms);
+    };
+    scrub.addEventListener("pointerenter", (e) => {
+      if (e.pointerType === "mouse")
+        open(true);
+    });
+    scrub.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse" && !this.scrubDrag)
+        later(350);
+    });
+    scrub.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0)
+        return;
+      if (!scrub.dataset.open) {
+        open(true);
+        if (e.pointerType !== "mouse")
+          later(3000);
+        return;
+      }
+      this.scrubDrag = true;
+      clearTimeout(this.scrubTimer);
+      scrub.setPointerCapture(e.pointerId);
+      this.scrubTo(e.clientX);
+    });
+    scrub.addEventListener("pointermove", (e) => {
+      if (this.scrubDrag)
+        this.scrubTo(e.clientX);
+    });
+    const end = (e) => {
+      if (!this.scrubDrag)
+        return;
+      this.scrubDrag = false;
+      if (scrub.hasPointerCapture(e.pointerId))
+        scrub.releasePointerCapture(e.pointerId);
+      this.announce();
+      later(e.pointerType === "mouse" ? 1200 : 2500);
+    };
+    scrub.addEventListener("pointerup", end);
+    scrub.addEventListener("pointercancel", end);
+  }
+  scrubList() {
+    return this.pieces.filter((p) => p.id !== "live");
+  }
+  scrubTo(clientX) {
+    const r = this.ui.scrubPanel.getBoundingClientRect();
+    const list = this.scrubList();
+    if (!list.length || !r.width)
+      return;
+    const f = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    const id = list[Math.round(f * (list.length - 1))].id;
+    cancelAnimationFrame(this.scrubFrame);
+    this.scrubFrame = requestAnimationFrame(() => {
+      if (!this.on_ || !this.ready || this.busy)
+        return;
+      const p = this.locate(id, 0);
+      if (!p)
+        return;
+      this.pos = p;
+      this.paint();
+      this.queueRibbon();
+      this.drawScrub();
+    });
+  }
+  drawScrub() {
+    if (!this.on_ || !this.ready)
+      return;
+    const panel = this.ui.scrubPanel;
+    const W = Math.max(80, Math.round(panel.clientWidth));
+    const H = Math.max(40, Math.round(panel.clientHeight));
+    const list = this.scrubList();
+    const n = list.length;
+    panel.querySelector("svg")?.remove();
+    if (n < 1)
+      return;
+    const idx = new Map(list.map((p, i) => [p.id, i]));
+    const x = (i) => n < 2 ? W / 2 : 12 + i / (n - 1) * (W - 24);
+    const mid = H * 0.64;
+    const amp = H * 0.24;
+    let svg = `<line class="sb-mid" x1="12" x2="${W - 12}" y1="${mid}" y2="${mid}"/>`;
+    for (const c of orderChapters(this.pieces, this.chapterList())) {
+      const i = idx.get(c.startId);
+      if (i !== undefined)
+        svg += `<line class="sb-tick" x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${(H * 0.38).toFixed(1)}" y2="${(H - 4).toFixed(1)}"/>`;
+    }
+    const pts = this.h.beats().filter((b) => idx.has(b.id)).map((b) => [x(idx.get(b.id)), mid - Math.max(-1, Math.min(1, b.v)) * amp]);
+    if (pts.length > 1)
+      svg += `<polyline class="sb-line" points="${pts.map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(" ")}"/>`;
+    for (const pin of this.h.pins()) {
+      const i = idx.get(pin.id);
+      if (i !== undefined)
+        svg += `<polygon class="sb-star" points="${starPoints(x(i), H * 0.5, 5.5)}"/>`;
+    }
+    const cur = this.currentId();
+    const ci = cur ? idx.get(cur) : undefined;
+    if (ci !== undefined)
+      svg += `<line class="sb-head" x1="${x(ci).toFixed(1)}" x2="${x(ci).toFixed(1)}" y1="0" y2="${H}"/>`;
+    panel.insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${svg}</svg>`);
+    const t = this.h.tr;
+    const d = this.ui.book.dataset;
+    const title = this.blank || !this.segs[this.pos.seg] ? "" : this.chapterTitle(this.segs[this.pos.seg].chapter) || this.chapterLabel(this.segs[this.pos.seg].chapter);
+    this.ui.scrubTip.textContent = [title, d.page ? `${t("Page")} ${d.page}` : ""].filter(Boolean).join(" · ");
+  }
+}
+
 // src/typewriter.ts
 var TYPEWRITER_CSS = `
 ::highlight(lf-typewriter) { color: transparent; text-shadow: none; text-decoration-color: transparent; }
@@ -7565,270 +10969,6 @@ class Typewriter {
     } catch {}
   }
 }
-
-// src/choices.ts
-var CHOICES_CSS = `
-.lf-choices { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px 12px; }
-.lf-choice { position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
-  padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: calc(13px * var(--lumiverse-font-scale, 1));
-  color: var(--lumiverse-text); text-align: left; line-height: 1.35;
-  background: color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 45%, transparent);
-  box-shadow: 0 0 0 0 transparent;
-  opacity: 0; transform: translateY(6px);
-  animation: lf-choice-in .45s cubic-bezier(.2,.9,.3,1.2) forwards;
-  transition: background .2s ease, box-shadow .25s ease, transform .15s ease; }
-.lf-choice:nth-child(2) { animation-delay: .08s; }
-.lf-choice:nth-child(3) { animation-delay: .16s; }
-.lf-choice:nth-child(4) { animation-delay: .24s; }
-.lf-choice::before { content: '✦'; font-size: .85em; color: var(--lf-c, var(--lumiverse-primary)); }
-.lf-choice:hover { background: color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 22%, transparent);
-  box-shadow: 0 0 calc(var(--lf-room, 14px) * .8) color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 45%, transparent); }
-.lf-choice:active { transform: scale(.97); }
-.lf-choice:focus-visible { outline: 1.5px solid var(--lumiverse-primary-050); outline-offset: 2px; }
-.lf-choices.lf-used .lf-choice:not(.lf-picked) { opacity: .35 !important; }
-.lf-choice.lf-picked { background: color-mix(in srgb, var(--lf-c, var(--lumiverse-primary)) 30%, transparent); }
-@keyframes lf-choice-in { to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .lf-choice { animation: none; opacity: 1; transform: none; } }
-`;
-function setComposer(text) {
-  const ta = document.querySelector('[data-component="InputArea"] textarea');
-  if (!ta)
-    return false;
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-  setter ? setter.call(ta, text) : ta.value = text;
-  ta.dispatchEvent(new Event("input", { bubbles: true }));
-  ta.focus();
-  ta.setSelectionRange(text.length, text.length);
-  return true;
-}
-function clickSend() {
-  const btn = document.querySelector('[data-component="InputArea"] button[class*="sendBtn"]:not([disabled])');
-  if (!btn)
-    return false;
-  btn.click();
-  return true;
-}
-var MAX_OPTIONS = 4;
-var TAG_RE = /<flair-choice\b[^>]*>([\s\S]*?)<\/flair-choice>/gi;
-var cleanOption = (text) => text.replace(/<[^>]*>/g, "").trim().slice(0, 160);
-var sameOptions = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-function choicesIn(content) {
-  const out = [];
-  for (const m of content.matchAll(TAG_RE)) {
-    const clean = cleanOption(m[1] ?? "");
-    if (clean && !out.includes(clean))
-      out.push(clean);
-    if (out.length >= MAX_OPTIONS)
-      break;
-  }
-  return out;
-}
-
-class ChoiceManager {
-  ctx;
-  pending = new Map;
-  rendered = null;
-  onPick = null;
-  enabled = true;
-  sendOnPick = false;
-  constructor(ctx) {
-    this.ctx = ctx;
-  }
-  add(messageId, text) {
-    const clean = cleanOption(text);
-    if (!clean)
-      return;
-    const entry = this.pending.get(messageId) ?? { options: [], fixed: false };
-    if (entry.fixed)
-      return;
-    if (!entry.options.includes(clean) && entry.options.length < MAX_OPTIONS)
-      entry.options.push(clean);
-    this.pending.set(messageId, entry);
-    queueMicrotask(() => setTimeout(() => this.renderFor(messageId), 30));
-  }
-  swiped(messageId, content) {
-    if (!this.enabled)
-      return;
-    this.pending.set(messageId, { options: choicesIn(content), fixed: true });
-    this.renderFor(messageId);
-  }
-  renderFor(messageId) {
-    if (!this.enabled)
-      return;
-    const shown = this.rendered?.messageId === messageId ? this.rendered : null;
-    if (this.ctx.messages.getLatestMessageId() !== messageId) {
-      if (shown)
-        this.hide();
-      return;
-    }
-    const options = this.pending.get(messageId)?.options ?? [];
-    if (!options.length) {
-      if (shown)
-        this.hide();
-      return;
-    }
-    if (shown && shown.el.isConnected && sameOptions(shown.options, options))
-      return;
-    const el = this.ctx.dom.findMessageElement(messageId);
-    if (!el)
-      return;
-    const isCard = el.matches(':is([data-component="BubbleMessage"],[data-component="MinimalMessage"])');
-    this.hide();
-    const html = `<div class="lf-choices" role="group" aria-label="Suggested replies">${options.map((o, i) => `<button type="button" class="lf-choice" data-lf-choice="${i}"></button>`).join("")}</div>`;
-    const wrap = this.ctx.dom.inject(el, html, isCard ? "afterend" : "beforeend");
-    wrap.querySelectorAll(".lf-choice").forEach((btn, i) => {
-      btn.textContent = options[i];
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const box = wrap.querySelector(".lf-choices");
-        box?.classList.add("lf-used");
-        btn.classList.add("lf-picked");
-        setComposer(options[i]);
-        if (this.sendOnPick)
-          setTimeout(() => clickSend(), 60);
-        this.onPick?.(options[i]);
-      });
-    });
-    this.rendered = { messageId, el: wrap, options: [...options] };
-  }
-  pause() {
-    this.hide();
-    for (const entry of this.pending.values())
-      entry.fixed = false;
-  }
-  hide() {
-    const r = this.rendered;
-    if (!r)
-      return;
-    this.rendered = null;
-    this.ctx.dom.uninject(r.el);
-    r.el.replaceChildren();
-    r.el.hidden = true;
-  }
-  clear() {
-    this.hide();
-    this.pending.clear();
-  }
-}
-
-// src/moments.ts
-var PIN_TEXT_MAX = 420;
-var PIN_MEMORY_MAX = 160;
-var PINS_PER_CHAT = 120;
-var CHATS = 60;
-var clampStr = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
-function excerpt(text, max = PIN_TEXT_MAX) {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (t.length <= max)
-    return t;
-  const cut = t.slice(0, max);
-  const sp = cut.lastIndexOf(" ");
-  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:.\-–—]+$/, "")}…`;
-}
-function pinOf(raw) {
-  if (!raw || typeof raw !== "object")
-    return null;
-  const r = raw;
-  const id = clampStr(r.id, 200);
-  const text = excerpt(clampStr(r.text, PIN_TEXT_MAX * 2));
-  if (!id || !text)
-    return null;
-  const color = clampStr(r.color, 40);
-  return {
-    id,
-    i: typeof r.i === "number" && Number.isFinite(r.i) ? Math.max(0, Math.round(r.i)) : 0,
-    text,
-    whole: r.whole === true,
-    who: clampStr(r.who, 80),
-    user: r.user === true,
-    color: color || null,
-    t: typeof r.t === "number" && Number.isFinite(r.t) ? r.t : 0
-  };
-}
-function normalizePins(raw) {
-  const out = {};
-  if (!raw || typeof raw !== "object")
-    return out;
-  for (const [chat, list] of Object.entries(raw)) {
-    if (!chat || !Array.isArray(list))
-      continue;
-    const pins = [];
-    for (const item of list) {
-      const p = pinOf(item);
-      if (p && !pins.some((x) => x.id === p.id))
-        pins.push(p);
-    }
-    if (pins.length)
-      out[chat] = sortPins(pins).slice(-PINS_PER_CHAT);
-  }
-  return trimChats(out);
-}
-var sortPins = (list) => [...list].sort((a, b) => a.i - b.i || a.t - b.t);
-function trimChats(data) {
-  const chats = Object.keys(data);
-  if (chats.length <= CHATS)
-    return data;
-  const next = { ...data };
-  chats.sort((a, b) => Math.max(...next[a].map((p) => p.t)) - Math.max(...next[b].map((p) => p.t))).slice(0, chats.length - CHATS).forEach((c) => delete next[c]);
-  return next;
-}
-var isPinned = (data, chatId, id) => !!chatId && !!data[chatId]?.some((p) => p.id === id);
-function setPin(data, chatId, pin) {
-  const list = (data[chatId] ?? []).filter((p) => p.id !== pin.id);
-  list.push(pin);
-  return trimChats({ ...data, [chatId]: sortPins(list).slice(-PINS_PER_CHAT) });
-}
-function removePins(data, chatId, ids) {
-  let changed = false;
-  const next = {};
-  for (const [chat, list] of Object.entries(data)) {
-    if (chatId && chat !== chatId) {
-      next[chat] = list;
-      continue;
-    }
-    const kept = list.filter((p) => !ids.has(p.id));
-    if (kept.length !== list.length)
-      changed = true;
-    if (kept.length)
-      next[chat] = kept;
-  }
-  return changed ? next : data;
-}
-function starPoints(cx, cy, r) {
-  const pts = [];
-  for (let k = 0;k < 10; k++) {
-    const a = -Math.PI / 2 + k * Math.PI / 5;
-    const rad = k % 2 ? r * 0.46 : r;
-    pts.push(`${(cx + Math.cos(a) * rad).toFixed(2)},${(cy + Math.sin(a) * rad).toFixed(2)}`);
-  }
-  return pts.join(" ");
-}
-var STAR_SVG = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/></svg>';
-var PIN_CSS = `
-.lf-pin-btn svg { fill: none; transition: fill .15s ease, color .15s ease, transform .15s ease; }
-.lf-pin-btn[data-on="1"] { color: #f2b84b; }
-.lf-pin-btn[data-on="1"] svg { fill: currentColor; }
-.lf-pin-btn:active svg { transform: scale(.85); }
-.lf-pin-list { display: flex; flex-direction: column; gap: 8px; }
-.lf-pin { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px);
-  background: var(--lumiverse-fill); border: 1px solid var(--lumiverse-border); border-left: 3px solid var(--lf-pin-c, #f2b84b); }
-.lf-pin-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.lf-pin-head > svg { flex: none; width: 13px; height: 13px; fill: #f2b84b; stroke: #f2b84b; stroke-width: 2; stroke-linejoin: round; }
-.lf-pin-who { flex: 1; min-width: 0; font-weight: 600; color: var(--lumiverse-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: calc(13px * var(--lumiverse-font-scale, 1)); }
-.lf-pin-n { flex: none; color: var(--lumiverse-text-dim); font-variant-numeric: tabular-nums; font-size: calc(11px * var(--lumiverse-font-scale, 1)); }
-.lf-pin-text { margin: 0; color: var(--lumiverse-text-muted); line-height: 1.45; font-size: calc(13px * var(--lumiverse-font-scale, 1));
-  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.lf-pin-text[data-whole="1"] { font-style: italic; }
-.lf-pin-acts { display: flex; gap: 6px; justify-content: flex-end; }
-.lf-pin-acts .lf-btn { flex: 0 0 auto; padding: 5px 10px; font-size: calc(12px * var(--lumiverse-font-scale, 1)); }
-.lf-pin-empty { padding: 12px; text-align: center; border-radius: var(--lumiverse-radius, 8px); border: 1px dashed var(--lumiverse-border);
-  color: var(--lumiverse-text-dim); font-size: calc(12px * var(--lumiverse-font-scale, 1)); }
-.lf-beat-star { fill: #f2b84b; stroke: var(--lumiverse-bg, #000); stroke-width: 1; stroke-linejoin: round; cursor: pointer; transition: transform .15s ease;
-  transform-box: fill-box; transform-origin: center; }
-.lf-beat-star:hover { transform: scale(1.25); }
-`;
 
 // src/heartbeat.ts
 var MAX_POINTS = 240;
@@ -8559,7 +11699,8 @@ var PACKS = [
       grain: false,
       swipeTransition: "fade"
     },
-    theme: { accent: "#ffb347", secondary: "#ff7a3d", bgDark: "#1d150e", bgLight: "#fbf3e8", speech: "#ffd08a", thoughts: "#e3b48c" }
+    theme: { accent: "#ffb347", secondary: "#ff7a3d", bgDark: "#1d150e", bgLight: "#fbf3e8", speech: "#ffd08a", thoughts: "#e3b48c" },
+    book: { paper: "#f0dfba", ink: "#35220f", accent: "#c48a2c", binding: "#5b3419", ornament: "❦", tex: "parchment" }
   },
   {
     id: "cyber",
@@ -8588,7 +11729,8 @@ var PACKS = [
       grain: true,
       swipeTransition: "slide"
     },
-    theme: { accent: "#00e5ff", secondary: "#ff2bd6", bgDark: "#0b0a1a", bgLight: "#eef3fb", speech: "#5cf2ff", thoughts: "#ff7ae6" }
+    theme: { accent: "#00e5ff", secondary: "#ff2bd6", bgDark: "#0b0a1a", bgLight: "#eef3fb", speech: "#5cf2ff", thoughts: "#ff7ae6" },
+    book: { paper: "#06110c", ink: "#7dffbf", accent: "#00e5ff", binding: "#0a0a14", ornament: "▮", tex: "terminal" }
   },
   {
     id: "horror",
@@ -8616,7 +11758,8 @@ var PACKS = [
       grain: true,
       swipeTransition: "fade"
     },
-    theme: { accent: "#c0102a", secondary: "#5a0b14", bgDark: "#120708", bgLight: "#f4ecec", speech: "#e05561", thoughts: "#a08f8f" }
+    theme: { accent: "#c0102a", secondary: "#5a0b14", bgDark: "#120708", bgLight: "#f4ecec", speech: "#e05561", thoughts: "#a08f8f" },
+    book: { paper: "#d8c9a8", ink: "#2a1812", accent: "#a3162a", binding: "#2b0b0e", ornament: "†", tex: "foxed" }
   },
   {
     id: "sakura",
@@ -8644,7 +11787,8 @@ var PACKS = [
       grain: false,
       swipeTransition: "fade"
     },
-    theme: { accent: "#ff8fc8", secondary: "#ffc2dd", bgDark: "#1e1218", bgLight: "#fff1f7", speech: "#ffb3d9", thoughts: "#d9a3c4" }
+    theme: { accent: "#ff8fc8", secondary: "#ffc2dd", bgDark: "#1e1218", bgLight: "#fff1f7", speech: "#ffb3d9", thoughts: "#d9a3c4" },
+    book: { paper: "#fcf0f4", ink: "#4a2a3a", accent: "#e0679f", binding: "#f1b3cc", ornament: "✿", tex: "petals" }
   },
   {
     id: "space",
@@ -8673,7 +11817,8 @@ var PACKS = [
       grain: false,
       swipeTransition: "slide"
     },
-    theme: { accent: "#7c8cff", secondary: "#9ee7ff", bgDark: "#0c0e22", bgLight: "#eef0ff", speech: "#9ee7ff", thoughts: "#b6b0ff" }
+    theme: { accent: "#7c8cff", secondary: "#9ee7ff", bgDark: "#0c0e22", bgLight: "#eef0ff", speech: "#9ee7ff", thoughts: "#b6b0ff" },
+    book: { paper: "#0e1431", ink: "#d4e6ff", accent: "#7cf0ff", binding: "#111a4a", ornament: "◈", tex: "holo" }
   },
   {
     id: "noir",
@@ -8701,7 +11846,8 @@ var PACKS = [
       grain: true,
       swipeTransition: "fade"
     },
-    theme: { accent: "#d9d9d9", secondary: "#8a8a8a", bgDark: "#111111", bgLight: "#f2f2f2", speech: "#ececec", thoughts: "#a5a5a5" }
+    theme: { accent: "#d9d9d9", secondary: "#8a8a8a", bgDark: "#111111", bgLight: "#f2f2f2", speech: "#ececec", thoughts: "#a5a5a5" },
+    book: { paper: "#e9e4d6", ink: "#1d1d1f", accent: "#7a7a7a", binding: "#8a7a52", ornament: "■", tex: "case" }
   },
   {
     id: "character",
@@ -8749,6 +11895,7 @@ function customPacks() {
         swatch: p.swatch,
         settings: sanitizeSettings(p.settings) ?? {},
         theme: sanitizeTheme(p.theme),
+        book: sanitizeBook(p.book),
         custom: p.source
       }))
     };
@@ -8769,7 +11916,7 @@ function capturePack(s) {
     out[k] = s[k];
   return out;
 }
-var HEX = /^#[0-9a-f]{6}$/i;
+var HEX2 = /^#[0-9a-f]{6}$/i;
 function sanitizeSettings(src) {
   if (!src || typeof src !== "object")
     return null;
@@ -8787,9 +11934,9 @@ function sanitizeTheme(raw) {
   if (!raw || typeof raw !== "object")
     return;
   const r = raw;
-  if (!HEX.test(String(r.accent)) || !HEX.test(String(r.bgDark)) || !HEX.test(String(r.bgLight)))
+  if (!HEX2.test(String(r.accent)) || !HEX2.test(String(r.bgDark)) || !HEX2.test(String(r.bgLight)))
     return;
-  const opt = (v) => typeof v === "string" && HEX.test(v) ? v : undefined;
+  const opt = (v) => typeof v === "string" && HEX2.test(v) ? v : undefined;
   return {
     accent: String(r.accent),
     bgDark: String(r.bgDark),
@@ -8812,8 +11959,9 @@ function sanitizePack(raw) {
   const sw = Array.isArray(r.swatch) ? r.swatch : [];
   const fallbackA = settings.colorSource === "custom" && settings.customColor ? settings.customColor : theme && theme !== "character" ? theme.accent : "#9370db";
   const fallbackB = settings.userColor === "custom" && settings.userCustomColor ? settings.userCustomColor : theme && theme !== "character" ? theme.secondary ?? theme.bgDark : "#c7b4ff";
-  const swatch = [HEX.test(String(sw[0])) ? String(sw[0]) : fallbackA, HEX.test(String(sw[1])) ? String(sw[1]) : fallbackB];
-  return { name, tagline, swatch, settings, theme };
+  const swatch = [HEX2.test(String(sw[0])) ? String(sw[0]) : fallbackA, HEX2.test(String(sw[1])) ? String(sw[1]) : fallbackB];
+  const book = sanitizeBook(r.book);
+  return { name, tagline, swatch, settings, theme, ...book ? { book } : {} };
 }
 function packFromLook(name, s, themeFor) {
   const active = packById(s.activePack);
@@ -8821,7 +11969,7 @@ function packFromLook(name, s, themeFor) {
   const theme = themeFor(s);
   const a = s.colorSource === "custom" ? s.customColor : active?.swatch[0] ?? (theme && theme !== "character" ? theme.accent : "#9370db");
   const b = s.userColor === "custom" ? s.userCustomColor : active?.swatch[1] ?? "#c7b4ff";
-  return { name, tagline: active && name === active.name ? active.tagline : "", swatch: [a, b], settings, theme };
+  return { name, tagline: active && name === active.name ? active.tagline : "", swatch: [a, b], settings, theme, ...active?.book ? { book: active.book } : {} };
 }
 function exportPack(pack) {
   const blob = new Blob([JSON.stringify({ lumiFlairPack: 2, ...pack }, null, 2)], { type: "application/json" });
@@ -9033,7 +12181,7 @@ function showWelcome(ctx, a) {
 }
 
 // src/panel.ts
-var ICON2 = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/><path d="M5 16l.6 1.4 1.4.6-1.4.6L5 20l-.6-1.4L3 18l1.4-.6z"/></svg>`;
+var ICON3 = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/><path d="M5 16l.6 1.4 1.4.6-1.4.6L5 20l-.6-1.4L3 18l1.4-.6z"/></svg>`;
 var FS = (px) => `calc(${px}px * var(--lumiverse-font-scale, 1))`;
 var PANEL_CSS = `
 .lf-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; color: var(--lumiverse-text); font-size: ${FS(13)}; }
@@ -9168,32 +12316,32 @@ var PANEL_CSS = `
 .lf-snd-msg[data-kind="error"] { color: var(--lumiverse-danger, #e5484d); }
 .lf-fx-demo { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 12px; border-radius: var(--lumiverse-radius, 8px); background: var(--lumiverse-fill); }
 `;
-var svg2 = (body, fill = false) => `<svg viewBox="0 0 24 24" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'}>${body}</svg>`;
+var svg3 = (body, fill = false) => `<svg viewBox="0 0 24 24" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'}>${body}</svg>`;
 var I = {
-  play: svg2('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>', true),
-  spark: svg2('<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>'),
-  reset: svg2('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
-  sliders: svg2('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
-  user: svg2('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
-  send: svg2('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>'),
-  glow: svg2('<rect x="4" y="5" width="16" height="14" rx="3"/><path d="M2 9V7M22 9V7M2 17v-2M22 17v-2"/>'),
-  palette: svg2('<path d="M12 22a10 10 0 1 1 10-10c0 2.5-2 3-3.5 3H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 13 22z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10.5" r="1"/>'),
-  cloud: svg2('<path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 1 0 6 17h11.5z"/>'),
-  text: svg2('<path d="M4 7V5h16v2M9 19h6M12 5v14"/>'),
-  party: svg2('<path d="M3 21l5-14 9 9z"/><path d="M14 3l1 2M19 6l2-1M17 10l3 1M11 5l.5-2"/>'),
-  sound: svg2('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
-  music: svg2('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
-  upload: svg2('<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 9l5-5 5 5M12 4v12"/>'),
-  stop: svg2('<rect x="6" y="6" width="12" height="12" rx="2"/>', true),
-  trash: svg2('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
-  share: svg2('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v13"/>'),
-  copy: svg2('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
-  chev: svg2('<path d="m9 6 6 6-6 6"/>'),
-  film: svg2('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
-  heart: svg2('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
-  trophy: svg2('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
-  camera: svg2('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>'),
-  star: svg2('<polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/>')
+  play: svg3('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>', true),
+  spark: svg3('<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>'),
+  reset: svg3('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
+  sliders: svg3('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
+  user: svg3('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  send: svg3('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>'),
+  glow: svg3('<rect x="4" y="5" width="16" height="14" rx="3"/><path d="M2 9V7M22 9V7M2 17v-2M22 17v-2"/>'),
+  palette: svg3('<path d="M12 22a10 10 0 1 1 10-10c0 2.5-2 3-3.5 3H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 13 22z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10.5" r="1"/>'),
+  cloud: svg3('<path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 1 0 6 17h11.5z"/>'),
+  text: svg3('<path d="M4 7V5h16v2M9 19h6M12 5v14"/>'),
+  party: svg3('<path d="M3 21l5-14 9 9z"/><path d="M14 3l1 2M19 6l2-1M17 10l3 1M11 5l.5-2"/>'),
+  sound: svg3('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
+  music: svg3('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+  upload: svg3('<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 9l5-5 5 5M12 4v12"/>'),
+  stop: svg3('<rect x="6" y="6" width="12" height="12" rx="2"/>', true),
+  trash: svg3('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
+  share: svg3('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v13"/>'),
+  copy: svg3('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+  chev: svg3('<path d="m9 6 6 6-6 6"/>'),
+  film: svg3('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
+  heart: svg3('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
+  trophy: svg3('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
+  camera: svg3('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>'),
+  star: svg3('<polygon points="12,2.8 14.9,8.9 21.5,9.7 16.6,14.3 17.9,20.9 12,17.6 6.1,20.9 7.4,14.3 2.5,9.7 9.1,8.9"/>')
 };
 var SLOT_LABEL = {
   always: { label: "Always play (replaces scene sounds)", group: "Ambience" },
@@ -9216,6 +12364,7 @@ var SLOT_LABEL = {
   "ui:achievement": { label: "Achievement unlocked", group: "Interface" },
   "ui:sparkle": { label: "Screen effect / keyword", group: "Interface" },
   "ui:key": { label: "Typewriter key", group: "Interface" },
+  "ui:pageturn": { label: "Page turn (Book mode)", group: "Interface" },
   ...Object.fromEntries(SFX_CUES.map((c) => [`sfx:${c.name}`, { label: c.label, group: "Sound effects" }]))
 };
 var fmtDuration = (sec) => {
@@ -9263,7 +12412,7 @@ function mountPanel(ctx, store, actions) {
     headerTitle: "Flair",
     description: "Send effects, mood glow, ambient scenes, text effects and more",
     keywords: ["animation", "glow", "effects", "theme", "hover", "particles", "mood", "ambient", "weather", "sound"],
-    iconSvg: ICON2
+    iconSvg: ICON3
   });
   const handles = [];
   const syncers = [];
@@ -9783,6 +12932,60 @@ function mountPanel(ctx, store, actions) {
   slider(theaterSec.body, "Scroll speed", "theaterSpeed", 1, 8, 1, {});
   toggle(theaterSec.body, "Start the gentle auto-scroll", "theaterScroll");
   hint(theaterSec.body, "The scroll waits while you scroll or touch the screen and carries on a moment later; it stops at the end of the chat. With “reduce motion” on, it starts paused. Inside theater mode: <b>Esc</b> leaves, <b>Space</b> pauses, <b>+</b> and <b>−</b> change the text size; on a phone, tap the screen to bring the controls back. The reply box button lets you answer without leaving.");
+  const bookSec = section("book", "Book mode", BOOK_ICON);
+  hint(bookSec.body, "Read the chat as a book: two facing pages on a computer, one page on a phone. Turn the page with the arrow keys, a click on the page edge, a swipe, or by dragging the corner. Turn past the last page to a blank page, write a reply, and that starts a new chapter. The reply box stays under the book. You can also start it from the <b>Book mode</b> item in the input bar’s Extras menu, from the book button under any message (it opens at that message), or with the command <code>Flair: Toggle book mode</code>. The atmosphere, lighting and soundscape carry on.");
+  toggle(bookSec.body, "Show the Book mode buttons", "bookEnabled");
+  button(buttons(bookSec.body), "Open the book", () => actions.enterBook(), "primary", BOOK_ICON);
+  slider(bookSec.body, "Book size", "bookSize", 0.8, 2, 0.05, { suffix: "×" });
+  slider(bookSec.body, "Text size", "bookTextScale", 0.8, 1.8, 0.05, { suffix: "×" });
+  slider(bookSec.body, "Line spacing", "bookLineHeight", 1.3, 2, 0.05, {});
+  select(bookSec.body, "Margins", "bookMargins", [
+    { value: "narrow", label: "Narrow" },
+    { value: "normal", label: "Normal" },
+    { value: "wide", label: "Wide" }
+  ]);
+  select(bookSec.body, "Font", "bookFont", [
+    { value: "serif", label: "Book serif", sublabel: "Palatino, Georgia" },
+    { value: "sans", label: "Clean sans", sublabel: "Your system font" },
+    { value: "readable", label: "Readable", sublabel: "A high-legibility sans with wider spacing" }
+  ]);
+  select(bookSec.body, "Paper", "bookPaper", [
+    { value: "pack", label: "From the Flair Pack", sublabel: "The pack’s own paper and cover; cream when it has none" },
+    { value: "cream", label: "Cream" },
+    { value: "white", label: "White" },
+    { value: "night", label: "Night", sublabel: "Dark paper, warm ink" }
+  ]);
+  select(bookSec.body, "Page turn", "bookTurn", [
+    { value: "auto", label: "Automatic", sublabel: "The curl on a computer or tablet, a slide on a phone" },
+    { value: "curl", label: "Curl" },
+    { value: "slide", label: "Slide" },
+    { value: "instant", label: "Instant" }
+  ]);
+  select(bookSec.body, "Your lines", "bookUser", [
+    { value: "rule", label: "Margin rule" },
+    { value: "italic", label: "Italic" },
+    { value: "smallcaps", label: "Small caps" }
+  ]);
+  select(bookSec.body, "Cover", "bookCover", [
+    { value: "once", label: "Once for each chat", sublabel: "The first time a chat opens as a book" },
+    { value: "always", label: "Every time" },
+    { value: "never", label: "Never" }
+  ]);
+  toggle(bookSec.body, "Large first letter at each chapter", "bookDropCaps");
+  toggle(bookSec.body, "New writing settles like ink", "bookInk");
+  toggle(bookSec.body, "Warm light on the pages", "bookLight");
+  hint(bookSec.body, "By candlelight, at night, dusk or dawn a soft pool of light falls on the pages. It follows the scene’s light, so it needs <b>Cinematic lighting</b> or the Scene Director to set one.");
+  toggle(bookSec.body, "Page-turn sound", "bookPageSound");
+  hint(bookSec.body, "A soft paper rustle when a page turns (needs <b>Interface sounds</b> on, under Sound). To use your own, pick a file for <b>Page turn</b> under Your sounds.");
+  toggle(bookSec.body, "Open chats as a book again", "bookPerChat");
+  hint(bookSec.body, "A chat you left open as a book opens as a book the next time you visit it.");
+  toggle(bookSec.body, "Write in the book itself", "bookWriteInBook");
+  hint(bookSec.body, "Your next message is written on a line under the page, and the reply is written into the book as it arrives. Turn this off to use Lumiverse’s own reply box instead (it also has a button in the book’s corner).");
+  textarea(bookSec.body, "Leave out of the book (one rule per line)", "bookIgnore", 6, "sim");
+  hint(bookSec.body, "For things that are not the story, such as a tracker or a scene card. A tag as it is written in the message (<code>&lt;scenecard&gt;</code>) or a plain word (<code>sim</code>) leaves out that tag and any <code>```sim</code> block; anything else is a CSS selector for what the host draws (<code>.sc-card</code>). Silly Sim Tracker’s are listed to begin with. The quickest way: hover a styled window in the book and press its <b>×</b> (on a phone it is always showing), which adds the rule for you. Changing this reopens the book.");
+  toggle(bookSec.body, "Running headers and page numbers", "bookHeaders");
+  toggle(bookSec.body, "Turn the page when a reply reaches the bottom", "bookAutoTurn");
+  hint(bookSec.body, "Inside the book: <b>←</b> <b>→</b>, <b>PageUp</b> <b>PageDown</b> and <b>Space</b> turn, <b>Home</b> and <b>End</b> jump, <b>Esc</b> leaves. With “reduce motion” on, pages turn instantly. Pages the host hasn’t shown yet are set from the plain text of the message, so display scripts and macros don’t apply there; they are marked “text only”.");
   const send = section("send", "When you send", I.send, true);
   select(send.body, "Screen effect", "sendEffect", [
     { value: "sparkle", label: "Sparkle burst", sublabel: "Stars fan out from the composer" },
@@ -9793,6 +12996,7 @@ function mountPanel(ctx, store, actions) {
     { value: "splash", label: "Splash", sublabel: "A hose-like gush of clear water bursts out and breaks into spray" },
     { value: "blackhole", label: "Black Hole ✦", sublabel: "Overkill: a singularity swallows everything, collapses to a white dot, then detonates" },
     { value: "petalstorm", label: "Petal Storm ✦", sublabel: "Overkill: blossoms burst from the button and a gale sweeps them across the screen" },
+    { value: "quill", label: "Quill", sublabel: "Ink spatters and spreads where the line left the pen (made for Book mode)" },
     { value: "none", label: "None" }
   ]);
   slider(send.body, "Intensity", "sendIntensity", 0.25, 2, 0.05, { suffix: "×" });
@@ -10699,8 +13903,8 @@ var NAVIGATE_CSS = `
 @keyframes lf-indet { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
 @media (prefers-reduced-motion: reduce) { .lf-veil-ico, .lf-veil-bar.lf-indet i { animation: none; } .lf-veil { transition: none; } }
 `;
-var ICON3 = `<svg class="lf-veil-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>`;
-var frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+var ICON4 = `<svg class="lf-veil-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>`;
+var frame2 = () => new Promise((r) => requestAnimationFrame(() => r()));
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class StoryNavigator {
@@ -10813,7 +14017,7 @@ class StoryNavigator {
         const row = this.row(id);
         if (row) {
           this.glide(row, !this.veil);
-          await frame();
+          await frame2();
           const again = this.row(id);
           if (again)
             this.glide(again, false);
@@ -10871,8 +14075,8 @@ class StoryNavigator {
     const firstRowBefore = list.querySelector(ROW)?.dataset.messageId;
     if (list.scrollTop <= thr) {
       list.scrollTop = Math.min(list.scrollHeight, thr + 60);
-      await frame();
-      await frame();
+      await frame2();
+      await frame2();
     }
     list.scrollTop = 0;
     const t0 = performance.now();
@@ -10887,8 +14091,8 @@ class StoryNavigator {
     return this.ids().length !== countBefore || list.scrollHeight !== heightBefore;
   }
   async settle() {
-    await frame();
-    await frame();
+    await frame2();
+    await frame2();
   }
   glide(row, smooth) {
     const list = this.list();
@@ -10911,7 +14115,7 @@ class StoryNavigator {
     Object.assign(v.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
     const card = document.createElement("div");
     card.className = "lf-veil-card";
-    card.innerHTML = ICON3;
+    card.innerHTML = ICON4;
     const b = document.createElement("b");
     b.textContent = tr("Rewinding the story…");
     const bar = document.createElement("div");
@@ -10992,7 +14196,7 @@ function themeKey(spec) {
 }
 
 // src/persist.ts
-var VAULT_NAMES = ["settings", "achievements", "heartbeat", "moments"];
+var VAULT_NAMES = ["settings", "achievements", "heartbeat", "moments", "book"];
 var LOCAL_PREFIX = "lumi_flair:vault:";
 var FILE_TIMEOUT = 3000;
 function envelope(raw) {
@@ -11319,6 +14523,7 @@ function setup(ctx) {
   const beats = createJsonStore(vault, "heartbeat", {});
   const badges = createJsonStore(vault, "achievements", normalizeAchievements(null));
   const pins = createJsonStore(vault, "moments", {});
+  const bookData = createJsonStore(vault, "book", {});
   const disposers = [];
   let disposed = false;
   const on = (event, fn) => disposers.push(ctx.events.on(event, fn));
@@ -11354,7 +14559,7 @@ function setup(ctx) {
   const director = new DirectorState;
   const statusListeners = new Set;
   const pinListeners = new Set;
-  disposers.push(ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS, VIZ_CSS].join(`
+  disposers.push(ctx.dom.addStyle([PANEL_CSS, CINEMATIC_CSS, CHOICES_CSS, HEARTBEAT_CSS, ACHIEVEMENT_CSS, MOMENT_CSS, PIN_CSS, INTRO_CSS, THEATER_CSS, BOOK_CSS, TYPEWRITER_CSS, WELCOME_CSS, NAVIGATE_CSS, SOUND_WIDGET_CSS, VIZ_CSS].join(`
 `)));
   let removeMainCss = null;
   disposers.push(() => removeMainCss?.());
@@ -11382,6 +14587,9 @@ function setup(ctx) {
   const theaterStyle = ctx.dom.createElement("style");
   overlayWrap.append(colorStyle, composerStyle, auraStyle, theaterStyle);
   const theaterWrap = ctx.dom.inject("body", '<div class="lf-th-root"></div>');
+  const bookWrap = ctx.dom.inject("body", '<div class="lf-bk-host"></div>');
+  const bookStyle = ctx.dom.createElement("style");
+  overlayWrap.append(bookStyle);
   const introCard = new IntroCard(overlay);
   const speaker = new SpeakerChip(overlay);
   const fx = new FxCanvas(fxEl);
@@ -11462,7 +14670,9 @@ function setup(ctx) {
     introCard.destroy();
     speaker.destroy();
     theater.destroy();
+    book.destroy();
     typewriter.stop();
+    ctx.dom.uninject(bookWrap);
     ctx.dom.uninject(theaterWrap);
     ctx.dom.uninject(overlayWrap);
   });
@@ -11919,6 +15129,168 @@ function setup(ctx) {
     tr,
     changed: () => notifyStatus()
   });
+  const bookRead = chatReader(ctx);
+  const book = new Book({
+    root: bookWrap.querySelector(".lf-bk-host"),
+    style: bookStyle,
+    get: () => {
+      const s = store.get();
+      return {
+        scale: s.bookTextScale,
+        lineHeight: s.bookLineHeight,
+        margins: s.bookMargins,
+        font: s.bookFont,
+        paper: s.bookPaper,
+        turn: s.bookTurn,
+        user: s.bookUser,
+        headers: s.bookHeaders,
+        autoTurn: s.bookAutoTurn,
+        dropCaps: s.bookDropCaps,
+        cover: s.bookCover,
+        ink: s.bookInk,
+        light: s.bookLight,
+        size: s.bookSize,
+        writeHere: s.bookWriteInBook,
+        ignore: s.bookIgnore
+      };
+    },
+    set: (patch) => store.update(patch),
+    addIgnore: (rule) => {
+      const lines = store.get().bookIgnore.split(`
+`).map((l) => l.trim());
+      if (!lines.includes(rule))
+        store.update({ bookIgnore: [...lines.filter(Boolean), rule].join(`
+`) });
+    },
+    send: async (text) => {
+      if (!setComposer(text, false))
+        return false;
+      for (let i = 0;i < 30; i++) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        if (clickSend())
+          return true;
+      }
+      return false;
+    },
+    motion: motionAllowed,
+    tr,
+    chatId: () => state.chatId,
+    characterName: () => state.characterName ?? "",
+    read: bookRead,
+    mounted: (id) => cardFor(id)?.querySelector('[data-component="MessageContent"]') ?? null,
+    mountedCards: () => [...document.querySelectorAll(CARD2)].filter((c) => c.getAttribute("data-part") !== "streaming").map((c) => ({
+      id: c.getAttribute("data-message-id") ?? "",
+      user: c.getAttribute("data-part") === "user",
+      name: c.querySelector('[class*="_name_"]')?.textContent?.trim() ?? "",
+      el: c.querySelector('[data-component="MessageContent"]') ?? c
+    })).filter((c) => c.id),
+    streaming: () => [...document.querySelectorAll(`${CARD2}[data-part="streaming"] [data-component="MessageContent"]`)].at(-1) ?? null,
+    group: () => !!document.querySelector('[data-component="MessageList"][data-group-chat]'),
+    colorFor: (name) => auras.forSpeaker(name)?.aura.color ?? null,
+    data: () => bookData.get(),
+    save: (next) => bookData.whenLoaded(() => bookData.set(next)),
+    closeDrawer: closeHostDrawer,
+    reveal: (id) => void storyNav.jump(id),
+    lang: () => {
+      try {
+        return ctx.locale?.get?.() || "en";
+      } catch {
+        return "en";
+      }
+    },
+    changed: () => notifyStatus(),
+    pack: () => packById(store.get().activePack)?.book ?? null,
+    portrait: () => auras.latest()?.avatar ?? document.querySelector(`${CARD2}:not([data-part="user"]) img[src]`)?.getAttribute("src") ?? null,
+    chatTitle: async () => {
+      const character = state.characterId;
+      const chat = state.chatId;
+      if (!character || !chat)
+        return "";
+      try {
+        const api = ctx.chats;
+        const list = await api?.listForCharacter?.(character);
+        const name = list?.find((c) => c.id === chat)?.name;
+        return typeof name === "string" ? name.trim().slice(0, 80) : "";
+      } catch {
+        return "";
+      }
+    },
+    userName: () => document.querySelector(`${CARD2}[data-part="user"] [class*="_name_"]`)?.textContent?.trim() ?? "",
+    pins: () => state.chatId ? pins.get()[state.chatId] ?? [] : [],
+    togglePin: (m) => {
+      const chatId = state.chatId ?? ctx.getActiveChat()?.chatId ?? null;
+      if (!chatId)
+        return;
+      const aura = auras.forMessage(m.id) ?? auras.forSpeaker(m.name || state.characterName || "")?.aura ?? null;
+      pins.whenLoaded(() => {
+        const all = pins.get();
+        if (isPinned(all, chatId, m.id))
+          pins.set(removePins(all, chatId, new Set([m.id])));
+        else {
+          const text = excerpt(m.text);
+          if (!text)
+            return;
+          const ids = ctx.messages.listMessageIds();
+          const at = m.at >= 0 ? m.at : ids.indexOf(m.id);
+          const pin = { id: m.id, i: at < 0 ? ids.length : at, text, whole: true, who: m.name || (m.user ? "" : state.characterName ?? ""), user: m.user, color: aura?.color ?? null, t: Date.now() };
+          pins.set(setPin(all, chatId, pin));
+          if (store.get().pinMemory && state.memoriesPermission)
+            remember(chatId, [pin]);
+        }
+        notifyStatus();
+      });
+    },
+    beats: () => state.chatId ? beats.get()[state.chatId] ?? [] : [],
+    swipe: (id, dir) => {
+      const btns = cardFor(id)?.querySelectorAll('[data-component="SwipeControls"] button');
+      const b = btns && btns.length >= 2 ? btns[dir < 0 ? 0 : btns.length - 1] : null;
+      if (!b || b.disabled)
+        return false;
+      b.click();
+      return true;
+    },
+    choices: () => ({ on: store.get().enabled && store.get().choiceChips, send: store.get().choiceSend }),
+    fill: (text) => void setComposer(text),
+    light: () => resolveLight(),
+    turnSound: () => {
+      const s = store.get();
+      if (!s.enabled || !s.sound || !s.bookPageSound || document.hidden)
+        return;
+      const away = scape.backgrounded;
+      if (away === "mute")
+        return;
+      const volume = s.soundVolume * (away === "dim" ? s.soundUnfocusedLevel : 1);
+      const id = customFor("ui:pageturn");
+      const ac = id ? sound.context() : null;
+      if (id && ac) {
+        lib.source(id, ac).then((src) => src ? sound.playFile(src, volume, 4) : sound.rustle(volume)).catch(() => sound.rustle(volume));
+        return;
+      }
+      sound.rustle(volume);
+    }
+  });
+  for (const name of ["MESSAGE_SENT", "MESSAGE_EDITED", "MESSAGE_DELETED", "MESSAGE_SWIPED", "CHARACTER_MESSAGE_RENDERED", "USER_MESSAGE_RENDERED", "GENERATION_STARTED", "GENERATION_ENDED", "GENERATION_STOPPED", "CHAT_SWITCHED", "CHAT_CHANGED"])
+    on(name, (raw) => book.event(name, raw));
+  function openBook(from) {
+    if (book.on)
+      return book.exit(true);
+    if (!store.get().bookEnabled)
+      return;
+    theater.exit();
+    book.enter(from ?? null);
+  }
+  function bookAuto(chatId) {
+    if (!store.get().bookPerChat || !store.get().bookEnabled)
+      return;
+    bookData.whenLoaded(() => {
+      if (disposed || state.chatId !== chatId || book.on || !bookData.get()[chatId]?.open)
+        return;
+      setTimeout(() => {
+        if (!disposed && state.chatId === chatId && !book.on && store.get().bookPerChat)
+          openBook();
+      }, 700);
+    });
+  }
   let keySrc = null;
   function typeKey(space) {
     const s = store.get();
@@ -12117,6 +15489,8 @@ function setup(ctx) {
       introCard.hide(false);
       if (chatId)
         startIntro(chatId);
+      if (chatId)
+        bookAuto(chatId);
     }
     if (charChanged) {
       state.characterName = null;
@@ -12134,6 +15508,7 @@ function setup(ctx) {
     store.setActiveCharacter(characterId);
     if (!chatId) {
       theater.exit();
+      book.exit(false, true);
       applyAmbient();
       applyCinematic();
       setTimeout(() => {
@@ -12828,14 +16203,30 @@ function setup(ctx) {
         th.innerHTML = THEATER_ICON;
         th.addEventListener("click", (e) => {
           e.stopPropagation();
+          if (book.on)
+            book.exit(false);
           theater.enter(cardFor(id));
         });
-        root.append(star, b, th);
+        const bk = document.createElement("button");
+        bk.type = "button";
+        bk.className = "lf-moment-btn";
+        bk.title = tr("Read as a book from here");
+        bk.setAttribute("aria-label", tr("Read as a book from here"));
+        bk.innerHTML = BOOK_ICON;
+        bk.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (book.on)
+            return;
+          openBook(id);
+        });
+        bk.style.display = store.get().bookEnabled ? "" : "none";
+        root.append(star, b, th, bk);
         return () => {
           pinListeners.delete(syncStar);
           star.remove();
           b.remove();
           th.remove();
+          bk.remove();
         };
       }
     });
@@ -12858,7 +16249,7 @@ function setup(ctx) {
     const base = store.getBase();
     const same = base.customPacks.find((p) => p.name.toLowerCase() === pack.name.toLowerCase());
     const id = same?.id ?? `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const stored = { id, name: pack.name, tagline: pack.tagline, swatch: pack.swatch, settings: pack.settings, theme: pack.theme, source, at: Date.now() };
+    const stored = { id, name: pack.name, tagline: pack.tagline, swatch: pack.swatch, settings: pack.settings, theme: pack.theme, ...pack.book ? { book: pack.book } : {}, source, at: Date.now() };
     const list = same ? base.customPacks.map((p) => p.id === id ? stored : p) : [...base.customPacks, stored].slice(-MAX_CUSTOM_PACKS);
     store.update({ customPacks: list });
     applyPack(id);
@@ -12931,7 +16322,11 @@ function setup(ctx) {
       case "intro":
         return previewIntro();
       case "theater":
+        if (book.on)
+          book.exit(false);
         return theater.toggle();
+      case "book":
+        return openBook();
       case "welcome":
         return openWelcome();
       case "open":
@@ -12948,10 +16343,13 @@ function setup(ctx) {
     disposers.push(inputActions.flair.onClick(() => runCommand("toggle")));
     inputActions.theater = ctx.ui.registerInputBarAction({ id: "theater", label: tr("Theater mode"), subtitle: tr("Hide the interface and read"), iconSvg: THEATER_ICON });
     disposers.push(inputActions.theater.onClick(() => runCommand("theater")));
+    inputActions.book = ctx.ui.registerInputBarAction({ id: "book", label: tr("Book mode"), subtitle: tr("Read the chat as a book"), iconSvg: BOOK_ICON });
+    disposers.push(inputActions.book.onClick(() => runCommand("book")));
     disposers.push(() => {
       inputActions.spotlight?.destroy();
       inputActions.flair?.destroy();
       inputActions.theater?.destroy();
+      inputActions.book?.destroy();
     });
   } catch (err) {
     console.warn("[Lumi Flair] Input bar actions unavailable", err);
@@ -13105,6 +16503,11 @@ function setup(ctx) {
       if (save)
         pins.set(pins.get());
     }
+    if (saved.book) {
+      bookData.hydrate(normalizeBook(saved.book));
+      if (save)
+        bookData.set(bookData.get());
+    }
     if (saved.settings)
       store.adopt(saved.settings, save);
     notifyStatus();
@@ -13118,6 +16521,7 @@ function setup(ctx) {
     beats.hydrate(saved.heartbeat);
     badges.hydrate(normalizeAchievements(saved.achievements));
     pins.hydrate(normalizePins(saved.moments));
+    bookData.hydrate(normalizeBook(saved.book));
   }).then(() => {
     if (disposed)
       return;
@@ -13125,6 +16529,7 @@ function setup(ctx) {
     applyAll();
     store.subscribe(() => applyAll());
     store.subscribe(() => theater.refresh());
+    store.subscribe(() => book.refresh());
     panel = mountPanel(ctx, store, {
       previewSend: () => fireSendEffect(true),
       previewHover: () => {
@@ -13182,7 +16587,12 @@ function setup(ctx) {
       pinLatest: () => pinMessage(ctx.messages.getLatestMessageId()),
       previewIntro,
       previewSpeaker,
-      enterTheater: () => theater.enter(),
+      enterTheater: () => {
+        if (book.on)
+          book.exit(false);
+        theater.enter();
+      },
+      enterBook: () => openBook(),
       previewTypewriter: (el) => typewriter.preview(el),
       typewriterSupported: () => typewriter.supported,
       unpin: (id) => {
@@ -13218,7 +16628,7 @@ function setup(ctx) {
       openWelcome,
       backupSettings: () => {
         flushAll();
-        downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get(), moments: pins.get() }, ctx.manifest?.version ?? "");
+        downloadBackup({ ...vault.snapshot(), settings: store.getBase(), achievements: badges.get(), heartbeat: beats.get(), moments: pins.get(), book: bookData.get() }, ctx.manifest?.version ?? "");
       },
       restoreSettings: async () => {
         const saved = await pickBackup(ctx);
