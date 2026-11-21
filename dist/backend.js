@@ -102,7 +102,7 @@ spindle.commands.onInvoked((commandId) => {
   spindle.sendToFrontend({ type: "command", id: commandId });
 });
 var VAULT_FILES = new Set(["settings", "achievements", "heartbeat", "moments", "book"]);
-var VERSION = "1.7.0";
+var VERSION = "1.7.1";
 async function vaultLoad(req, names, userId) {
   const files = {};
   const list = Array.isArray(names) ? names.filter((n) => typeof n === "string" && VAULT_FILES.has(n)) : [];

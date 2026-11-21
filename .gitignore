@@ -8,3 +8,7 @@ Thumbs.db
 dev/
 docs/
 __pycache__/
+
+# notes for Claude: local only, never public
+CLAUDE.md
+AGENTS.md

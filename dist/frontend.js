@@ -14220,6 +14220,7 @@ class Vault {
   ctx;
   canWrite = { account: false, file: false, browser: true };
   loaded = false;
+  readOnly = false;
   current = new Map;
   req = 0;
   pendingLoads = new Map;
@@ -14388,6 +14389,8 @@ class Vault {
         return;
       this.current.set(name, best);
       out[name] = best.data;
+      if (this.readOnly)
+        return;
       if (!fromBrowser || fromBrowser.at < best.at)
         this.writeBrowser(name, best);
       if (this.canWrite.account && (!fromAccount || fromAccount.at < best.at))
@@ -14402,6 +14405,8 @@ class Vault {
     return out;
   }
   save(name, data) {
+    if (this.readOnly)
+      return;
     if (!this.loaded) {
       console.warn("[Lumi Flair] Ignored a save made before the saved copy was read");
       return;
@@ -14507,6 +14512,37 @@ async function pickBackup(ctx) {
   }
 }
 
+// src/tile.ts
+var inTileFrame = () => window.name.startsWith("lumi-tile:");
+function tileRole() {
+  const v = document.documentElement.dataset.lumiTile;
+  if (v === "live" || v === "idle" || v === "host")
+    return v;
+  return inTileFrame() ? "idle" : null;
+}
+var visualsHere = () => {
+  const r = tileRole();
+  return r === null || r === "live";
+};
+var sharedHere = () => {
+  const r = tileRole();
+  return r === null || r === "host";
+};
+function onTileRole(fn) {
+  if (typeof MutationObserver === "undefined")
+    return () => {};
+  let last = tileRole();
+  const mo = new MutationObserver(() => {
+    const r = tileRole();
+    if (r === last)
+      return;
+    last = r;
+    fn(r);
+  });
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-lumi-tile"] });
+  return () => mo.disconnect();
+}
+
 // src/frontend.ts
 var AI_FX_WINDOW_MS = 30000;
 var SFX_MAX_PER_MESSAGE = 4;
@@ -14518,6 +14554,7 @@ function setup(ctx) {
     setLocale(ctx.locale?.get());
   } catch {}
   const vault = new Vault(ctx);
+  vault.readOnly = inTileFrame();
   const store = createSettingsStore(vault);
   bindCustomPacks(() => store.getBase().customPacks);
   const beats = createJsonStore(vault, "heartbeat", {});
@@ -14744,7 +14781,7 @@ function setup(ctx) {
   }
   function playSound(kind) {
     const s = store.get();
-    if (!s.enabled || !s.sound)
+    if (!s.enabled || !s.sound || !sharedHere())
       return;
     const id = customFor(`ui:${kind}`);
     const ac = id ? sound.context() : null;
@@ -14774,7 +14811,7 @@ function setup(ctx) {
       stop();
   });
   function animateMessage(messageId, kind, force = false) {
-    if (disposed || !force && !motionAllowed())
+    if (disposed || !visualsHere() || !force && !motionAllowed())
       return;
     const { css, durationMs } = entranceRule(messageId, kind);
     tempRule(`${kind}:${messageId}`, css, durationMs + 400);
@@ -14836,6 +14873,8 @@ function setup(ctx) {
     syncTint();
   }
   function syncTint() {
+    if (!sharedHere())
+      return;
     const s = store.get();
     const mood = currentMood();
     const themed = syncTheme();
@@ -14957,7 +14996,7 @@ function setup(ctx) {
     return !!document.querySelector("[data-chat-chrome-leaving]");
   }
   function resolveScene() {
-    if (!motionAllowed() || !ensureAmbientHost() || chatLeaving())
+    if (!visualsHere() || !motionAllowed() || !ensureAmbientHost() || chatLeaving())
       return "off";
     return sceneRaw();
   }
@@ -14981,7 +15020,7 @@ function setup(ctx) {
     applyViz();
   }
   function applyViz() {
-    viz.sync(store.get().viz && ensureAmbientHost() && !chatLeaving());
+    viz.sync(store.get().viz && visualsHere() && ensureAmbientHost() && !chatLeaving());
     if (store.get().perfGovernor && viz.animating)
       perf.start();
   }
@@ -14990,7 +15029,7 @@ function setup(ctx) {
     const hostOk = ensureAmbientHost();
     const saving = state.saver || perf.saving;
     cine.set({
-      enabled: s.enabled && s.cinematic && hostOk && !chatLeaving(),
+      enabled: s.enabled && s.cinematic && visualsHere() && hostOk && !chatLeaving(),
       light: resolveLight(),
       vignette: s.vignette,
       grain: s.grain && !saving && motionAllowed(),
@@ -15031,9 +15070,9 @@ function setup(ctx) {
       light: light !== "none" ? customFor(`light:${light}`) : undefined
     };
     bed.rev = [bed.always, bed.scene, bed.light].map((id) => id ? lib.meta(id)?.level ?? 1 : "").join(",");
-    scape.set(s.enabled && s.soundscape && chatOnScreen(), scene, light, s.soundscapeVolume, bed);
+    scape.set(s.enabled && s.soundscape && sharedHere() && chatOnScreen(), scene, light, s.soundscapeVolume, bed);
     warmUiSounds();
-    soundWidget.sync(s.enabled && s.soundWidget && state.panelsPermission);
+    soundWidget.sync(s.enabled && s.soundWidget && state.panelsPermission && sharedHere());
   }
   function applyAll() {
     const s = store.get();
@@ -15280,7 +15319,7 @@ function setup(ctx) {
     book.enter(from ?? null);
   }
   function bookAuto(chatId) {
-    if (!store.get().bookPerChat || !store.get().bookEnabled)
+    if (!store.get().bookPerChat || !store.get().bookEnabled || !visualsHere())
       return;
     bookData.whenLoaded(() => {
       if (disposed || state.chatId !== chatId || book.on || !bookData.get()[chatId]?.open)
@@ -15365,6 +15404,8 @@ function setup(ctx) {
         if (waited < 3200)
           setTimeout(attempt, 150);
       };
+      if (!visualsHere())
+        return inTileFrame() ? retry() : undefined;
       if (!document.querySelector('[data-component="MessageList"]'))
         return retry();
       if (isGroupChat())
@@ -15403,7 +15444,7 @@ function setup(ctx) {
   function speakerStart(p) {
     const s = store.get();
     const name = (p.characterName ?? "").trim();
-    if (disposed || !s.enabled || !s.introGroup || !name || !isActiveChat(p.chatId) || !isGroupChat())
+    if (disposed || !s.enabled || !s.introGroup || !name || !visualsHere() || !isActiveChat(p.chatId) || !isGroupChat())
       return;
     const gen = p.generationId ?? "";
     const total = p.total && p.total > 1 ? p.total : 0;
@@ -15473,7 +15514,10 @@ function setup(ctx) {
     speakerHide = setTimeout(() => speaker.hide(false), 2600);
   }
   let nameRequest = 0;
+  let booted = false;
   function checkActive() {
+    if (!booted)
+      return;
     const { chatId, characterId } = ctx.getActiveChat();
     if (chatId === state.chatId && characterId === state.characterId)
       return;
@@ -15577,6 +15621,16 @@ function setup(ctx) {
     setTimeout(checkActive, 0);
   });
   on("CHAT_CHANGED", () => setTimeout(checkActive, 0));
+  disposers.push(onTileRole(() => {
+    if (disposed)
+      return;
+    if (!visualsHere()) {
+      introRun++;
+      introCard.hide(false);
+      speakerReset();
+    }
+    applyAll();
+  }));
   const todTimer = setInterval(() => {
     if (store.get().timeOfDay) {
       applyColor();
@@ -15601,13 +15655,13 @@ function setup(ctx) {
   }
   function fireSendEffect(force = false) {
     const s = store.get();
-    if (!force && (!s.enabled || s.sendEffect === "none" || !motionAllowed()))
+    if (!force && (!s.enabled || s.sendEffect === "none" || !visualsHere() || !motionAllowed()))
       return;
     const effect = s.sendEffect === "none" ? "sparkle" : s.sendEffect;
     playSendEffect(fx, effect, sendOrigin(), accentColor(), s.sendIntensity * (state.saver ? 0.6 : 1), screenEffect(effect));
   }
   function burst(effect, origin, intensity = 1, color) {
-    if (!motionAllowed())
+    if (!visualsHere() || !motionAllowed())
       return;
     playSendEffect(fx, effect, origin, color ?? charColor(), intensity * (state.saver ? 0.6 : 1), screenEffect(effect));
   }
@@ -15726,6 +15780,8 @@ function setup(ctx) {
     unlock(["showstopper"]);
   }
   function playCue(cue, volume) {
+    if (!sharedHere())
+      return;
     const id = customFor(`sfx:${cue}`);
     const ac = id ? sound.context() : null;
     if (id && ac) {
@@ -16003,7 +16059,7 @@ function setup(ctx) {
   let trailColor = { at: -1e9, rgb: { r: 0, g: 0, b: 0 } };
   const onTrail = (e) => {
     const s = store.get();
-    if (e.pointerType !== "mouse" || !s.enabled || s.cursorTrail === "none" || !motionAllowed())
+    if (e.pointerType !== "mouse" || !s.enabled || s.cursorTrail === "none" || !visualsHere() || !motionAllowed())
       return;
     const dt = e.timeStamp - trail.t;
     const dx = e.clientX - trail.x, dy = e.clientY - trail.y;
@@ -16525,6 +16581,7 @@ function setup(ctx) {
   }).then(() => {
     if (disposed)
       return;
+    booted = true;
     checkActive();
     applyAll();
     store.subscribe(() => applyAll());

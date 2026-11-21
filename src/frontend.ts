@@ -56,6 +56,7 @@ import { LIGHT_LABEL, mountPanel, PANEL_CSS, SCENE_LABEL, type PanelStatus, type
 import { NAVIGATE_CSS, StoryNavigator } from './navigate'
 import { resolveUiTheme, themeFromColor, themeKey } from './uitheme'
 import { Vault, downloadBackup, pickBackup, type VaultName } from './persist'
+import { inTileFrame, onTileRole, sharedHere, visualsHere } from './tile'
 
 // ── Event payload shapes (only the fields we read) ──
 interface MessageSentPayload {
@@ -138,6 +139,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   const vault = new Vault(ctx)
+  vault.readOnly = inTileFrame() // a Lumi Tile frame never saves (tile.ts)
   const store = createSettingsStore(vault)
   bindCustomPacks(() => store.getBase().customPacks)
   const beats = createJsonStore<HeartbeatData>(vault, 'heartbeat', {})
@@ -400,7 +402,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function playSound(kind: Chime) {
     const s = store.get()
-    if (!s.enabled || !s.sound) return
+    if (!s.enabled || !s.sound || !sharedHere()) return
     const id = customFor(`ui:${kind}`)
     const ac = id ? sound.context() : null
     if (id && ac) {
@@ -436,7 +438,7 @@ export function setup(ctx: SpindleFrontendContext) {
   })
 
   function animateMessage(messageId: string, kind: CardAnimation, force = false) {
-    if (disposed || (!force && !motionAllowed())) return
+    if (disposed || !visualsHere() || (!force && !motionAllowed())) return
     const { css, durationMs } = entranceRule(messageId, kind)
     tempRule(`${kind}:${messageId}`, css, durationMs + 400)
   }
@@ -507,6 +509,7 @@ export function setup(ctx: SpindleFrontendContext) {
 
   /** Whole-UI mood tint goes through the backend (spindle.theme.applyPalette). */
   function syncTint() {
+    if (!sharedHere()) return // the whole-UI theme is per user: only one window may set it (tile.ts)
     const s = store.get()
     const mood = currentMood()
     // When Flair themes Lumiverse, the mood colour is folded into that theme instead.
@@ -637,7 +640,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function resolveScene(): Scene {
-    if (!motionAllowed() || !ensureAmbientHost() || chatLeaving()) return 'off'
+    if (!visualsHere() || !motionAllowed() || !ensureAmbientHost() || chatLeaving()) return 'off'
     return sceneRaw()
   }
 
@@ -661,7 +664,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
 
   function applyViz() {
-    viz.sync(store.get().viz && ensureAmbientHost() && !chatLeaving())
+    viz.sync(store.get().viz && visualsHere() && ensureAmbientHost() && !chatLeaving())
     if (store.get().perfGovernor && viz.animating) perf.start()
   }
 
@@ -670,7 +673,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const hostOk = ensureAmbientHost()
     const saving = state.saver || perf.saving
     cine.set({
-      enabled: s.enabled && s.cinematic && hostOk && !chatLeaving(),
+      enabled: s.enabled && s.cinematic && visualsHere() && hostOk && !chatLeaving(),
       light: resolveLight(),
       vignette: s.vignette,
       grain: s.grain && !saving && motionAllowed(),
@@ -710,9 +713,9 @@ export function setup(ctx: SpindleFrontendContext) {
       light: light !== 'none' ? customFor(`light:${light}`) : undefined,
     }
     bed.rev = [bed.always, bed.scene, bed.light].map((id) => (id ? lib.meta(id)?.level ?? 1 : '')).join(',')
-    scape.set(s.enabled && s.soundscape && chatOnScreen(), scene, light, s.soundscapeVolume, bed)
+    scape.set(s.enabled && s.soundscape && sharedHere() && chatOnScreen(), scene, light, s.soundscapeVolume, bed)
     warmUiSounds()
-    soundWidget.sync(s.enabled && s.soundWidget && state.panelsPermission)
+    soundWidget.sync(s.enabled && s.soundWidget && state.panelsPermission && sharedHere())
   }
 
   function applyAll() {
@@ -959,7 +962,7 @@ export function setup(ctx: SpindleFrontendContext) {
   }
   /** A chat that was last read as a book opens as one (setting "Open chats as a book again"). */
   function bookAuto(chatId: string) {
-    if (!store.get().bookPerChat || !store.get().bookEnabled) return
+    if (!store.get().bookPerChat || !store.get().bookEnabled || !visualsHere()) return
     bookData.whenLoaded(() => {
       if (disposed || state.chatId !== chatId || book.on || !bookData.get()[chatId]?.open) return
       // Let the chat mount first: the book reads what the host has drawn.
@@ -1045,6 +1048,9 @@ export function setup(ctx: SpindleFrontendContext) {
       const retry = () => {
         if (waited < 3200) setTimeout(attempt, 150)
       }
+      // Tiling: the main window's chat is hidden and idle tiles stay quiet. A new tile is marked live only once its
+      // frame has loaded, so a tile keeps checking for the usual wait instead of giving up.
+      if (!visualsHere()) return inTileFrame() ? retry() : undefined
       // Wait for the chat to be on screen: only then can we tell a group chat from a single character.
       if (!document.querySelector('[data-component="MessageList"]')) return retry()
       if (isGroupChat()) return
@@ -1090,7 +1096,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function speakerStart(p: { chatId?: string; characterId?: string; characterName?: string; generationId?: string; turn?: number; total?: number }) {
     const s = store.get()
     const name = (p.characterName ?? '').trim()
-    if (disposed || !s.enabled || !s.introGroup || !name || !isActiveChat(p.chatId) || !isGroupChat()) return
+    if (disposed || !s.enabled || !s.introGroup || !name || !visualsHere() || !isActiveChat(p.chatId) || !isGroupChat()) return
     const gen = p.generationId ?? ''
     const total = p.total && p.total > 1 ? p.total : 0
     // Two events can announce one turn; show it once, unless the second one brings the turn count.
@@ -1165,7 +1171,14 @@ export function setup(ctx: SpindleFrontendContext) {
 
   // ── Active chat / character tracking ──
   let nameRequest = 0
+  /**
+   * Set once the saved settings are in. Before that, a chat opened by the poll or an event would be marked as seen
+   * against the default settings (intro "not welcomed yet"), and the real check after loading would find nothing
+   * new, so a slow start (a Lumi Tile frame, a slow server) lost the intro for good.
+   */
+  let booted = false
   function checkActive() {
+    if (!booted) return
     const { chatId, characterId } = ctx.getActiveChat()
     if (chatId === state.chatId && characterId === state.characterId) return
     const charChanged = characterId !== state.characterId
@@ -1271,6 +1284,19 @@ export function setup(ctx: SpindleFrontendContext) {
   })
   on('CHAT_CHANGED', () => setTimeout(checkActive, 0))
 
+  // Lumi Tile: this window became the live tile, an idle one, the hidden main window, or tiling ended (tile.ts).
+  disposers.push(
+    onTileRole(() => {
+      if (disposed) return
+      if (!visualsHere()) {
+        introRun++
+        introCard.hide(false)
+        speakerReset()
+      }
+      applyAll() // atmosphere, light, visualizer, soundscape, sound widget, theme/tint
+    }),
+  )
+
   // Time-of-day tint drifts slowly — recheck every 5 minutes.
   const todTimer = setInterval(() => {
     if (store.get().timeOfDay) {
@@ -1300,13 +1326,13 @@ export function setup(ctx: SpindleFrontendContext) {
 
   function fireSendEffect(force = false) {
     const s = store.get()
-    if (!force && (!s.enabled || s.sendEffect === 'none' || !motionAllowed())) return
+    if (!force && (!s.enabled || s.sendEffect === 'none' || !visualsHere() || !motionAllowed())) return
     const effect = s.sendEffect === 'none' ? 'sparkle' : s.sendEffect
     playSendEffect(fx, effect, sendOrigin(), accentColor(), s.sendIntensity * (state.saver ? 0.6 : 1), screenEffect(effect))
   }
 
   function burst(effect: BurstEffect, origin: Point, intensity = 1, color?: RGB) {
-    if (!motionAllowed()) return
+    if (!visualsHere() || !motionAllowed()) return
     playSendEffect(fx, effect, origin, color ?? charColor(), intensity * (state.saver ? 0.6 : 1), screenEffect(effect))
   }
 
@@ -1429,6 +1455,7 @@ export function setup(ctx: SpindleFrontendContext) {
   // ── AI sound cues: <flair sfx="door-knock"></flair> ──
   /** Play a cue now: the user's file for it if they assigned one, else the built-in sound. */
   function playCue(cue: string, volume: number) {
+    if (!sharedHere()) return
     const id = customFor(`sfx:${cue}`)
     const ac = id ? sound.context() : null
     if (id && ac) {
@@ -1691,7 +1718,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let trailColor = { at: -1e9, rgb: { r: 0, g: 0, b: 0 } }
   const onTrail = (e: PointerEvent) => {
     const s = store.get()
-    if (e.pointerType !== 'mouse' || !s.enabled || s.cursorTrail === 'none' || !motionAllowed()) return
+    if (e.pointerType !== 'mouse' || !s.enabled || s.cursorTrail === 'none' || !visualsHere() || !motionAllowed()) return
     const dt = e.timeStamp - trail.t
     const dx = e.clientX - trail.x, dy = e.clientY - trail.y
     // At most ~60 puffs a second, and only while the pointer actually moves.
@@ -2258,6 +2285,7 @@ export function setup(ctx: SpindleFrontendContext) {
     })
     .then(() => {
       if (disposed) return
+      booted = true
       checkActive()
       applyAll()
       store.subscribe(() => applyAll())

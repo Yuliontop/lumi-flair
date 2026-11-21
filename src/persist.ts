@@ -56,6 +56,11 @@ export class Vault {
   private canWrite: Record<Layer, boolean> = { account: false, file: false, browser: true }
   /** Set once loadAll() has read every layer. */
   private loaded = false
+  /**
+   * A Lumi Tile frame reads the saved copies but never writes them: it loaded them once and goes stale while the
+   * main window keeps saving, so its writes (stamped "now") would win and roll back newer data (see tile.ts).
+   */
+  readOnly = false
   private current = new Map<VaultName, Envelope>()
   private req = 0
   private pendingLoads = new Map<number, (files: Record<string, unknown> | null) => void>()
@@ -238,6 +243,7 @@ export class Vault {
       this.current.set(name, best)
       out[name] = best.data
       // Heal any layer that is missing or older than the winner.
+      if (this.readOnly) return
       if (!fromBrowser || fromBrowser.at < best.at) this.writeBrowser(name, best)
       if (this.canWrite.account && (!fromAccount || fromAccount.at < best.at)) this.writeAccount(name, best)
       if (this.canWrite.file && (!fromFile || fromFile.at < best.at)) this.writeFile(name, best)
@@ -250,6 +256,7 @@ export class Vault {
 
   /** Save now to every layer. Callers debounce. */
   save(name: VaultName, data: unknown) {
+    if (this.readOnly) return
     // A save is stamped "now", so it would win over every older copy: never write before they have been read.
     if (!this.loaded) {
       console.warn('[Lumi Flair] Ignored a save made before the saved copy was read')

@@ -211,6 +211,10 @@ To test a local copy, put the folder at `Lumiverse/data/extensions/lumi_flair/re
 
 ## Changelog
 
+- **1.7.1:** Works with Lumi Tile, and the intro no longer goes missing.
+  - **Lumi Tile support:** with [Lumi Tile](https://github.com/Yuliontop/lumi-tile) showing several chats at once, each tile runs its own Lumi Flair. Scenes, light, effects and the character intro now play only in the tile you're using. Sounds, the soundscape, the sound widget and the theme and mood tint come once from the main window, following that chat. Tiles never save over your settings, achievements, heartbeat or pins. Without Lumi Tile nothing changes.
+  - **Intro on a slow start:** when Lumiverse took a while to load (a slow server, or a new tile), the character intro could be skipped for the chat you opened. It now waits for your settings and plays.
+  - **Good to know:** a pin or setting you change inside a tile isn't saved. Make those with tiling off.
 - **1.7.0:** Book mode.
   - **Read the chat as a book:** from the book button under any message, the Extras menu, the panel or `Flair: Toggle book mode`. Two facing pages on a computer, one on a phone (it re-lays out as you rotate or resize), a page curl (a slide on phones, instant with reduced motion), justified type with hyphenation, running headers and page numbers. Arrow keys, PageUp/PageDown, Space, Home/End, a click or drag on the page edge, or a swipe turn pages; Esc leaves.
   - **Write in the book:** your next message goes on a writing line under the page, and the reply is written into the book as it streams (the book turns the page when the text reaches the bottom). Or use Lumiverse's own reply box from the book's corner.
